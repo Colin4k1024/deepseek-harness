@@ -255,17 +255,49 @@ impl LlmAdapter for OpenAiAdapter {
         }
 
         let byte_stream = response.bytes_stream();
-        let chunk_stream = byte_stream.flat_map(|result| match result {
-            Ok(bytes) => {
-                let text = String::from_utf8_lossy(&bytes);
-                let chunks: Vec<Result<LlmChunk, LlmError>> =
-                    text.lines().filter_map(parse_sse_line).collect();
-                futures::stream::iter(chunks).left_stream()
-            }
-            Err(e) => {
-                futures::stream::iter(vec![Err(LlmError::Network(e.to_string()))]).right_stream()
-            }
-        });
+        let chunk_stream = byte_stream
+            .scan(String::new(), |buffer, result| {
+                let chunks = match result {
+                    Ok(bytes) => {
+                        buffer.push_str(&String::from_utf8_lossy(&bytes));
+                        let mut chunks = Vec::new();
+
+                        // Take ownership of buffer content for processing
+                        let content = std::mem::take(buffer);
+                        let mut lines: Vec<&str> = content.split('\n').collect();
+
+                        // Last element might be partial (no trailing \n)
+                        let partial = if content.ends_with('\n') {
+                            None
+                        } else {
+                            lines.pop()
+                        };
+
+                        for line in lines {
+                            let trimmed = line.trim_end_matches('\r');
+                            if trimmed.is_empty() || trimmed.starts_with(':') {
+                                continue;
+                            }
+                            if let Some(chunk) = parse_sse_line(trimmed) {
+                                chunks.push(chunk);
+                            }
+                        }
+
+                        // Put back partial line
+                        if let Some(p) = partial {
+                            buffer.push_str(p);
+                        }
+
+                        Ok(chunks)
+                    }
+                    Err(e) => Err(LlmError::Network(e.to_string())),
+                };
+                futures::future::ready(Some(chunks))
+            })
+            .flat_map(|result| match result {
+                Ok(chunks) => futures::stream::iter(chunks).left_stream(),
+                Err(e) => futures::stream::iter(vec![Err(e)]).right_stream(),
+            });
 
         Ok(Box::pin(chunk_stream))
     }
