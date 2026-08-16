@@ -1,6 +1,9 @@
-//! gRPC Communication — service definition, client, and server traits.
+//! gRPC communication — service mesh, service discovery, and load balancing.
 
 pub mod client;
+pub mod mesh;
 pub mod service;
-pub use client::GrpcClient;
-pub use service::GrpcService;
+
+pub use client::{GrpcClient, GrpcClientConfig, RpcResult};
+pub use mesh::{MeshConfig, ServiceEntry, ServiceMesh};
+pub use service::{GrpcMetadata, GrpcService, MethodDef};

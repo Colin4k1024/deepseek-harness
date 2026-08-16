@@ -48,22 +48,17 @@ members = [
     "crates/core-cqrs",
     "crates/seam-messagebus",
     "crates/core-saga",
-    "crates/seam-mesh",
     "crates/seam-grpc",
-    "crates/seam-cluster",
     "crates/core-federated",
     "crates/seam-edge",
-    "crates/core-stream",
     "crates/core-incremental",
     "crates/seam-multiregion",
     "crates/seam-compliance",
-    "crates/core-graph",
     "crates/core-knowledge",
     "crates/core-vectordb",
     "crates/core-rag",
-    "crates/core-multimodal",
-    "crates/seam-media",
     "crates/core-crossmodal",
+    "crates/seam-media",
     "crates/seam-tools",
     "tests",
     "benches",
@@ -165,20 +160,15 @@ dsh-core-eventstore = { path = "crates/core-eventstore" }
 dsh-core-cqrs = { path = "crates/core-cqrs" }
 dsh-seam-messagebus = { path = "crates/seam-messagebus" }
 dsh-core-saga = { path = "crates/core-saga" }
-dsh-seam-mesh = { path = "crates/seam-mesh" }
 dsh-seam-grpc = { path = "crates/seam-grpc" }
-dsh-seam-cluster = { path = "crates/seam-cluster" }
 dsh-core-federated = { path = "crates/core-federated" }
 dsh-seam-edge = { path = "crates/seam-edge" }
-dsh-core-stream = { path = "crates/core-stream" }
 dsh-core-incremental = { path = "crates/core-incremental" }
 dsh-seam-multiregion = { path = "crates/seam-multiregion" }
 dsh-seam-compliance = { path = "crates/seam-compliance" }
-dsh-core-graph = { path = "crates/core-graph" }
 dsh-core-knowledge = { path = "crates/core-knowledge" }
 dsh-core-vectordb = { path = "crates/core-vectordb" }
 dsh-core-rag = { path = "crates/core-rag" }
-dsh-core-multimodal = { path = "crates/core-multimodal" }
-dsh-seam-media = { path = "crates/seam-media" }
 dsh-core-crossmodal = { path = "crates/core-crossmodal" }
+dsh-seam-media = { path = "crates/seam-media" }
 dsh-seam-tools = { path = "crates/seam-tools" }

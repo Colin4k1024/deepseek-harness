@@ -1,6 +1,6 @@
 //! Cross-modal retrieval — search across modalities.
 
-use dsh_core_multimodal::{Modality, MultimodalContent};
+use crate::content::{Modality, MultimodalContent};
 use dsh_core_vectordb::{VectorDb, VectorEntry};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;

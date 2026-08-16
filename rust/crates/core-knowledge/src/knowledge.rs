@@ -1,6 +1,6 @@
 //! Knowledge graph — semantic triples.
 
-use dsh_core_graph::{Edge, Graph, Node};
+use crate::graph::{Edge, Graph, Node};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 

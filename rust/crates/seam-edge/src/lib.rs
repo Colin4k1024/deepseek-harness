@@ -1,4 +1,7 @@
-//! Edge Computing — edge node management and task offloading.
+//! Edge computing — cluster registry, edge nodes, and distributed routing.
 
+pub mod cluster;
 pub mod node;
-pub use node::{EdgeNode, EdgeNodeConfig, EdgeRegistry};
+
+pub use cluster::{Cluster, ClusterConfig, ClusterRegistry};
+pub use node::{EdgeNode, EdgeRegistry};

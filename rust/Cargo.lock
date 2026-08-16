@@ -771,11 +771,11 @@ dependencies = [
 name = "dsh-core-crossmodal"
 version = "0.1.0"
 dependencies = [
- "dsh-core-multimodal",
  "dsh-core-vectordb",
  "serde",
  "serde_json",
  "thiserror 2.0.20",
+ "uuid",
 ]
 
 [[package]]
@@ -818,15 +818,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "dsh-core-graph"
-version = "0.1.0"
-dependencies = [
- "serde",
- "serde_json",
- "thiserror 2.0.20",
-]
-
-[[package]]
 name = "dsh-core-i18n"
 version = "0.1.0"
 dependencies = [
@@ -841,16 +832,17 @@ dependencies = [
 name = "dsh-core-incremental"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "serde",
  "serde_json",
  "thiserror 2.0.20",
+ "uuid",
 ]
 
 [[package]]
 name = "dsh-core-knowledge"
 version = "0.1.0"
 dependencies = [
- "dsh-core-graph",
  "serde",
  "serde_json",
  "thiserror 2.0.20",
@@ -866,16 +858,6 @@ dependencies = [
  "thiserror 2.0.20",
  "tokio",
  "tracing",
- "uuid",
-]
-
-[[package]]
-name = "dsh-core-multimodal"
-version = "0.1.0"
-dependencies = [
- "serde",
- "serde_json",
- "thiserror 2.0.20",
  "uuid",
 ]
 
@@ -945,19 +927,6 @@ dependencies = [
  "thiserror 2.0.20",
  "tokio",
  "tracing",
-]
-
-[[package]]
-name = "dsh-core-stream"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "serde",
- "serde_json",
- "thiserror 2.0.20",
- "tokio",
- "tracing",
- "uuid",
 ]
 
 [[package]]
@@ -1198,18 +1167,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "dsh-seam-cluster"
-version = "0.1.0"
-dependencies = [
- "serde",
- "serde_json",
- "thiserror 2.0.20",
- "tokio",
- "tracing",
- "uuid",
-]
-
-[[package]]
 name = "dsh-seam-compliance"
 version = "0.1.0"
 dependencies = [
@@ -1288,18 +1245,6 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 2.0.20",
-]
-
-[[package]]
-name = "dsh-seam-mesh"
-version = "0.1.0"
-dependencies = [
- "serde",
- "serde_json",
- "thiserror 2.0.20",
- "tokio",
- "tracing",
- "uuid",
 ]
 
 [[package]]
