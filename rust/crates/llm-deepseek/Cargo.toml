@@ -17,3 +17,5 @@ futures = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true }
+mockito = "1"
+futures = { workspace = true }
