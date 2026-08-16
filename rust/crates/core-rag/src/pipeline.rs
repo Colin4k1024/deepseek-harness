@@ -1,7 +1,6 @@
 //! RAG pipeline — retrieval + context assembly.
 
-use dsh_core_embedding::Embedder;
-use dsh_core_vectordb::{VectorDb, VectorEntry};
+use dsh_core_vectordb::{Embedder, VectorDb, VectorEntry};
 use serde::{Deserialize, Serialize};
 
 /// RAG configuration.
@@ -119,8 +118,7 @@ impl<'a> RagPipeline<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dsh_core_embedding::embedder::SimpleEmbedder;
-    use dsh_core_vectordb::VectorDb;
+    use dsh_core_vectordb::{SimpleEmbedder, VectorDb};
 
     #[test]
     fn ingest_and_query() {

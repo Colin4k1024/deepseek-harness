@@ -779,15 +779,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "dsh-core-embedding"
-version = "0.1.0"
-dependencies = [
- "serde",
- "serde_json",
- "thiserror 2.0.20",
-]
-
-[[package]]
 name = "dsh-core-eventstore"
 version = "0.1.0"
 dependencies = [
@@ -866,16 +857,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "dsh-core-learning"
-version = "0.1.0"
-dependencies = [
- "serde",
- "serde_json",
- "thiserror 2.0.20",
- "uuid",
-]
-
-[[package]]
 name = "dsh-core-memory"
 version = "0.1.0"
 dependencies = [
@@ -934,19 +915,7 @@ dependencies = [
 name = "dsh-core-rag"
 version = "0.1.0"
 dependencies = [
- "dsh-core-embedding",
  "dsh-core-vectordb",
- "serde",
- "serde_json",
- "thiserror 2.0.20",
-]
-
-[[package]]
-name = "dsh-core-reasoning"
-version = "0.1.0"
-dependencies = [
- "dsh-core-graph",
- "dsh-core-knowledge",
  "serde",
  "serde_json",
  "thiserror 2.0.20",
@@ -1226,16 +1195,6 @@ dependencies = [
  "thiserror 2.0.20",
  "tokio",
  "tracing",
-]
-
-[[package]]
-name = "dsh-seam-cdn"
-version = "0.1.0"
-dependencies = [
- "serde",
- "serde_json",
- "thiserror 2.0.20",
- "tokio",
 ]
 
 [[package]]

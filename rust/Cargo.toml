@@ -55,15 +55,11 @@ members = [
     "crates/seam-edge",
     "crates/core-stream",
     "crates/core-incremental",
-    "crates/core-learning",
-    "crates/seam-cdn",
     "crates/seam-multiregion",
     "crates/seam-compliance",
     "crates/core-graph",
     "crates/core-knowledge",
-    "crates/core-reasoning",
     "crates/core-vectordb",
-    "crates/core-embedding",
     "crates/core-rag",
     "crates/core-multimodal",
     "crates/seam-media",
@@ -176,15 +172,11 @@ dsh-core-federated = { path = "crates/core-federated" }
 dsh-seam-edge = { path = "crates/seam-edge" }
 dsh-core-stream = { path = "crates/core-stream" }
 dsh-core-incremental = { path = "crates/core-incremental" }
-dsh-core-learning = { path = "crates/core-learning" }
-dsh-seam-cdn = { path = "crates/seam-cdn" }
 dsh-seam-multiregion = { path = "crates/seam-multiregion" }
 dsh-seam-compliance = { path = "crates/seam-compliance" }
 dsh-core-graph = { path = "crates/core-graph" }
 dsh-core-knowledge = { path = "crates/core-knowledge" }
-dsh-core-reasoning = { path = "crates/core-reasoning" }
 dsh-core-vectordb = { path = "crates/core-vectordb" }
-dsh-core-embedding = { path = "crates/core-embedding" }
 dsh-core-rag = { path = "crates/core-rag" }
 dsh-core-multimodal = { path = "crates/core-multimodal" }
 dsh-seam-media = { path = "crates/seam-media" }

@@ -1,6 +1,6 @@
 //! Semantic reasoning engine.
 
-use dsh_core_knowledge::{KnowledgeGraph, Triple};
+use crate::knowledge::{KnowledgeGraph, Triple};
 use serde::{Deserialize, Serialize};
 
 /// An inference rule.
