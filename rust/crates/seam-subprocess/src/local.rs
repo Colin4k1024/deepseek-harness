@@ -40,3 +40,30 @@ impl Subprocess for LocalSubprocess {
         Ok(child.id().unwrap_or(0))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn exec_echo() {
+        let sp = LocalSubprocess::new();
+        let result = sp.exec("echo", &["hello"]).await.unwrap();
+        assert_eq!(result.exit_code, 0);
+        assert_eq!(String::from_utf8_lossy(&result.stdout).trim(), "hello");
+    }
+
+    #[tokio::test]
+    async fn exec_failing_command() {
+        let sp = LocalSubprocess::new();
+        let result = sp.exec("false", &[]).await.unwrap();
+        assert_ne!(result.exit_code, 0);
+    }
+
+    #[tokio::test]
+    async fn spawn_returns_pid() {
+        let sp = LocalSubprocess::new();
+        let pid = sp.spawn("sleep", &["1"]).await.unwrap();
+        assert!(pid > 0);
+    }
+}

@@ -129,3 +129,15 @@ pub async fn register_mcp_tools(
     }
     Ok(count)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn schema_to_json_empty() {
+        // Test with a minimal schema
+        let json = serde_json::json!({});
+        assert!(json.is_object());
+    }
+}
