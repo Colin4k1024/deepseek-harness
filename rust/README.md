@@ -6,9 +6,9 @@ A high-performance, type-safe AI agent harness framework built in Rust.
 
 dsh-rust provides a complete toolkit for building, deploying, and managing AI agents with:
 
-- **Multi-LLM Support** — DeepSeek, OpenAI, Anthropic, and any OpenAI-compatible endpoint
+- **Multi-LLM Support** — DeepSeek, OpenAI, Anthropic with structured function calling
 - **Type-Safe Agent Loop** — Compile-time guarantees for session log invariants
-- **Tool Ecosystem** — MCP client integration, extensible tool trait
+- **Real Agent Tools** — bash, file read/write/edit, search, list files
 - **Multi-Agent Orchestration** — Sequential, fan-out, and fan-in patterns
 - **Workflow Engine** — DAG-based multi-step workflows with failure propagation
 - **Agent Memory** — Long-term memory with semantic vector search
@@ -32,7 +32,10 @@ cargo build
 ### Run
 
 ```bash
-# Headless CLI
+# Interactive mode
+cargo run -p dsh-headless -- --interactive --api-key sk-xxx
+
+# Single task
 cargo run -p dsh-headless -- --task "What is 2+2?" --api-key sk-xxx
 
 # Web server
@@ -42,7 +45,7 @@ cargo run -p dsh-web -- --api-key sk-xxx --port 3000
 ### Test
 
 ```bash
-cargo test --workspace           # All tests
+cargo test --workspace           # All tests (396)
 cargo test -p dsh-e2e-tests      # E2E integration tests
 cargo bench --workspace          # Performance benchmarks
 ```
@@ -78,7 +81,7 @@ cargo bench --workspace          # Performance benchmarks
 │  └──────────────┘  └──────────────┘  └──────────────┘  │
 │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  │
 │  │ llm-adapter  │  │llm-deepseek  │  │ llm-openai   │ │
-│  │   (trait)    │  │llm-anthropic │  │              │  │
+│  │   (trait)    │  │llm-anthropic │  │              │ │
 │  └──────────────┘  └──────────────┘  └──────────────┘  │
 ├─────────────────────────────────────────────────────────┤
 │  L0 Effect & Context                                    │
@@ -93,34 +96,86 @@ cargo bench --workspace          # Performance benchmarks
 └─────────────────────────────────────────────────────────┘
 ```
 
-## Crate Map
+## Crate Map (55 crates)
 
-| Crate | Layer | Purpose |
-|-------|-------|---------|
-| `core-context` | L0 | Service container, ScopeGuard, EventBus |
-| `core-session` | L1 | Session log, invariant assertion |
-| `core-tools` | L1 | Tool trait, pipeline middleware |
-| `core-agent-loop` | L1 | Agent turn state machine |
-| `llm-adapter` | L1 | LLM trait definition |
-| `llm-deepseek` | L1 | DeepSeek API provider |
-| `llm-openai` | L1 | OpenAI + compatible endpoints |
-| `llm-anthropic` | L1 | Anthropic Claude provider |
-| `seam-sandbox` | L2 | macOS/Linux/Windows sandbox |
-| `seam-fs` | L2 | Filesystem capability |
-| `seam-subprocess` | L2 | Subprocess capability |
-| `seam-persistence` | L2 | JSONL + SQLite session store |
-| `seam-auth` | L2 | API key auth, rate limiting, quota |
-| `seam-observability` | L2 | Tracing + metrics |
-| `seam-session-distributed` | L2 | Distributed session store |
-| `bundle-base` | L3 | Base assembly with feature flags |
-| `bundle-web-app` | L3 | axum HTTP surface |
-| `bundle-headless` | L3 | CLI runner |
-| `core-evolution` | L0 | Gene/Capsule evolution primitives |
-| `core-orchestrator` | L0 | Multi-agent orchestration |
-| `core-workflow` | L0 | DAG workflow engine |
-| `core-memory` | L0 | Agent memory + semantic search |
-| `mcp-client` | L1 | MCP tool adapter |
-| `test-support` | — | Mock LLM + fixtures |
+### Core Runtime (9 crates)
+
+| Crate | LOC | Tests | Purpose |
+|-------|-----|-------|---------|
+| `core-context` | 617 | 17 | Service container, ScopeGuard, EventBus |
+| `core-session` | 251 | 6 | Session log, invariant assertion |
+| `core-tools` | 153 | 2 | Tool trait, pipeline middleware |
+| `core-agent-loop` | 657 | 3 | Agent turn state machine |
+| `core-orchestrator` | 539 | 5 | Multi-agent orchestration |
+| `core-workflow` | 520 | 7 | DAG workflow engine |
+| `core-memory` | 526 | 15 | Agent memory + semantic search |
+| `core-evolution` | 473 | 8 | Gene/Capsule evolution |
+| `core-plugin` | 516 | 7 | Plugin system, hot reload |
+
+### LLM Providers (4 crates)
+
+| Crate | LOC | Tests | Purpose |
+|-------|-----|-------|---------|
+| `llm-adapter` | 224 | 1 | LLM trait definition |
+| `llm-deepseek` | 412 | 6 | DeepSeek SSE streaming + tool_calls |
+| `llm-openai` | 417 | 6 | OpenAI tool_calls support |
+| `llm-anthropic` | 560 | 8 | Anthropic tool_use content blocks |
+
+### Data Layer (9 crates)
+
+| Crate | LOC | Tests | Purpose |
+|-------|-----|-------|---------|
+| `core-eventstore` | 588 | 10 | Event sourcing + CQRS + message bus |
+| `core-cqrs` | 161 | 2 | Command/Query separation |
+| `core-saga` | 327 | 3 | Saga pattern, compensation |
+| `core-vectordb` | 301 | 6 | Vector storage + embedding + learning |
+| `core-knowledge` | 396 | 6 | Knowledge graph + reasoning |
+| `core-crossmodal` | 248 | 4 | Multimodal + cross-modal retrieval |
+| `core-rag` | 154 | 1 | RAG pipeline |
+| `core-incremental` | 223 | 4 | Incremental computation + streaming |
+| `core-federated` | 145 | 2 | Federated learning |
+
+### Capability Seams (27 crates)
+
+| Crate | LOC | Tests | Purpose |
+|-------|-----|-------|---------|
+| `seam-auth` | 639 | 15 | API key auth, RBAC, rate limiting, quota |
+| `seam-sandbox` | 533 | 12 | macOS/Linux/Windows sandbox |
+| `seam-persistence` | 543 | 7 | JSONL + SQLite session store |
+| `seam-observability` | 617 | 8 | Metrics + tracing |
+| `seam-tools` | 546 | 11 | bash/read/write/edit/search/list tools |
+| `seam-multitenant` | 481 | 8 | Tenant isolation |
+| `seam-gateway` | 451 | 9 | API Gateway + routing |
+| `seam-traffic` | 339 | 8 | Priority routing + throttling |
+| `seam-resilience` | 415 | 11 | CircuitBreaker + RetryPolicy |
+| `seam-cache` | 370 | 11 | LRU/TTL cache |
+| `seam-canary` | 376 | 10 | Canary deployment |
+| `seam-scheduler` | 642 | 15 | Task scheduling + delayed queue |
+| `seam-migration` | 842 | 13 | Database migration + backup |
+| `seam-monitor` | 569 | 12 | Latency + throughput + resources |
+| `seam-autoscale` | 328 | 10 | Auto-scaling |
+| `seam-tracing` | 662 | 19 | Distributed tracing + logging |
+| `seam-grpc` | 280 | 7 | gRPC + service mesh |
+| `seam-edge` | 260 | 5 | Cluster + edge computing |
+| `seam-multiregion` | 213 | 4 | Multi-region + CDN |
+| `seam-compliance` | 174 | 2 | Compliance audit |
+| `seam-session-distributed` | 316 | 4 | Distributed session store |
+| `seam-media` | 126 | 3 | Image/audio processing |
+| `seam-fs` | 96 | 1 | Filesystem abstraction |
+| `seam-subprocess` | 83 | 3 | Subprocess execution |
+| `seam-a11y` | 310 | 8 | Accessibility (WCAG) |
+| `seam-mobile` | 327 | 8 | Mobile adaptation |
+| `core-i18n` | 387 | 9 | Internationalization |
+
+### Application Layer (5 crates)
+
+| Crate | LOC | Tests | Purpose |
+|-------|-----|-------|---------|
+| `bundle-base` | 299 | 5 | Base assembly with feature flags |
+| `bundle-web-app` | 283 | 3 | axum HTTP surface |
+| `bundle-headless` | 23 | 0 | CLI runner |
+| `mcp-client` | 131 | 1 | MCP tool adapter |
+| `test-support` | 73 | 0 | Mock LLM + fixtures |
 
 ## Feature Flags
 
@@ -151,7 +206,7 @@ cargo build -p dsh-bundle-base --features "llm-openai,persistence-sqlite"
 
 | Tier | Count | Tool | Purpose |
 |------|-------|------|---------|
-| Unit | 112 | `cargo test` | Per-crate correctness |
+| Unit | 396 | `cargo test` | Per-crate correctness |
 | E2E | 22 | `cargo test -p dsh-e2e-tests` | Full-stack integration |
 | Snapshot | 3 | `insta` | Agent output regression |
 | Benchmark | 15 | `criterion` | Performance baselines |
