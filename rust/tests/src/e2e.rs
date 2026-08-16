@@ -274,7 +274,9 @@ async fn e2e_real_bash_tool() {
 
     // Verify the tool result was captured
     let log = runner.session_log();
-    let tool_result = log.iter().find(|e| matches!(e, SessionEvent::ToolResult { .. }));
+    let tool_result = log
+        .iter()
+        .find(|e| matches!(e, SessionEvent::ToolResult { .. }));
     assert!(tool_result.is_some());
     if let SessionEvent::ToolResult { content, .. } = tool_result.unwrap() {
         assert!(content.contains("hello from bash"));
@@ -440,8 +442,7 @@ async fn e2e_multi_turn_conversation() {
         },
     ]));
 
-    let mut runner = AgentRunner::new(llm, "test-model".into())
-        .with_max_turns(5);
+    let mut runner = AgentRunner::new(llm, "test-model".into()).with_max_turns(5);
     runner.register_tool(Arc::new(BashTool::new()));
 
     let responses = runner

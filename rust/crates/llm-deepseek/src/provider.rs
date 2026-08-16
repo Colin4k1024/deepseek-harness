@@ -382,7 +382,10 @@ mod tests {
         assert_eq!(api_msgs.len(), 1);
         assert!(api_msgs[0].content.is_none()); // empty content with tool_calls
         assert!(api_msgs[0].tool_calls.is_some());
-        assert_eq!(api_msgs[0].tool_calls.as_ref().unwrap()[0].function.name, "bash");
+        assert_eq!(
+            api_msgs[0].tool_calls.as_ref().unwrap()[0].function.name,
+            "bash"
+        );
     }
 
     #[test]

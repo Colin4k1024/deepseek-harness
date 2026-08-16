@@ -136,9 +136,10 @@ impl AgentRunner {
         loop {
             iteration += 1;
             if iteration > self.max_iterations {
-                return Err(LoopError::Llm(dsh_llm_adapter::LlmError::Api(
-                    format!("max iterations ({}) exceeded", self.max_iterations),
-                )));
+                return Err(LoopError::Llm(dsh_llm_adapter::LlmError::Api(format!(
+                    "max iterations ({}) exceeded",
+                    self.max_iterations
+                ))));
             }
 
             // Assemble prompt
@@ -153,7 +154,10 @@ impl AgentRunner {
             };
 
             // Estimate prompt tokens before moving messages
-            let _prompt_tokens: u64 = messages.iter().map(|m| estimate_tokens(&m.content) as u64).sum();
+            let _prompt_tokens: u64 = messages
+                .iter()
+                .map(|m| estimate_tokens(&m.content) as u64)
+                .sum();
 
             // Stream LLM response
             self.state = TurnState::Streaming;
@@ -168,7 +172,10 @@ impl AgentRunner {
 
             let mut stream = self.llm.stream(request).await?;
             let mut full_content = String::new();
-            let mut tool_calls_by_index: std::collections::HashMap<usize, (String, String, String)> = std::collections::HashMap::new();
+            let mut tool_calls_by_index: std::collections::HashMap<
+                usize,
+                (String, String, String),
+            > = std::collections::HashMap::new();
 
             while let Some(chunk) = stream.next().await {
                 let chunk = chunk?;
@@ -176,7 +183,9 @@ impl AgentRunner {
                 if let Some(calls) = chunk.tool_calls {
                     for call in calls {
                         // Extract index from id (format: "call_N" or just use 0)
-                        let index = call.id.strip_prefix("call_")
+                        let index = call
+                            .id
+                            .strip_prefix("call_")
                             .and_then(|s| s.parse::<usize>().ok())
                             .unwrap_or(0);
                         let entry = tool_calls_by_index.entry(index).or_insert_with(|| {
@@ -309,7 +318,11 @@ impl AgentRunner {
                         });
                     }
                 }
-                SessionEvent::ToolCall { id, name, arguments } => {
+                SessionEvent::ToolCall {
+                    id,
+                    name,
+                    arguments,
+                } => {
                     in_tool_call = true;
                     current_tool_calls.push(dsh_llm_adapter::ToolCall {
                         id: id.clone(),

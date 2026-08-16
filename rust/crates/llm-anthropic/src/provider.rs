@@ -433,7 +433,8 @@ mod tests {
 
     #[test]
     fn parse_sse_text_delta() {
-        let line = r#"data: {"type":"content_block_delta","delta":{"type":"text_delta","text":"hello"}}"#;
+        let line =
+            r#"data: {"type":"content_block_delta","delta":{"type":"text_delta","text":"hello"}}"#;
         let result = parse_sse_line(line).unwrap().unwrap();
         assert_eq!(result.delta, "hello");
         assert!(result.tool_calls.is_none());

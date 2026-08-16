@@ -12,7 +12,9 @@ impl Tool for EditFileTool {
     fn schema(&self) -> ToolSchema {
         ToolSchema {
             name: "edit_file".into(),
-            description: "Edit a file by replacing occurrences of a search string with a replacement string".into(),
+            description:
+                "Edit a file by replacing occurrences of a search string with a replacement string"
+                    .into(),
             parameters: json!({
                 "type": "object",
                 "properties": {
@@ -76,7 +78,9 @@ mod tests {
     #[tokio::test]
     async fn edit_file_replace() {
         let tmp = "/tmp/dsh_edit_test.txt";
-        tokio::fs::write(tmp, "hello world\nhello rust\n").await.unwrap();
+        tokio::fs::write(tmp, "hello world\nhello rust\n")
+            .await
+            .unwrap();
 
         let tool = EditFileTool;
         let result = tool

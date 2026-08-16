@@ -10,12 +10,14 @@ use std::sync::Arc;
 use clap::Parser;
 
 use dsh_core_agent_loop::AgentRunner;
-use dsh_core_session::persist;
 use dsh_core_session::event::SessionEvent;
+use dsh_core_session::persist;
 use dsh_llm_adapter::LlmAdapter;
 use dsh_llm_deepseek::DeepSeekAdapter;
 use dsh_seam_sandbox::{SandboxPolicy, SandboxResolution, resolve as resolve_sandbox};
-use dsh_seam_tools::{BashTool, EditFileTool, FileReadTool, FileWriteTool, ListFilesTool, SearchTool};
+use dsh_seam_tools::{
+    BashTool, EditFileTool, FileReadTool, FileWriteTool, ListFilesTool, SearchTool,
+};
 
 #[derive(Parser, Debug)]
 #[command(name = "dsh", about = "DeepSeek Harness — interactive agent runner")]
@@ -128,12 +130,17 @@ fn print_tool_result(content: &str, is_error: bool) {
 async fn run_single_turn(runner: &mut AgentRunner, task: &str) -> Result<String, String> {
     println!("\x1b[36m╭─ Agent ─────────────────────────────────\x1b[0m");
 
-    let response = runner.run_turn(task.to_string()).await.map_err(|e| e.to_string())?;
+    let response = runner
+        .run_turn(task.to_string())
+        .await
+        .map_err(|e| e.to_string())?;
 
     // Print tool calls from session log
     for event in runner.session_log() {
         match event {
-            SessionEvent::ToolCall { name, arguments, .. } => {
+            SessionEvent::ToolCall {
+                name, arguments, ..
+            } => {
                 print_tool_call(name, arguments);
             }
             SessionEvent::ToolResult { content, .. } => {
@@ -188,7 +195,9 @@ async fn run_interactive(runner: &mut AgentRunner, output_path: &str) {
                 // Print tool calls
                 for event in runner.session_log() {
                     match event {
-                        SessionEvent::ToolCall { name, arguments, .. } => {
+                        SessionEvent::ToolCall {
+                            name, arguments, ..
+                        } => {
                             print_tool_call(name, arguments);
                         }
                         SessionEvent::ToolResult { content, .. } => {
