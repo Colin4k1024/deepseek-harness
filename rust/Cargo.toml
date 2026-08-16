@@ -66,6 +66,7 @@ version = "0.1.0"
 edition = "2024"
 license = "MIT"
 repository = "https://github.com/deepseek-ai/deepseek-harness"
+description = "DeepSeek Harness — a plugin-based AI agent harness"
 
 [workspace.dependencies]
 # Async runtime
