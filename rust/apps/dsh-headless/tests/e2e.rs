@@ -125,7 +125,7 @@ async fn end_to_end_simple() {
     assert_eq!(response.unwrap(), "The answer is 42.");
 
     let log = runner.session_log();
-    assert_eq!(log.len(), 3); // UserMessage + AssistantChunk + AssistantMessage
+    assert_eq!(log.len(), 7); // TurnStart + UserMessage + StepStart + Chunk + Assistant + StepEnd + TurnEnd
 }
 
 #[tokio::test]
@@ -159,6 +159,7 @@ async fn end_to_end_with_tool() {
     assert_eq!(response.unwrap(), "The result is 5.");
 
     let log = runner.session_log();
-    // UserMessage + AssistantChunk(tool) + AssistantMessage(tool) + ToolCall + ToolResult + AssistantChunk(final) + AssistantMessage(final)
-    assert_eq!(log.len(), 7);
+    // TurnStart + UserMessage + StepStart(tool) + Chunk(tool) + AssistantMessage(tool) + ToolCall + ToolResult
+    // + StepEnd(tool) + StepStart(final) + Chunk(final) + AssistantMessage(final) + StepEnd(final) + TurnEnd
+    assert_eq!(log.len(), 13);
 }

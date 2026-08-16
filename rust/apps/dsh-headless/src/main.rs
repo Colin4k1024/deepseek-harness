@@ -98,9 +98,10 @@ fn create_runner(args: &Args) -> AgentRunner {
     runner
 }
 
-fn print_tool_call(name: &str, args: &serde_json::Value) {
+fn print_tool_call(name: &str, args: &str) {
+    let args_val: serde_json::Value = serde_json::from_str(args).unwrap_or_default();
     println!("\n  \x1b[33m⚡ {name}\x1b[0m");
-    if let Some(obj) = args.as_object() {
+    if let Some(obj) = args_val.as_object() {
         for (k, v) in obj {
             let val = match v {
                 serde_json::Value::String(s) => {

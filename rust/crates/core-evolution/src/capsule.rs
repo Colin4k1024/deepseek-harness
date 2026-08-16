@@ -101,10 +101,10 @@ mod tests {
     fn new_capsule() {
         let events = vec![
             SessionEvent::UserMessage {
-                content: "hello".into(),
+                seq: 1, time: 1000, content: "hello".into(), turn: Some(1), source: None,
             },
             SessionEvent::AssistantMessage {
-                content: "hi".into(),
+                seq: 2, time: 1001, turn: 1, step: 1, message: "hi".into(), usage: None, source_event_seqs: None,
             },
         ];
 
@@ -118,7 +118,7 @@ mod tests {
     #[test]
     fn verify_capsule() {
         let events = vec![SessionEvent::UserMessage {
-            content: "test".into(),
+            seq: 1, time: 1000, content: "test".into(), turn: Some(1), source: None,
         }];
         let mut capsule = Capsule::new("gene-1", "test", "do test", events, 0.8);
         assert!(!capsule.verified);

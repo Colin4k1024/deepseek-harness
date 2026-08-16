@@ -1,20 +1,33 @@
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use futures::StreamExt;
 
-use dsh_core_session::event::SessionEvent;
+use dsh_core_session::event::{SessionEvent, TurnEndReason};
+use dsh_core_system_prompt::SystemPrompt;
 use dsh_core_tools::Tool;
 use dsh_llm_adapter::{
     FunctionCall, FunctionDefinition, LlmAdapter, LlmRequest, Message, ToolCall as LlmToolCall,
     ToolDefinition,
 };
 
+use crate::hooks::{
+    AgentHooks, PostExecuteCtx, PreExecuteCtx, PreRequestCtx, PreStepCtx,
+};
 use crate::state::{LoopError, TurnState};
 
 /// Token counting estimate (4 chars ≈ 1 token).
 fn estimate_tokens(text: &str) -> usize {
     text.len().div_ceil(4)
+}
+
+/// Current Unix epoch milliseconds.
+fn now_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64
 }
 
 /// Token usage statistics.
@@ -28,18 +41,26 @@ pub struct TokenUsage {
 /// Agent loop runner.
 ///
 /// Drives the turn state machine: ClaimingInput → AssemblingPrompt →
-/// Streaming → ExecutingTools → Closed.
+/// Streaming → ExecutingTools → Closed.  Emits full lifecycle events
+/// (`turn/start`, `step/start`, `step/end`, `turn/end`) into the session log.
 pub struct AgentRunner {
     llm: Arc<dyn LlmAdapter>,
     tools: HashMap<String, Arc<dyn Tool>>,
     session_log: Vec<SessionEvent>,
     state: TurnState,
     model: String,
-    system_prompt: Option<String>,
+    system_prompt: SystemPrompt,
+    hooks: AgentHooks,
     max_context_tokens: usize,
     max_turns: usize,
     max_iterations: usize,
     token_usage: TokenUsage,
+
+    // Monotonic counters.
+    seq: u64,
+    current_turn: u64,
+    /// Whether the session is still in seed (construction) state.
+    is_seed: bool,
 }
 
 impl AgentRunner {
@@ -51,18 +72,48 @@ impl AgentRunner {
             session_log: Vec::new(),
             state: TurnState::ClaimingInput,
             model,
-            system_prompt: None,
+            system_prompt: SystemPrompt::new(),
+            hooks: AgentHooks::new(),
             max_context_tokens: 128000,
             max_turns: 10,
             max_iterations: 20,
             token_usage: TokenUsage::default(),
+            seq: 0,
+            current_turn: 0,
+            is_seed: true,
         }
     }
 
-    /// Set the system prompt.
+    /// Set the system prompt. Registers the prompt as a single section with order 0.
     pub fn with_system_prompt(mut self, prompt: String) -> Self {
-        self.system_prompt = Some(prompt);
+        self.system_prompt.register("default", 0, prompt);
         self
+    }
+
+    /// Access the system prompt assembler for section registration.
+    pub fn system_prompt(&mut self) -> &mut SystemPrompt {
+        &mut self.system_prompt
+    }
+
+    /// Access the hook registry for registering extension hooks.
+    pub fn hooks(&mut self) -> &mut AgentHooks {
+        &mut self.hooks
+    }
+
+    /// Whether the session is still in seed (construction) state.
+    /// Events logged before `end_seed()` are part of the seed.
+    pub fn is_seed(&self) -> bool {
+        self.is_seed
+    }
+
+    /// End the seed phase. Emits an `EndSeed` event and marks the session as live.
+    pub fn end_seed(&mut self) {
+        if self.is_seed {
+            let seq = self.next_seq();
+            let time = now_ms();
+            self.session_log.push(SessionEvent::EndSeed { seq, time });
+            self.is_seed = false;
+        }
     }
 
     /// Set max context tokens.
@@ -104,6 +155,12 @@ impl AgentRunner {
         &self.token_usage
     }
 
+    /// Increment seq and return the new value.
+    fn next_seq(&mut self) -> u64 {
+        self.seq += 1;
+        self.seq
+    }
+
     /// Build tool definitions for LLM request.
     fn build_tool_definitions(&self) -> Vec<ToolDefinition> {
         self.tools
@@ -126,42 +183,87 @@ impl AgentRunner {
     ///
     /// Returns the final assistant response text.
     pub async fn run_turn(&mut self, user_message: String) -> Result<String, LoopError> {
-        // Claim input
+        // ── Open turn ──────────────────────────────────────────────
+        self.current_turn += 1;
+        let turn = self.current_turn;
         self.state = TurnState::ClaimingInput;
+
+        let seq = self.next_seq();
+        self.session_log.push(SessionEvent::TurnStart {
+            seq,
+            time: now_ms(),
+            turn,
+        });
+
+        let seq = self.next_seq();
+        let time = now_ms();
+        let content = user_message;
         self.session_log.push(SessionEvent::UserMessage {
-            content: user_message,
+            seq,
+            time,
+            content,
+            turn: Some(turn),
+            source: None,
         });
 
         let mut iteration = 0;
+        let mut step = 0u64;
+
         loop {
             iteration += 1;
             if iteration > self.max_iterations {
+                let reason = TurnEndReason::Error {
+                    error: dsh_core_session::event::LlmFailure {
+                        message: format!("max iterations ({}) exceeded", self.max_iterations),
+                        code: "MAX_ITERATIONS".into(),
+                    },
+                };
+                let seq = self.next_seq();
+                let time = now_ms();
+                let reason_c = reason.clone();
+                self.session_log.push(SessionEvent::TurnEnd {
+                    seq,
+                    time,
+                    turn,
+                    reason: reason_c,
+                });
                 return Err(LoopError::Llm(dsh_llm_adapter::LlmError::Api(format!(
                     "max iterations ({}) exceeded",
                     self.max_iterations
                 ))));
             }
 
+            // ── Open step ──────────────────────────────────────────
+            step += 1;
+            let seq = self.next_seq();
+            let time = now_ms();
+            self.session_log.push(SessionEvent::StepStart {
+                seq,
+                time,
+                turn,
+                step,
+            });
+
             // Assemble prompt
             self.state = TurnState::AssemblingPrompt;
-            let messages = self.assemble_prompt();
-
-            // Build tools parameter
-            let tools = if self.tools.is_empty() {
+            let mut messages = self.assemble_prompt();
+            let mut tools = if self.tools.is_empty() {
                 None
             } else {
                 Some(self.build_tool_definitions())
             };
 
-            // Estimate prompt tokens before moving messages
-            let _prompt_tokens: u64 = messages
-                .iter()
-                .map(|m| estimate_tokens(&m.content) as u64)
-                .sum();
+            // Run pre-step hooks
+            self.hooks.run_pre_step(&mut PreStepCtx {
+                turn,
+                step,
+                messages: &mut messages,
+                tools: &mut tools,
+                iteration,
+            })?;
 
-            // Stream LLM response
-            self.state = TurnState::Streaming;
-            let request = LlmRequest {
+            // Build request
+            let mut request = LlmRequest {
                 model: self.model.clone(),
                 messages,
                 max_tokens: None,
@@ -170,33 +272,45 @@ impl AgentRunner {
                 tools,
             };
 
+            // Run pre-request hooks
+            self.hooks.run_pre_request(&mut PreRequestCtx {
+                request: &mut request,
+            })?;
+
+            // Stream LLM response
+            self.state = TurnState::Streaming;
+
             let mut stream = self.llm.stream(request).await?;
             let mut full_content = String::new();
-            let mut tool_calls_by_index: std::collections::HashMap<
-                usize,
-                (String, String, String),
-            > = std::collections::HashMap::new();
+            let mut tool_calls_by_index: HashMap<usize, (String, String, String)> = HashMap::new();
 
             while let Some(chunk) = stream.next().await {
                 let chunk = chunk?;
                 full_content.push_str(&chunk.delta);
                 if let Some(calls) = chunk.tool_calls {
                     for call in calls {
-                        // Extract index from id (format: "call_N" or just use 0)
                         let index = call
                             .id
                             .strip_prefix("call_")
                             .and_then(|s| s.parse::<usize>().ok())
                             .unwrap_or(0);
-                        let entry = tool_calls_by_index.entry(index).or_insert_with(|| {
-                            (call.id.clone(), call.function.name.clone(), String::new())
-                        });
-                        // Accumulate arguments
+                        let entry = tool_calls_by_index
+                            .entry(index)
+                            .or_insert_with(|| {
+                                (call.id.clone(), call.function.name.clone(), String::new())
+                            });
                         entry.2.push_str(&call.function.arguments);
                     }
                 }
+                let seq = self.next_seq();
+                let time = now_ms();
+                let delta = chunk.delta;
                 self.session_log.push(SessionEvent::AssistantChunk {
-                    content: chunk.delta,
+                    seq,
+                    time,
+                    turn,
+                    step,
+                    content: delta,
                 });
             }
 
@@ -211,18 +325,31 @@ impl AgentRunner {
                 .map(|(id, name, args)| LlmToolCall {
                     id,
                     call_type: "function".into(),
-                    function: FunctionCall {
-                        name,
-                        arguments: args,
-                    },
+                    function: FunctionCall { name, arguments: args },
                 })
                 .collect();
 
             // Check for structured tool calls
             if !tool_calls.is_empty() {
-                // Record the assistant's tool-call message
+                // Collect chunk seqs before pushing
+                let chunk_seqs: Vec<u64> = self
+                    .session_log
+                    .iter()
+                    .rev()
+                    .take_while(|e| matches!(e, SessionEvent::AssistantChunk { .. }))
+                    .map(|e| e.seq())
+                    .collect();
+
+                let seq = self.next_seq();
+                let time = now_ms();
                 self.session_log.push(SessionEvent::AssistantMessage {
-                    content: full_content,
+                    seq,
+                    time,
+                    turn,
+                    step,
+                    message: full_content,
+                    usage: None,
+                    source_event_seqs: Some(chunk_seqs),
                 });
 
                 // Execute each tool call
@@ -231,17 +358,39 @@ impl AgentRunner {
                         tool_name: call.function.name.clone(),
                     };
 
-                    let arguments: serde_json::Value =
-                        serde_json::from_str(&call.function.arguments).unwrap_or_default();
-
+                    let seq = self.next_seq();
+                    let time = now_ms();
+                    let call_id = call.id.clone();
+                    let name = call.function.name.clone();
+                    let arguments = call.function.arguments.clone();
                     self.session_log.push(SessionEvent::ToolCall {
-                        id: call.id.clone(),
-                        name: call.function.name.clone(),
-                        arguments: arguments.clone(),
+                        seq,
+                        time,
+                        turn,
+                        step,
+                        call_id,
+                        name,
+                        arguments,
                     });
 
-                    let result = if let Some(tool) = self.tools.get(&call.function.name) {
-                        tool.execute(arguments).await?
+                    let args_json: serde_json::Value =
+                        serde_json::from_str(&call.function.arguments).unwrap_or_default();
+
+                    // Run pre-execute hooks
+                    let mut approved = true;
+                    self.hooks.run_pre_execute(&mut PreExecuteCtx {
+                        tool_name: &call.function.name,
+                        arguments: &args_json,
+                        approved: &mut approved,
+                    })?;
+
+                    let result = if !approved {
+                        dsh_core_tools::ToolResult {
+                            content: "Tool execution denied".into(),
+                            is_error: true,
+                        }
+                    } else if let Some(tool) = self.tools.get(&call.function.name) {
+                        tool.execute(args_json.clone()).await?
                     } else {
                         dsh_core_tools::ToolResult {
                             content: format!("tool not found: {}", call.function.name),
@@ -249,20 +398,86 @@ impl AgentRunner {
                         }
                     };
 
+                    // Run post-execute hooks
+                    self.hooks.run_post_execute(&PostExecuteCtx {
+                        tool_name: &call.function.name,
+                        arguments: &args_json,
+                        result: &result,
+                    });
+
+                    let seq = self.next_seq();
+                    let time = now_ms();
+                    let call_id = call.id.clone();
+                    let content = result.content;
+                    let is_error = result.is_error;
                     self.session_log.push(SessionEvent::ToolResult {
-                        call_id: call.id.clone(),
-                        content: result.content,
+                        seq,
+                        time,
+                        turn,
+                        step,
+                        call_id,
+                        content,
+                        is_error,
+                        meta: None,
+                        source_event_seqs: None,
                     });
                 }
+
+                // ── Close step (tool call step) ────────────────────
+                let seq = self.next_seq();
+                let time = now_ms();
+                self.session_log.push(SessionEvent::StepEnd {
+                    seq,
+                    time,
+                    turn,
+                    step,
+                });
 
                 // Loop back to assemble prompt with the new tool results
                 continue;
             }
 
-            // No tool call — this is the final answer
+            // ── No tool call — final answer ────────────────────────
+            let chunk_seqs: Vec<u64> = self
+                .session_log
+                .iter()
+                .rev()
+                .take_while(|e| matches!(e, SessionEvent::AssistantChunk { .. }))
+                .map(|e| e.seq())
+                .collect();
+
+            let seq = self.next_seq();
+            let time = now_ms();
             self.session_log.push(SessionEvent::AssistantMessage {
-                content: full_content.clone(),
+                seq,
+                time,
+                turn,
+                step,
+                message: full_content.clone(),
+                usage: None,
+                source_event_seqs: Some(chunk_seqs),
             });
+
+            // ── Close step ─────────────────────────────────────────
+            let seq = self.next_seq();
+            let time = now_ms();
+            self.session_log.push(SessionEvent::StepEnd {
+                seq,
+                time,
+                turn,
+                step,
+            });
+
+            // ── Close turn ─────────────────────────────────────────
+            let seq = self.next_seq();
+            let time = now_ms();
+            self.session_log.push(SessionEvent::TurnEnd {
+                seq,
+                time,
+                turn,
+                reason: TurnEndReason::Completed,
+            });
+
             self.state = TurnState::Closed;
             return Ok(full_content);
         }
@@ -273,10 +488,11 @@ impl AgentRunner {
         let mut messages = Vec::new();
 
         // Inject system prompt if set
-        if let Some(ref system_prompt) = self.system_prompt {
+        let assembled = self.system_prompt.assemble();
+        if !assembled.is_empty() {
             messages.push(Message {
                 role: dsh_llm_adapter::Role::System,
-                content: system_prompt.clone(),
+                content: assembled,
                 tool_calls: None,
                 tool_call_id: None,
             });
@@ -289,7 +505,7 @@ impl AgentRunner {
 
         for event in &self.session_log {
             match event {
-                SessionEvent::UserMessage { content } => {
+                SessionEvent::UserMessage { content, .. } => {
                     messages.push(Message {
                         role: dsh_llm_adapter::Role::User,
                         content: content.clone(),
@@ -297,8 +513,7 @@ impl AgentRunner {
                         tool_call_id: None,
                     });
                 }
-                SessionEvent::AssistantMessage { content } => {
-                    // Flush any pending tool calls
+                SessionEvent::AssistantMessage { message, .. } => {
                     if !current_tool_calls.is_empty() {
                         messages.push(Message {
                             role: dsh_llm_adapter::Role::Assistant,
@@ -312,29 +527,31 @@ impl AgentRunner {
                     } else {
                         messages.push(Message {
                             role: dsh_llm_adapter::Role::Assistant,
-                            content: content.clone(),
+                            content: message.clone(),
                             tool_calls: None,
                             tool_call_id: None,
                         });
                     }
                 }
                 SessionEvent::ToolCall {
-                    id,
+                    call_id,
                     name,
                     arguments,
+                    ..
                 } => {
                     in_tool_call = true;
                     current_tool_calls.push(dsh_llm_adapter::ToolCall {
-                        id: id.clone(),
+                        id: call_id.clone(),
                         call_type: "function".into(),
                         function: dsh_llm_adapter::FunctionCall {
                             name: name.clone(),
-                            arguments: serde_json::to_string(arguments).unwrap_or_default(),
+                            arguments: arguments.clone(),
                         },
                     });
                 }
-                SessionEvent::ToolResult { call_id, content } => {
-                    // First flush the assistant message with tool calls
+                SessionEvent::ToolResult {
+                    call_id, content, ..
+                } => {
                     if !current_tool_calls.is_empty() {
                         messages.push(Message {
                             role: dsh_llm_adapter::Role::Assistant,
@@ -346,7 +563,6 @@ impl AgentRunner {
                         current_content.clear();
                         in_tool_call = false;
                     }
-                    // Then add the tool result
                     messages.push(Message {
                         role: dsh_llm_adapter::Role::Tool,
                         content: content.clone(),
@@ -354,13 +570,18 @@ impl AgentRunner {
                         tool_call_id: Some(call_id.clone()),
                     });
                 }
-                SessionEvent::AssistantChunk { content } => {
-                    if in_tool_call {
-                        // Don't accumulate chunks during tool calls
-                    } else {
+                SessionEvent::AssistantChunk { content, .. } => {
+                    if !in_tool_call {
                         current_content.push_str(content);
                     }
                 }
+                // Lifecycle events are not model-visible.
+                SessionEvent::TurnStart { .. }
+                | SessionEvent::TurnEnd { .. }
+                | SessionEvent::StepStart { .. }
+                | SessionEvent::StepEnd { .. }
+                | SessionEvent::RequestHeader { .. }
+                | SessionEvent::EndSeed { .. } => {}
             }
         }
 
@@ -380,15 +601,18 @@ impl AgentRunner {
     /// Estimate token count for the current session.
     pub fn estimate_tokens(&self) -> usize {
         let mut total = 0;
-        if let Some(ref sp) = self.system_prompt {
-            total += estimate_tokens(sp);
+        let assembled = self.system_prompt.assemble();
+        if !assembled.is_empty() {
+            total += estimate_tokens(&assembled);
         }
         for event in &self.session_log {
             match event {
-                SessionEvent::UserMessage { content }
-                | SessionEvent::AssistantMessage { content }
-                | SessionEvent::AssistantChunk { content } => {
+                SessionEvent::UserMessage { content, .. }
+                | SessionEvent::AssistantChunk { content, .. } => {
                     total += estimate_tokens(content);
+                }
+                SessionEvent::AssistantMessage { message, .. } => {
+                    total += estimate_tokens(message);
                 }
                 SessionEvent::ToolResult { content, .. } => {
                     total += estimate_tokens(content);
@@ -436,6 +660,19 @@ impl AgentRunner {
                 "deserialize error: {e}"
             )))
         })?;
+        // Re-derive seq from the last event.
+        if let Some(last) = log.last() {
+            self.seq = last.seq();
+        }
+        // Re-derive current_turn from TurnStart events.
+        self.current_turn = log
+            .iter()
+            .filter_map(|e| match e {
+                SessionEvent::TurnStart { turn, .. } => Some(*turn),
+                _ => None,
+            })
+            .max()
+            .unwrap_or(0);
         self.session_log = log;
         Ok(())
     }
@@ -447,7 +684,6 @@ mod tests {
 
     #[test]
     fn build_tool_definitions_empty() {
-        // Create a mock LLM adapter
         struct MockLlm;
         #[async_trait::async_trait]
         impl LlmAdapter for MockLlm {

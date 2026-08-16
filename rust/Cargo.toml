@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "crates/core-context",
     "crates/core-session",
+    "crates/core-system-prompt",
     "crates/core-tools",
     "crates/core-agent-loop",
     "crates/llm-adapter",
@@ -111,6 +112,7 @@ insta = { version = "1", features = ["json"] }
 # Internal crates
 dsh-core-context = { path = "crates/core-context" }
 dsh-core-session = { path = "crates/core-session" }
+dsh-core-system-prompt = { path = "crates/core-system-prompt" }
 dsh-core-tools = { path = "crates/core-tools" }
 dsh-core-agent-loop = { path = "crates/core-agent-loop" }
 dsh-llm-adapter = { path = "crates/llm-adapter" }

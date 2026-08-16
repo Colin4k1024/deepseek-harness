@@ -1,7 +1,40 @@
 use crate::event::SessionError;
 use crate::event::SessionEvent;
+use serde::{Deserialize, Serialize};
 use std::path::Path;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+
+/// Session metadata header.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SessionHeader {
+    pub id: String,
+    pub format_version: u32,
+    pub created_at: u64,
+    pub updated_at: u64,
+    pub title: String,
+    pub event_count: u64,
+    pub last_seq: u64,
+    pub is_seed: bool,
+}
+
+impl SessionHeader {
+    pub fn new(id: impl Into<String>) -> Self {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as u64;
+        Self {
+            id: id.into(),
+            format_version: 0,
+            created_at: now,
+            updated_at: now,
+            title: String::new(),
+            event_count: 0,
+            last_seq: 0,
+            is_seed: true,
+        }
+    }
+}
 
 /// Append a session event to a JSONL file.
 pub async fn append_event(path: &Path, event: &SessionEvent) -> Result<(), SessionError> {
@@ -40,11 +73,16 @@ mod tests {
         let path = tmp.path().with_extension("jsonl");
 
         let events = vec![
+            SessionEvent::TurnStart { seq: 1, time: 1000, turn: 1 },
             SessionEvent::UserMessage {
-                content: "hello".into(),
+                seq: 2, time: 1001, content: "hello".into(), turn: Some(1), source: None,
             },
             SessionEvent::AssistantMessage {
-                content: "hi".into(),
+                seq: 3, time: 1002, turn: 1, step: 1, message: "hi".into(), usage: None,
+                source_event_seqs: None,
+            },
+            SessionEvent::TurnEnd {
+                seq: 4, time: 1003, turn: 1, reason: crate::event::TurnEndReason::Completed,
             },
         ];
 
@@ -53,7 +91,7 @@ mod tests {
         }
 
         let loaded = load_events(&path).await.unwrap();
-        assert_eq!(loaded.len(), 2);
+        assert_eq!(loaded.len(), 4);
 
         // Cleanup
         let _ = tokio::fs::remove_file(&path).await;

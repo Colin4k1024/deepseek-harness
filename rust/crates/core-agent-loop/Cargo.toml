@@ -9,6 +9,7 @@ repository.workspace = true
 [dependencies]
 dsh-core-context = { workspace = true }
 dsh-core-session = { workspace = true }
+dsh-core-system-prompt = { workspace = true }
 dsh-core-tools = { workspace = true }
 dsh-llm-adapter = { workspace = true }
 tokio = { workspace = true }

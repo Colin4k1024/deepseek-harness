@@ -159,7 +159,7 @@ async fn e2e_agent_loop_simple() {
     let response = runner.run_turn("Hi".into()).await.unwrap();
     assert_eq!(response, "Hello, world!");
     assert_eq!(*runner.state(), TurnState::Closed);
-    assert_eq!(runner.session_log().len(), 3); // User + Chunk + Assistant
+    assert_eq!(runner.session_log().len(), 7); // TurnStart + UserMessage + StepStart + Chunk + Assistant + StepEnd + TurnEnd
 }
 
 #[tokio::test]
@@ -191,8 +191,9 @@ async fn e2e_agent_loop_with_tool() {
     let response = runner.run_turn("echo test".into()).await.unwrap();
     assert_eq!(response, "The echo said: echo: test");
     assert_eq!(*runner.state(), TurnState::Closed);
-    // User + Chunk(tool) + Assistant(tool) + ToolCall + ToolResult + Chunk(final) + Assistant(final)
-    assert_eq!(runner.session_log().len(), 7);
+    // TurnStart + UserMessage + StepStart(tool) + Chunk(tool) + AssistantMessage(tool) + ToolCall + ToolResult
+    // + StepEnd(tool) + StepStart(final) + Chunk(final) + AssistantMessage(final) + StepEnd(final) + TurnEnd
+    assert_eq!(runner.session_log().len(), 13);
 }
 
 #[tokio::test]
@@ -389,8 +390,9 @@ async fn e2e_real_bash_with_system_prompt() {
 
     // Verify system prompt was injected
     let log = runner.session_log();
-    // First message should be the user message (system prompt is in assemble_prompt)
-    assert!(matches!(&log[0], SessionEvent::UserMessage { .. }));
+    // First event is TurnStart, then UserMessage
+    assert!(matches!(&log[0], SessionEvent::TurnStart { .. }));
+    assert!(matches!(&log[1], SessionEvent::UserMessage { .. }));
 }
 
 #[tokio::test]

@@ -124,7 +124,7 @@ mod tests {
             .append(
                 &id,
                 &SessionEvent::UserMessage {
-                    content: "hello".into(),
+                    seq: 1, time: 1000, content: "hello".into(), turn: Some(1), source: None,
                 },
             )
             .await
@@ -133,7 +133,7 @@ mod tests {
             .append(
                 &id,
                 &SessionEvent::AssistantMessage {
-                    content: "hi".into(),
+                    seq: 2, time: 1001, turn: 1, step: 1, message: "hi".into(), usage: None, source_event_seqs: None,
                 },
             )
             .await
@@ -153,7 +153,7 @@ mod tests {
             .append(
                 &id,
                 &SessionEvent::UserMessage {
-                    content: "test".into(),
+                    seq: 1, time: 1000, content: "test".into(), turn: Some(1), source: None,
                 },
             )
             .await

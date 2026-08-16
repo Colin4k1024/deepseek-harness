@@ -1,0 +1,9 @@
+[package]
+name = "dsh-core-system-prompt"
+version = "0.1.0"
+edition = "2021"
+description = "L1: System prompt assembly — section registry, ordering, and variable interpolation"
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }

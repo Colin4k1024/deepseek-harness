@@ -213,7 +213,7 @@ mod tests {
             .append(
                 &id,
                 &SessionEvent::UserMessage {
-                    content: "hello".into(),
+                    seq: 1, time: 1000, content: "hello".into(), turn: Some(1), source: None,
                 },
             )
             .await
@@ -222,7 +222,7 @@ mod tests {
             .append(
                 &id,
                 &SessionEvent::AssistantMessage {
-                    content: "hi".into(),
+                    seq: 2, time: 1001, turn: 1, step: 1, message: "hi".into(), usage: None, source_event_seqs: None,
                 },
             )
             .await
@@ -241,7 +241,7 @@ mod tests {
             .append(
                 &id,
                 &SessionEvent::UserMessage {
-                    content: "test".into(),
+                    seq: 1, time: 1000, content: "test".into(), turn: Some(1), source: None,
                 },
             )
             .await
@@ -261,7 +261,7 @@ mod tests {
             .append(
                 &id,
                 &SessionEvent::UserMessage {
-                    content: "test".into(),
+                    seq: 1, time: 1000, content: "test".into(), turn: Some(1), source: None,
                 },
             )
             .await
@@ -283,7 +283,7 @@ mod tests {
                 .append(
                     &id,
                     &SessionEvent::UserMessage {
-                        content: format!("msg {i}"),
+                        seq: i as u64 + 1, time: 1000, content: format!("msg {i}"), turn: Some(1), source: None,
                     },
                 )
                 .await
@@ -294,7 +294,7 @@ mod tests {
         assert_eq!(events.len(), 10);
         // Verify ordering
         for (i, event) in events.iter().enumerate() {
-            if let SessionEvent::UserMessage { content } = event {
+            if let SessionEvent::UserMessage { content, .. } = event {
                 assert_eq!(content, &format!("msg {i}"));
             }
         }

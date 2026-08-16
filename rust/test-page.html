@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DSH Rust Backend — Live Test</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    background: #0d1117; color: #c9d1d9; display: flex; flex-direction: column;
+    height: 100vh; max-width: 900px; margin: 0 auto; padding: 16px;
+  }
+  header {
+    padding: 12px 0; border-bottom: 1px solid #30363d; margin-bottom: 16px;
+    display: flex; align-items: center; gap: 12px;
+  }
+  header h1 { font-size: 18px; font-weight: 600; color: #58a6ff; }
+  .status { font-size: 12px; padding: 2px 8px; border-radius: 10px; }
+  .status.online { background: #1a4425; color: #3fb950; }
+  .status.offline { background: #44201a; color: #f85149; }
+  #log {
+    flex: 1; overflow-y: auto; padding: 12px; border: 1px solid #30363d;
+    border-radius: 8px; background: #161b22; margin-bottom: 12px;
+    font-family: 'SF Mono', 'Menlo', monospace; font-size: 13px; line-height: 1.6;
+  }
+  .msg { margin-bottom: 10px; padding: 8px 12px; border-radius: 6px; }
+  .msg.user { background: #1f2937; color: #e6edf3; }
+  .msg.assistant { background: #0d419d; color: #e6edf3; }
+  .msg.system { background: #1a4425; color: #7ee787; font-size: 12px; }
+  .msg.error { background: #44201a; color: #f85149; }
+  .label { font-size: 11px; font-weight: 600; margin-bottom: 4px; opacity: 0.7; }
+  .input-area { display: flex; gap: 8px; }
+  #input {
+    flex: 1; padding: 10px 14px; border-radius: 8px; border: 1px solid #30363d;
+    background: #161b22; color: #c9d1d9; font-size: 14px; outline: none;
+  }
+  #input:focus { border-color: #58a6ff; }
+  button {
+    padding: 10px 20px; border-radius: 8px; border: 1px solid #30363d;
+    background: #238636; color: white; font-size: 14px; font-weight: 600;
+    cursor: pointer; white-space: nowrap;
+  }
+  button:hover { background: #2ea043; }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  .stream-toggle { display: flex; align-items: center; gap: 6px; font-size: 12px; margin-bottom: 8px; }
+  .stream-toggle input { accent-color: #58a6ff; }
+  .stats { font-size: 11px; color: #8b949e; margin-top: 4px; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>🦀 DSH Rust Backend</h1>
+  <span id="status" class="status checking">checking...</span>
+  <span style="font-size:12px;color:#8b949e">DeepSeek Chat · port 3000</span>
+</header>
+
+<div id="log">
+  <div class="msg system"><div class="label">SYSTEM</div>Connecting to Rust backend at http://localhost:3000...</div>
+</div>
+
+<div class="stream-toggle">
+  <input type="checkbox" id="stream" checked>
+  <label for="stream">SSE Streaming (real-time chunks)</label>
+</div>
+
+<div class="input-area">
+  <input id="input" type="text" placeholder="Type a message..." autofocus>
+  <button id="send" onclick="sendMessage()">Send</button>
+</div>
+
+<script>
+const API = 'http://localhost:3000';
+const log = document.getElementById('log');
+const input = document.getElementById('input');
+const sendBtn = document.getElementById('send');
+const statusEl = document.getElementById('status');
+const streamToggle = document.getElementById('stream');
+
+// Check backend health on load
+(async () => {
+  try {
+    const resp = await fetch(`${API}/health`);
+    const data = await resp.json();
+    statusEl.textContent = `● online (v${data.version})`;
+    statusEl.className = 'status online';
+    addMessage('system', `✅ Connected to Rust backend v${data.version}`);
+  } catch (e) {
+    statusEl.textContent = '● offline';
+    statusEl.className = 'status offline';
+    addMessage('error', `❌ Cannot connect to ${API}/health — is the backend running?`);
+  }
+})();
+
+function addMessage(role, content, stats) {
+  const div = document.createElement('div');
+  div.className = `msg ${role}`;
+  const label = role === 'user' ? 'YOU' : role === 'assistant' ? 'ASSISTANT' : role === 'error' ? 'ERROR' : 'SYSTEM';
+  div.innerHTML = `<div class="label">${label}</div>${escapeHtml(content)}`;
+  if (stats) div.innerHTML += `<div class="stats">${stats}</div>`;
+  log.appendChild(div);
+  log.scrollTop = log.scrollHeight;
+}
+
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+async function sendMessage() {
+  const message = input.value.trim();
+  if (!message) return;
+
+  addMessage('user', message);
+  input.value = '';
+  sendBtn.disabled = true;
+  input.disabled = true;
+
+  try {
+    if (streamToggle.checked) {
+      await sendStreaming(message);
+    } else {
+      await sendNonStreaming(message);
+    }
+  } catch (e) {
+    addMessage('error', `Request failed: ${e.message}`);
+  }
+
+  sendBtn.disabled = false;
+  input.disabled = false;
+  input.focus();
+}
+
+async function sendNonStreaming(message) {
+  const t0 = performance.now();
+  const resp = await fetch(`${API}/api/v1/chat`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message }),
+  });
+  const data = await resp.json();
+  const elapsed = (performance.now() - t0).toFixed(0);
+  if (data.error) {
+    addMessage('error', data.error);
+  } else {
+    addMessage('assistant', data.response, `${data.session_events} events · ${elapsed}ms`);
+  }
+}
+
+async function sendStreaming(message) {
+  const t0 = performance.now();
+  const resp = await fetch(`${API}/api/v1/chat/stream`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message }),
+  });
+
+  const reader = resp.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let assistantDiv = null;
+  let content = '';
+
+  // Create assistant message div
+  assistantDiv = document.createElement('div');
+  assistantDiv.className = 'msg assistant';
+  assistantDiv.innerHTML = '<div class="label">ASSISTANT (streaming...)</div><span class="stream-content"></span>';
+  log.appendChild(assistantDiv);
+  const contentSpan = assistantDiv.querySelector('.stream-content');
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+
+    // Parse SSE events
+    const lines = buffer.split('\n');
+    buffer = lines.pop() || ''; // Keep incomplete line
+
+    for (const line of lines) {
+      if (line.startsWith('data: ')) {
+        try {
+          const event = JSON.parse(line.slice(6));
+          if (event.event === 'chunk') {
+            content += event.data;
+            contentSpan.textContent = content;
+          } else if (event.event === 'done') {
+            const elapsed = (performance.now() - t0).toFixed(0);
+            assistantDiv.querySelector('.label').textContent = 'ASSISTANT';
+            assistantDiv.innerHTML = assistantDiv.innerHTML.replace(
+              '<span class="stream-content"></span>',
+              escapeHtml(content)
+            );
+            const statsEl = document.createElement('div');
+            statsEl.className = 'stats';
+            statsEl.textContent = `${event.data} · ${elapsed}ms`;
+            assistantDiv.appendChild(statsEl);
+          } else if (event.event === 'error') {
+            assistantDiv.className = 'msg error';
+            assistantDiv.querySelector('.label').textContent = 'ERROR';
+            contentSpan.textContent = event.data;
+          }
+        } catch (e) {
+          // Partial JSON, skip
+        }
+      }
+    }
+  }
+
+  log.scrollTop = log.scrollHeight;
+}
+
+// Enter key to send
+input.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    sendMessage();
+  }
+});
+</script>
+</body>
+</html>

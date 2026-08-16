@@ -251,7 +251,7 @@ mod tests {
             .append(
                 &id,
                 &SessionEvent::UserMessage {
-                    content: "hello".into(),
+                    seq: 1, time: 1000, content: "hello".into(), turn: Some(1), source: None,
                 },
             )
             .await

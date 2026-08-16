@@ -13,6 +13,12 @@ thiserror = { workspace = true }
 tokio = { workspace = true }
 async-trait = "0.1"
 dsh-core-tools = { path = "../core-tools" }
+dsh-core-agent-loop = { path = "../core-agent-loop" }
+dsh-llm-adapter = { path = "../llm-adapter" }
+reqwest = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true }
+futures = { workspace = true }
+dsh-test-support = { path = "../test-support" }
+tempfile = "3"
