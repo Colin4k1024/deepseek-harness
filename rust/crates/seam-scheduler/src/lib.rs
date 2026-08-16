@@ -1,7 +1,11 @@
-//! Task scheduling — priority queue, cron-like scheduling, task management.
+//! Task scheduling — priority queue, delayed queue, and recurring tasks.
 
+pub mod delayed_queue;
+pub mod queue_message;
 pub mod scheduler;
 pub mod task;
 
-pub use scheduler::{Scheduler, SchedulerConfig};
-pub use task::{ScheduledTask, TaskId, TaskPriority, TaskStatus};
+pub use delayed_queue::DelayedQueue;
+pub use queue_message::QueueMessage;
+pub use scheduler::Scheduler;
+pub use task::ScheduledTask;

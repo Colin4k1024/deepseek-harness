@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::sync::RwLock;
 use tokio::sync::broadcast;
 
-use super::message::BusMessage;
+use super::bus_message::BusMessage;
 
 /// Trait for message buses.
 pub trait MessageBus: Send + Sync {
@@ -69,7 +69,7 @@ impl MessageBus for InMemoryMessageBus {
 
 #[cfg(test)]
 mod tests {
-    use super::super::message::MessageType;
+    use super::super::bus_message::MessageType;
     use super::*;
 
     #[tokio::test]

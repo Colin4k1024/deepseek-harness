@@ -34,19 +34,14 @@ members = [
     "crates/seam-resilience",
     "crates/seam-canary",
     "crates/seam-migration",
-    "crates/seam-backup",
     "crates/seam-monitor",
-    "crates/seam-resources",
     "crates/seam-autoscale",
     "crates/seam-tracing",
-    "crates/seam-logging",
     "crates/seam-gateway",
     "crates/seam-traffic",
     "crates/seam-scheduler",
-    "crates/seam-queue",
     "crates/core-eventstore",
     "crates/core-cqrs",
-    "crates/seam-messagebus",
     "crates/core-saga",
     "crates/seam-grpc",
     "crates/core-federated",
@@ -146,19 +141,14 @@ dsh-seam-cache = { path = "crates/seam-cache" }
 dsh-seam-resilience = { path = "crates/seam-resilience" }
 dsh-seam-canary = { path = "crates/seam-canary" }
 dsh-seam-migration = { path = "crates/seam-migration" }
-dsh-seam-backup = { path = "crates/seam-backup" }
 dsh-seam-monitor = { path = "crates/seam-monitor" }
-dsh-seam-resources = { path = "crates/seam-resources" }
 dsh-seam-autoscale = { path = "crates/seam-autoscale" }
 dsh-seam-tracing = { path = "crates/seam-tracing" }
-dsh-seam-logging = { path = "crates/seam-logging" }
 dsh-seam-gateway = { path = "crates/seam-gateway" }
 dsh-seam-traffic = { path = "crates/seam-traffic" }
 dsh-seam-scheduler = { path = "crates/seam-scheduler" }
-dsh-seam-queue = { path = "crates/seam-queue" }
 dsh-core-eventstore = { path = "crates/core-eventstore" }
 dsh-core-cqrs = { path = "crates/core-cqrs" }
-dsh-seam-messagebus = { path = "crates/seam-messagebus" }
 dsh-core-saga = { path = "crates/core-saga" }
 dsh-seam-grpc = { path = "crates/seam-grpc" }
 dsh-core-federated = { path = "crates/core-federated" }

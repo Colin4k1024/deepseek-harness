@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
 
-use super::entry::{LogEntry, LogLevel};
+use super::log_entry::{LogEntry, LogLevel};
 
 /// Aggregator configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]

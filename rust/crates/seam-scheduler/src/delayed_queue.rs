@@ -5,7 +5,7 @@ use std::collections::VecDeque;
 use std::sync::Mutex;
 use std::time::Instant;
 
-use super::message::QueueMessage;
+use super::queue_message::QueueMessage;
 
 /// Queue configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
