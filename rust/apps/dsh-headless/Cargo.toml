@@ -1,0 +1,33 @@
+[package]
+name = "dsh-headless"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "dsh"
+path = "src/main.rs"
+
+[dependencies]
+dsh-core-context = { workspace = true }
+dsh-core-agent-loop = { workspace = true }
+dsh-core-session = { workspace = true }
+dsh-core-tools = { workspace = true }
+dsh-llm-adapter = { workspace = true }
+dsh-llm-deepseek = { workspace = true }
+dsh-seam-sandbox = { workspace = true }
+dsh-seam-tools = { workspace = true }
+dsh-seam-fs = { workspace = true }
+clap = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+serde_json = { workspace = true }
+async-trait = "0.1"
+
+[dev-dependencies]
+dsh-test-support = { workspace = true }
+dsh-core-context = { workspace = true }
+insta = { workspace = true }
+tokio = { workspace = true }
+futures = { workspace = true }

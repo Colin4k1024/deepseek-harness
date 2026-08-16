@@ -1,0 +1,13 @@
+[package]
+name = "dsh-core-knowledge"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+dsh-core-graph = { path = "../core-graph" }
+
+[dev-dependencies]

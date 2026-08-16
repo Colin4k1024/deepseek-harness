@@ -1,0 +1,38 @@
+# Docker Compose for dsh-rust production deployment.
+#
+# Usage:
+#   cp .env.example .env  # Edit with your API keys
+#   docker compose up -d
+#   docker compose logs -f dsh-web
+
+services:
+  dsh-web:
+    build:
+      context: ..
+      dockerfile: deploy/docker/Dockerfile
+    ports:
+      - "${DSH_PORT:-3000}:3000"
+    environment:
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY}
+      - RUST_LOG=${RUST_LOG:-info}
+    volumes:
+      - dsh-sessions:/data/sessions
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 512M
+        reservations:
+          cpus: '0.5'
+          memory: 128M
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  dsh-sessions:
+    driver: local

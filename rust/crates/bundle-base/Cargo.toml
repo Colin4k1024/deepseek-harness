@@ -1,0 +1,43 @@
+[package]
+name = "dsh-bundle-base"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[features]
+default = ["llm-deepseek", "sandbox", "persistence-jsonl"]
+
+# LLM providers
+llm-deepseek = ["dep:dsh-llm-deepseek"]
+llm-openai = ["dep:dsh-llm-openai"]
+llm-anthropic = ["dep:dsh-llm-anthropic"]
+
+# Capability seams
+sandbox = ["dep:dsh-seam-sandbox"]
+persistence-jsonl = ["dep:dsh-seam-persistence"]
+persistence-sqlite = ["dep:dsh-seam-persistence"]
+
+# MCP
+mcp = ["dep:dsh-mcp-client"]
+
+[dependencies]
+dsh-core-context = { workspace = true }
+dsh-core-session = { workspace = true }
+dsh-core-tools = { workspace = true }
+dsh-core-agent-loop = { workspace = true }
+dsh-llm-adapter = { workspace = true }
+dsh-seam-fs = { workspace = true }
+dsh-seam-subprocess = { workspace = true }
+
+# Optional deps gated by features
+dsh-llm-deepseek = { workspace = true, optional = true }
+dsh-llm-openai = { workspace = true, optional = true }
+dsh-llm-anthropic = { workspace = true, optional = true }
+dsh-seam-sandbox = { workspace = true, optional = true }
+dsh-seam-persistence = { workspace = true, optional = true }
+dsh-mcp-client = { workspace = true, optional = true }
+
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+thiserror = { workspace = true }

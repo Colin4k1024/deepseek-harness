@@ -1,0 +1,97 @@
+# Kubernetes deployment for dsh-rust.
+#
+# Usage:
+#   kubectl apply -f deploy/kubernetes/
+#
+# Prerequisites:
+#   kubectl create secret generic dsh-secrets --from-literal=DEEPSEEK_API_KEY=sk-xxx
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: dsh
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dsh-web
+  namespace: dsh
+  labels:
+    app: dsh-web
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: dsh-web
+  template:
+    metadata:
+      labels:
+        app: dsh-web
+    spec:
+      containers:
+        - name: dsh-web
+          image: dsh-rust:latest
+          ports:
+            - containerPort: 3000
+          env:
+            - name: DEEPSEEK_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: dsh-secrets
+                  key: DEEPSEEK_API_KEY
+            - name: RUST_LOG
+              value: "info"
+          resources:
+            requests:
+              cpu: 250m
+              memory: 128Mi
+            limits:
+              cpu: "2"
+              memory: 512Mi
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: dsh-web
+  namespace: dsh
+spec:
+  selector:
+    app: dsh-web
+  ports:
+    - port: 80
+      targetPort: 3000
+  type: ClusterIP
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: dsh-web
+  namespace: dsh
+  annotations:
+    nginx.ingress.kubernetes.io/rate-limit: "100"
+    nginx.ingress.kubernetes.io/rate-limit-window: "1m"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: dsh.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: dsh-web
+                port:
+                  number: 80

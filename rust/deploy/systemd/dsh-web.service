@@ -1,0 +1,32 @@
+[Unit]
+Description=dsh-rust Web Server
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=dsh
+Group=dsh
+WorkingDirectory=/opt/dsh
+ExecStart=/usr/local/bin/dsh-web --port 3000 --host 127.0.0.1
+EnvironmentFile=/etc/dsh/environment
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=dsh-web
+
+# Security hardening
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/data/sessions
+PrivateTmp=yes
+PrivateDevices=yes
+
+# Resource limits
+LimitNOFILE=65536
+LimitNPROC=4096
+
+[Install]
+WantedBy=multi-user.target

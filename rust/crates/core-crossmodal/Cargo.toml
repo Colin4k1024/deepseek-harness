@@ -1,0 +1,14 @@
+[package]
+name = "dsh-core-crossmodal"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+dsh-core-multimodal = { path = "../core-multimodal" }
+dsh-core-vectordb = { path = "../core-vectordb" }
+
+[dev-dependencies]

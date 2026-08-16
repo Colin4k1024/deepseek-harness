@@ -1,0 +1,192 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/core-context",
+    "crates/core-session",
+    "crates/core-tools",
+    "crates/core-agent-loop",
+    "crates/llm-adapter",
+    "crates/llm-deepseek",
+    "crates/seam-fs",
+    "crates/seam-sandbox",
+    "crates/seam-subprocess",
+    "crates/bundle-base",
+    "crates/bundle-web-app",
+    "crates/bundle-headless",
+    "crates/test-support",
+    "crates/mcp-client",
+    "crates/llm-openai",
+    "crates/llm-anthropic",
+    "crates/seam-persistence",
+    "crates/core-evolution",
+    "crates/core-orchestrator",
+    "crates/seam-observability",
+    "crates/seam-auth",
+    "crates/core-workflow",
+    "crates/core-memory",
+    "crates/seam-session-distributed",
+    "crates/core-plugin",
+    "crates/seam-multitenant",
+    "crates/core-i18n",
+    "crates/seam-a11y",
+    "crates/seam-mobile",
+    "crates/seam-cache",
+    "crates/seam-resilience",
+    "crates/seam-canary",
+    "crates/seam-migration",
+    "crates/seam-backup",
+    "crates/seam-monitor",
+    "crates/seam-resources",
+    "crates/seam-autoscale",
+    "crates/seam-tracing",
+    "crates/seam-logging",
+    "crates/seam-gateway",
+    "crates/seam-traffic",
+    "crates/seam-scheduler",
+    "crates/seam-queue",
+    "crates/core-eventstore",
+    "crates/core-cqrs",
+    "crates/seam-messagebus",
+    "crates/core-saga",
+    "crates/seam-mesh",
+    "crates/seam-grpc",
+    "crates/seam-cluster",
+    "crates/core-federated",
+    "crates/seam-edge",
+    "crates/core-stream",
+    "crates/core-incremental",
+    "crates/core-learning",
+    "crates/seam-cdn",
+    "crates/seam-multiregion",
+    "crates/seam-compliance",
+    "crates/core-graph",
+    "crates/core-knowledge",
+    "crates/core-reasoning",
+    "crates/core-vectordb",
+    "crates/core-embedding",
+    "crates/core-rag",
+    "crates/core-multimodal",
+    "crates/seam-media",
+    "crates/core-crossmodal",
+    "crates/seam-tools",
+    "tests",
+    "benches",
+    "apps/dsh-headless",
+    "apps/dsh-web",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+repository = "https://github.com/deepseek-ai/deepseek-harness"
+
+[workspace.dependencies]
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+futures = "0.3"
+bytes = "1"
+async-stream = "0.3"
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Error handling
+thiserror = "2"
+anyhow = "1"
+
+# Concurrency
+dashmap = "6"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = "0.3"
+
+# CLI
+clap = { version = "4", features = ["derive", "env"] }
+
+# HTTP
+reqwest = { version = "0.12", features = ["stream", "json"] }
+axum = { version = "0.8", features = ["macros"] }
+tower-http = { version = "0.6", features = ["cors", "trace"] }
+
+# MCP
+rust-mcp-sdk = { version = "1.0", features = ["macros"] }
+
+# Database
+rusqlite = { version = "0.35", features = ["bundled"] }
+uuid = { version = "1", features = ["v4"] }
+
+# Testing
+insta = { version = "1", features = ["json"] }
+
+# Internal crates
+dsh-core-context = { path = "crates/core-context" }
+dsh-core-session = { path = "crates/core-session" }
+dsh-core-tools = { path = "crates/core-tools" }
+dsh-core-agent-loop = { path = "crates/core-agent-loop" }
+dsh-llm-adapter = { path = "crates/llm-adapter" }
+dsh-llm-deepseek = { path = "crates/llm-deepseek" }
+dsh-seam-fs = { path = "crates/seam-fs" }
+dsh-seam-sandbox = { path = "crates/seam-sandbox" }
+dsh-seam-subprocess = { path = "crates/seam-subprocess" }
+dsh-bundle-base = { path = "crates/bundle-base" }
+dsh-bundle-web-app = { path = "crates/bundle-web-app" }
+dsh-bundle-headless = { path = "crates/bundle-headless" }
+dsh-test-support = { path = "crates/test-support" }
+dsh-mcp-client = { path = "crates/mcp-client" }
+dsh-llm-openai = { path = "crates/llm-openai" }
+dsh-llm-anthropic = { path = "crates/llm-anthropic" }
+dsh-seam-persistence = { path = "crates/seam-persistence" }
+dsh-core-evolution = { path = "crates/core-evolution" }
+dsh-core-orchestrator = { path = "crates/core-orchestrator" }
+dsh-seam-observability = { path = "crates/seam-observability" }
+dsh-seam-auth = { path = "crates/seam-auth" }
+dsh-core-workflow = { path = "crates/core-workflow" }
+dsh-core-memory = { path = "crates/core-memory" }
+dsh-seam-session-distributed = { path = "crates/seam-session-distributed" }
+dsh-core-plugin = { path = "crates/core-plugin" }
+dsh-seam-multitenant = { path = "crates/seam-multitenant" }
+dsh-core-i18n = { path = "crates/core-i18n" }
+dsh-seam-a11y = { path = "crates/seam-a11y" }
+dsh-seam-mobile = { path = "crates/seam-mobile" }
+dsh-seam-cache = { path = "crates/seam-cache" }
+dsh-seam-resilience = { path = "crates/seam-resilience" }
+dsh-seam-canary = { path = "crates/seam-canary" }
+dsh-seam-migration = { path = "crates/seam-migration" }
+dsh-seam-backup = { path = "crates/seam-backup" }
+dsh-seam-monitor = { path = "crates/seam-monitor" }
+dsh-seam-resources = { path = "crates/seam-resources" }
+dsh-seam-autoscale = { path = "crates/seam-autoscale" }
+dsh-seam-tracing = { path = "crates/seam-tracing" }
+dsh-seam-logging = { path = "crates/seam-logging" }
+dsh-seam-gateway = { path = "crates/seam-gateway" }
+dsh-seam-traffic = { path = "crates/seam-traffic" }
+dsh-seam-scheduler = { path = "crates/seam-scheduler" }
+dsh-seam-queue = { path = "crates/seam-queue" }
+dsh-core-eventstore = { path = "crates/core-eventstore" }
+dsh-core-cqrs = { path = "crates/core-cqrs" }
+dsh-seam-messagebus = { path = "crates/seam-messagebus" }
+dsh-core-saga = { path = "crates/core-saga" }
+dsh-seam-mesh = { path = "crates/seam-mesh" }
+dsh-seam-grpc = { path = "crates/seam-grpc" }
+dsh-seam-cluster = { path = "crates/seam-cluster" }
+dsh-core-federated = { path = "crates/core-federated" }
+dsh-seam-edge = { path = "crates/seam-edge" }
+dsh-core-stream = { path = "crates/core-stream" }
+dsh-core-incremental = { path = "crates/core-incremental" }
+dsh-core-learning = { path = "crates/core-learning" }
+dsh-seam-cdn = { path = "crates/seam-cdn" }
+dsh-seam-multiregion = { path = "crates/seam-multiregion" }
+dsh-seam-compliance = { path = "crates/seam-compliance" }
+dsh-core-graph = { path = "crates/core-graph" }
+dsh-core-knowledge = { path = "crates/core-knowledge" }
+dsh-core-reasoning = { path = "crates/core-reasoning" }
+dsh-core-vectordb = { path = "crates/core-vectordb" }
+dsh-core-embedding = { path = "crates/core-embedding" }
+dsh-core-rag = { path = "crates/core-rag" }
+dsh-core-multimodal = { path = "crates/core-multimodal" }
+dsh-seam-media = { path = "crates/seam-media" }
+dsh-core-crossmodal = { path = "crates/core-crossmodal" }
+dsh-seam-tools = { path = "crates/seam-tools" }

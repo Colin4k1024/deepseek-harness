@@ -1,0 +1,39 @@
+---
+source: apps/dsh-headless/tests/e2e.rs
+expression: log_json
+---
+[
+  {
+    "type": "UserMessage",
+    "content": "What is 2+3?"
+  },
+  {
+    "type": "AssistantChunk",
+    "content": "{\"tool_call\": {\"name\": \"calc\", \"arguments\": {\"expr\": \"2+3\"}}}"
+  },
+  {
+    "type": "AssistantMessage",
+    "content": "{\"tool_call\": {\"name\": \"calc\", \"arguments\": {\"expr\": \"2+3\"}}}"
+  },
+  {
+    "type": "ToolCall",
+    "id": "call_3",
+    "name": "calc",
+    "arguments": {
+      "expr": "2+3"
+    }
+  },
+  {
+    "type": "ToolResult",
+    "call_id": "call_3",
+    "content": "5"
+  },
+  {
+    "type": "AssistantChunk",
+    "content": "The result is 5."
+  },
+  {
+    "type": "AssistantMessage",
+    "content": "The result is 5."
+  }
+]

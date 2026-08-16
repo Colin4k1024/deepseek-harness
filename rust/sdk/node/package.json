@@ -1,0 +1,16 @@
+{
+  "name": "@deepseek-ai/dsh-sdk",
+  "version": "0.1.0",
+  "description": "Node.js SDK for DeepSeek Harness",
+  "main": "index.js",
+  "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/deepseek-ai/deepseek-harness",
+    "directory": "sdk/node"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

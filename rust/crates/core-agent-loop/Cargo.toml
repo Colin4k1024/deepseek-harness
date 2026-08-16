@@ -1,0 +1,24 @@
+[package]
+name = "dsh-core-agent-loop"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+dsh-core-context = { workspace = true }
+dsh-core-session = { workspace = true }
+dsh-core-tools = { workspace = true }
+dsh-llm-adapter = { workspace = true }
+tokio = { workspace = true }
+futures = { workspace = true }
+tracing = { workspace = true }
+thiserror = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+async-trait = "0.1"
+
+[dev-dependencies]
+dsh-test-support = { workspace = true }
+dsh-core-context = { workspace = true }
+insta = { workspace = true }
+tokio = { workspace = true }

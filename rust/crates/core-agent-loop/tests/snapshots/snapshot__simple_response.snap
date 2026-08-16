@@ -1,0 +1,18 @@
+---
+source: crates/core-agent-loop/tests/snapshot.rs
+expression: log_json
+---
+[
+  {
+    "type": "UserMessage",
+    "content": "Hi"
+  },
+  {
+    "type": "AssistantChunk",
+    "content": "Hello, world!"
+  },
+  {
+    "type": "AssistantMessage",
+    "content": "Hello, world!"
+  }
+]

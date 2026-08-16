@@ -1,0 +1,17 @@
+[package]
+name = "dsh-seam-fs"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+dsh-core-context = { workspace = true }
+serde = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+async-trait = "0.1"
+glob = "0.3"
+
+[dev-dependencies]
+tokio = { workspace = true }
+tempfile = "3"

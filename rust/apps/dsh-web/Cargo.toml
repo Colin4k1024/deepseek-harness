@@ -1,0 +1,27 @@
+[package]
+name = "dsh-web"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "dsh-web"
+path = "src/main.rs"
+
+[dependencies]
+dsh-bundle-base = { workspace = true }
+dsh-bundle-web-app = { workspace = true }
+dsh-core-context = { workspace = true }
+dsh-llm-adapter = { workspace = true }
+dsh-llm-deepseek = { workspace = true }
+clap = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+axum = { workspace = true }
+
+[dev-dependencies]
+dsh-test-support = { workspace = true }
+tokio = { workspace = true }
+reqwest = { workspace = true }
+serde_json = { workspace = true }

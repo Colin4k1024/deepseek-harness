@@ -1,0 +1,19 @@
+[package]
+name = "dsh-core-plugin"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+dsh-core-context = { workspace = true }
+dsh-core-tools = { workspace = true }
+dsh-llm-adapter = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+thiserror = { workspace = true }
+async-trait = "0.1"
+
+[dev-dependencies]
+tokio = { workspace = true }

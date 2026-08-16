@@ -1,0 +1,39 @@
+---
+source: crates/core-agent-loop/tests/snapshot.rs
+expression: log_json
+---
+[
+  {
+    "type": "UserMessage",
+    "content": "Please echo 'test input'"
+  },
+  {
+    "type": "AssistantChunk",
+    "content": "{\"tool_call\": {\"name\": \"echo\", \"arguments\": {\"text\": \"test input\"}}}"
+  },
+  {
+    "type": "AssistantMessage",
+    "content": "{\"tool_call\": {\"name\": \"echo\", \"arguments\": {\"text\": \"test input\"}}}"
+  },
+  {
+    "type": "ToolCall",
+    "id": "call_3",
+    "name": "echo",
+    "arguments": {
+      "text": "test input"
+    }
+  },
+  {
+    "type": "ToolResult",
+    "call_id": "call_3",
+    "content": "echo: test input"
+  },
+  {
+    "type": "AssistantChunk",
+    "content": "Tool said: echo: test input"
+  },
+  {
+    "type": "AssistantMessage",
+    "content": "Tool said: echo: test input"
+  }
+]
