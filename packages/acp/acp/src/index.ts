@@ -137,6 +137,10 @@ export function apply(ctx: Context, config: AcpConfig): void {
     if (record?.ownsSession(session) === true) record.onSessionEvent(session, event)
   })
 
+  ctx.on('agent/assistant-stream', ({ agent, frame }) => {
+    ownedRecord(agent)?.onAssistantStreamFrame(frame)
+  })
+
   ctx.on('agent/inbox/claimed', ({ agent, message, turn }) => {
     ownedRecord(agent)?.onInboxClaimed(message, turn)
   })

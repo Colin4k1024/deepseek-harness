@@ -1,0 +1,19 @@
+# Bilingual-pair consistency record for 2026-10-14-acp-live-assistant-updates.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-10-14-acp-live-assistant-updates.md
+/agent-note-acp-live-assistant-updates:
+  en: 7752f55f24e64cc6
+  zh: a375161de645fb3c
+/agent-note-acp-live-assistant-updates/problem:
+  en: efeb7b3c599070c4
+  zh: da080fccd947c117
+/agent-note-acp-live-assistant-updates/decision:
+  en: f8413879a9292776
+  zh: 6a89a448fbecd0d2
+/agent-note-acp-live-assistant-updates/alternatives-considered:
+  en: 4b731d512bbc2293
+  zh: 6cb897940642d13c
+/agent-note-acp-live-assistant-updates/consequences:
+  en: 7660a747ad321bbd
+  zh: cc390fd86e8c5d36

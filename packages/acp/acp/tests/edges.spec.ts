@@ -33,7 +33,7 @@ describe('ACP automation output boundary', () => {
     harness = undefined
   })
 
-  it('emits committed reasoning, generic tool lifecycle, usage, and final text in order', async () => {
+  it('emits reasoning, generic tool lifecycle, usage, and live final text in order', async () => {
     harness = await makeBridgeHarness({ script: [toolCallResponse(), textResponse('done')] })
     harness.ctx.tools.register(defineContentToolFixture({
       name: 'echo',
@@ -51,6 +51,9 @@ describe('ACP automation output boundary', () => {
       'usage_update',
       'tool_call',
       'tool_call_update',
+      'agent_message_chunk',
+      'agent_message_chunk',
+      'agent_message_chunk',
       'agent_message_chunk',
       'usage_update',
     ])
@@ -75,15 +78,17 @@ describe('ACP automation output boundary', () => {
     })
     expect(harness.updates[4]).toMatchObject({
       sessionUpdate: 'agent_message_chunk',
-      content: { type: 'text', text: 'done' },
+      content: { type: 'text', text: 'd' },
     })
     expect('messageId' in harness.updates[4]!).toBe(true)
-    expect(harness.updates[5]).toMatchObject({
+    expect(harness.updates.slice(4, 8).map(update => update.sessionUpdate === 'agent_message_chunk'
+      && update.content.type === 'text' ? update.content.text : '').join('')).toBe('done')
+    expect(harness.updates[8]).toMatchObject({
       sessionUpdate: 'usage_update',
       size: 1_024,
     })
-    if (harness.updates[5]?.sessionUpdate !== 'usage_update') throw new Error('expected usage update')
-    expect(typeof harness.updates[5].used).toBe('number')
+    if (harness.updates[8]?.sessionUpdate !== 'usage_update') throw new Error('expected usage update')
+    expect(typeof harness.updates[8].used).toBe('number')
   })
 
   it('ignores events from agents the bridge does not own', async () => {
@@ -109,10 +114,8 @@ describe('ACP automation output boundary', () => {
     await agent.whenIdle()
     await vi.waitFor(() => { expect(harness!.updates.at(-1)?.sessionUpdate).toBe('usage_update') })
 
-    expect(harness.updates[0]).toMatchObject({
-      sessionUpdate: 'agent_message_chunk',
-      content: { type: 'text', text: 'external' },
-    })
+    expect(harness.updates.flatMap(update => update.sessionUpdate === 'agent_message_chunk'
+      && update.content.type === 'text' ? [update.content.text] : []).join('')).toBe('external')
     expect('messageId' in harness.updates[0]!).toBe(true)
   })
 

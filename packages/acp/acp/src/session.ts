@@ -10,14 +10,14 @@ import {
   type SessionNotification,
   type StopReason,
 } from '@agentclientprotocol/sdk'
-import type { Agent, AgentHandle, AgentOptions, AgentStatus, ModelSelection } from '@deepseek-ai/dsh-agent'
+import type { Agent, AgentHandle, AgentOptions, AgentStatus, AssistantStreamFrame, ModelSelection } from '@deepseek-ai/dsh-agent'
 import { createUserMessage, errorChain, type UserMessage } from '@deepseek-ai/dsh-llm'
 import { type Session, type SessionEvent, type SessionId, type TurnEndReason } from '@deepseek-ai/dsh-session'
 import { AcpContentError, admitAcpPrompt } from './content.ts'
 import { turnEndToStopReason } from './codec.ts'
 import { mountAcpMcpServers } from './mcp.ts'
 import { AcpModelControl } from './model-control.ts'
-import { assistantUpdates, toolCallUpdate, toolResultUpdate } from './updates.ts'
+import { assistantChunkUpdate, assistantUpdates, toolCallUpdate, toolResultUpdate, type StreamedBlocks } from './updates.ts'
 
 /** Subagent completion and teardown without depending on the subagent package. */
 interface SubagentLifecycle {
@@ -106,6 +106,8 @@ export class AcpSession {
   private inflight: InflightPrompt | undefined
   private closing: Promise<void> | undefined
   private readonly pendingSelections = new Map<string, ModelSelection>()
+  private readonly streamedBlocks = new Map<string, StreamedBlocks>()
+  private readonly streamAttempts = new Map<string, string>()
 
   private constructor(
     private readonly ctx: Context,
@@ -346,6 +348,46 @@ export class AcpSession {
    * @param session - exact event-owning Session.
    * @param event - committed durable event.
    */
+  onAssistantStreamFrame(frame: AssistantStreamFrame): void {
+    if (frame.type === 'start') {
+      this.streamAttempts.set(frame.attemptId, `${frame.turn}:${frame.step}`)
+      return
+    }
+    if (frame.type === 'end') {
+      this.streamAttempts.delete(frame.attemptId)
+      return
+    }
+    const key = this.streamAttempts.get(frame.attemptId)
+    if (key === undefined) return
+    const chunk = frame.chunk
+    this.outputTail = this.outputTail.then(async () => {
+      if (chunk.type === 'block-start') {
+        let blocks = this.streamedBlocks.get(key)
+        if (blocks?.has(chunk.index)) blocks.clear()
+        if (chunk.blockType !== 'text' && chunk.blockType !== 'reasoning') return
+        if (blocks === undefined) {
+          blocks = new Map()
+          this.streamedBlocks.set(key, blocks)
+        }
+        blocks.set(chunk.index, { type: chunk.blockType, text: '' })
+      }
+      const update = assistantChunkUpdate(chunk, `${this.agent.session.id}:${key}`)
+      if (update === undefined) return
+      await this.notify({ sessionId: this.agent.session.id, update })
+      if (chunk.type !== 'text-delta' && chunk.type !== 'reasoning-delta') return
+      let blocks = this.streamedBlocks.get(key)
+      if (blocks === undefined) {
+        blocks = new Map()
+        this.streamedBlocks.set(key, blocks)
+      }
+      const type = chunk.type === 'text-delta' ? 'text' : 'reasoning'
+      const prior = blocks.get(chunk.index)
+      blocks.set(chunk.index, { type, text: (prior?.text ?? '') + chunk.text })
+    }).catch((error: unknown) => {
+      this.ctx.logger.warn(`acp: live assistant output delivery failed: ${errorChain(error)}`)
+    })
+  }
+
   onSessionEvent(session: Session, event: SessionEvent): void {
     if (event.type === 'turn/start' && this.inflight?.turn !== undefined) {
       this.inflight.turn = event.data.turn
@@ -354,17 +396,23 @@ export class AcpSession {
     try {
       if (event.type === 'assistant/message') {
         const inflight = this.inflight?.turn === event.data.turn ? this.inflight : undefined
+        const key = `${event.data.turn}:${event.data.step}`
         const previous = this.outputTail
         const delivery = previous.then(async () => {
-          for (const update of await assistantUpdates(this.ctx, session, event)) {
+          const streamed = this.streamedBlocks.get(key)
+          for (const update of await assistantUpdates(this.ctx, session, event, streamed, streamed === undefined ? undefined : `${session.id}:${key}`)) {
             await this.notify({ sessionId: this.agent.session.id, update })
           }
+          this.streamedBlocks.delete(key)
         })
         this.outputTail = delivery.catch((error: unknown) => {
           const failure = error as Error
           if (inflight !== undefined) inflight.outputError ??= failure
           this.ctx.logger.warn(`acp: assistant output conversion failed: ${errorChain(error)}`)
         })
+      } else if (event.type === 'step/end') {
+        const key = `${event.data.turn}:${event.data.step}`
+        this.outputTail = this.outputTail.then(() => { this.streamedBlocks.delete(key) })
       } else if (event.type === 'tool/call') {
         const previous = this.outputTail
         this.outputTail = previous
