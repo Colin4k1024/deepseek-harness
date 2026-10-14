@@ -76,7 +76,7 @@ describe('automation-only ACP bridge', () => {
     await expect(harness.client.authenticate({ methodId: 'unused' })).resolves.toEqual({})
   })
 
-  it('creates a session, emits one committed answer, and settles the prompt', async () => {
+  it('creates a session, emits live answer chunks, and settles the prompt', async () => {
     harness = await makeBridgeHarness({ script: [textResponse('hello there')] })
     await harness.client.initialize({ protocolVersion: PROTOCOL_VERSION, clientCapabilities: {} })
     const { sessionId } = await harness.client.newSession({ cwd: process.cwd(), mcpServers: [] })
@@ -87,10 +87,8 @@ describe('automation-only ACP bridge', () => {
 
     expect(result.stopReason).toBe('end_turn')
     await vi.waitFor(() => { expect(harness!.updates.at(-1)?.sessionUpdate).toBe('usage_update') })
-    expect(harness.updates[0]).toMatchObject({
-      sessionUpdate: 'agent_message_chunk',
-      content: { type: 'text', text: 'hello there' },
-    })
+    expect(harness.updates.flatMap(update => update.sessionUpdate === 'agent_message_chunk'
+      && update.content.type === 'text' ? [update.content.text] : []).join('')).toBe('hello there')
     expect('messageId' in harness.updates[0]!).toBe(true)
     if ('messageId' in harness.updates[0]!) expect(typeof harness.updates[0].messageId).toBe('string')
     expect(harness.ctx.agents.get(SessionId(sessionId))?.session.header.cwd).toBe(process.cwd())

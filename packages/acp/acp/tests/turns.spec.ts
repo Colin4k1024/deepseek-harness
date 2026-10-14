@@ -67,6 +67,42 @@ describe('ACP prompt lifecycle', () => {
     harness = undefined
   })
 
+  it('publishes text deltas before the turn ends and does not repeat committed text', async () => {
+    harness = await makeBridgeHarness({ script: [textResponse('abc')] })
+    const sessionId = await newSession(harness)
+    await harness.client.prompt({ sessionId, prompt: [{ type: 'text', text: 'go' }] })
+    expect(harness.updates.filter(update => update.sessionUpdate === 'agent_message_chunk'))
+      .toMatchObject([
+        { content: { type: 'text', text: 'a' } },
+        { content: { type: 'text', text: 'b' } },
+        { content: { type: 'text', text: 'c' } },
+      ])
+    expect(messageText(harness)).toBe('abc')
+  })
+
+  it('delivers a live delta while the model is still running', async () => {
+    harness = await makeBridgeHarness({ script: ['hang'] })
+    const sessionId = await newSession(harness)
+    const prompt = harness.client.prompt({ sessionId, prompt: [{ type: 'text', text: 'go' }] })
+    await vi.waitFor(() => { expect(messageText(harness!)).toBe('partial') })
+    await harness.client.cancel({ sessionId })
+    await expect(prompt).resolves.toEqual({ stopReason: 'cancelled' })
+    expect(messageText(harness)).toBe('partial')
+  })
+
+  it('reconciles live text when stream indexes differ from committed positions', async () => {
+    harness = await makeBridgeHarness({ script: [[
+      { type: 'block-start', index: 9, blockType: 'text' },
+      { type: 'text-delta', index: 9, text: 'ordered' },
+      { type: 'block-end', index: 9, block: { type: 'text', text: 'ordered' } },
+      { type: 'finish', reason: { kind: 'stop' } },
+    ]] })
+    const sessionId = await newSession(harness)
+    await harness.client.prompt({ sessionId, prompt: [{ type: 'text', text: 'go' }] })
+    expect(messageText(harness)).toBe('ordered')
+    expect(harness.updates.filter(update => update.sessionUpdate === 'agent_message_chunk')).toHaveLength(1)
+  })
+
   it('reports a max-token turn without losing its committed text', async () => {
     harness = await makeBridgeHarness({ script: [maxTokensResponse('cut off')] })
     const sessionId = await newSession(harness)
@@ -175,12 +211,12 @@ describe('ACP prompt lifecycle', () => {
     expect(harness.updates).toEqual([])
   })
 
-  it('rejects a failed turn and never publishes its partial chunks', async () => {
+  it('rejects a failed turn after publishing its partial chunks', async () => {
     harness = await makeBridgeHarness({ script: [errorResponse('provider boom')] })
     const sessionId = await newSession(harness)
     await expect(harness.client.prompt({ sessionId, prompt: [{ type: 'text', text: 'go' }] }))
       .rejects.toThrow(/turn failed: provider boom/)
-    expect(messageText(harness)).toBe('')
+    expect(messageText(harness)).toBe('partial')
   })
 
   it('rejects an ordinary plugin failure through the same prompt boundary', async () => {
@@ -578,7 +614,7 @@ describe('ACP prompt lifecycle', () => {
     const sessionId = await newSession(harness)
     const result = await harness.client.prompt({ sessionId, prompt: [{ type: 'text', text: 'go' }] })
     expect(result.stopReason).toBe('end_turn')
-    await vi.waitFor(() => { expect(messageText(harness!)).toBe('recovered') })
+    await vi.waitFor(() => { expect(messageText(harness!)).toBe('partialrecovered') })
   })
 
   it.each(['completed', 'error'] as const)('waits for descendants and reports the later %s summary turn', async (outcome) => {
