@@ -59,7 +59,7 @@ it('delivers nothing to a ticket a person stopped while an earlier ticket\'s del
   const held = holdSession(two.sessionId, gate.promise)
   const resumed = h.runtime.settings.pause(false, 'panel')
   await waitUntil(held)
-  await h.runtime.engine.stopTicket(one.ticket.id)
+  h.runtime.engine.stopTicket(one.ticket.id)
   const before = h.deliveries.mock.calls.length
   gate.resolve(); await resumed; await h.runtime.idle()
   expect(h.deliveries.mock.calls.slice(before).map(([call]) => call.sessionId)).not.toContain(one.sessionId)
@@ -74,7 +74,7 @@ it('drops a delivery whose ticket a person stopped while it waited for the worke
   const held = holdSession(one.sessionId, gate.promise)
   const resumed = h.runtime.settings.pause(false, 'panel')
   await waitUntil(held)
-  await h.runtime.engine.stopTicket(one.ticket.id)
+  h.runtime.engine.stopTicket(one.ticket.id)
   const before = h.deliveries.mock.calls.length
   gate.resolve(); await resumed; await h.runtime.idle()
   expect(h.deliveries.mock.calls.slice(before).map(([call]) => call.sessionId)).not.toContain(one.sessionId)

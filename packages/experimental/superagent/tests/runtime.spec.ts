@@ -677,7 +677,7 @@ it('retries only a failed, blocked or undelivered ticket with a new assignment, 
   expect(waitsForPerson(runtime.store.tickets.get(ticket.id)!)).toBe(true)
   // A person may continue a failed worker in its Session; only an ended Ticket locks its tools.
   expect(guards.get(`worker-${ticket.id}`)!()).toBeUndefined()
-  const retried = await runtime.engine.retryTicket(ticket.id)
+  const retried = runtime.engine.retryTicket(ticket.id)
   await runtime.idle()
   expect(waitsForPerson(runtime.store.tickets.get(ticket.id)!)).toBe(false)
   expect(runtime.store.tickets.get(ticket.id)!.assignments.map(item => item.state)).toEqual(['ended', 'running'])
@@ -828,7 +828,7 @@ it('waits for setup without the agent\'s GitHub CLI: the panel works, and nothin
   expect(overviewOf(next).problems[0]).toEqual({ kind: 'setup', ...next.setupProblem })
   await receive(feishu('30', '@bot 修一下'), next)
   // A retry waits for setup instead of launching a worker that cannot run, and no report reaches the orchestrator.
-  await next.engine.retryTicket(ticket.id)
+  next.engine.retryTicket(ticket.id)
   expect(next.store.tickets.get(ticket.id)!.assignments.map(item => item.state)).toEqual(['ended', 'pending'])
   expect(controller.create).not.toHaveBeenCalled()
   expect(deliveries).not.toHaveBeenCalled()
@@ -1088,7 +1088,7 @@ it('runs the prepare command once for a new ticket, under the execution root wit
     env: expect.objectContaining({ DSH_SUPERAGENT_DIR: ticket.execution!.directory, DSH_SUPERAGENT_NAME: ticket.execution!.name, DSH_SUPERAGENT_GITHUB_REPOSITORY: 'acme/widgets', DSH_SUPERAGENT_FEISHU_CHAT: CHAT }) })])
   // A retry reuses the prepared directory.
   await runTool(`worker-${ticket.id}`, 'orchestrator_report', { state: 'failed', summary: 'offline' })
-  await runtime.engine.retryTicket(ticket.id)
+  runtime.engine.retryTicket(ticket.id)
   await runtime.idle()
   expect(runs()).toHaveLength(1)
   answers['sh -c exit 3'] = new Error('fatal: no such clone')
@@ -1107,7 +1107,7 @@ it('counts a ticket whose directory the host prepared before prepare commands ex
   runtime.store.tickets.save({ ...stored, execution: { ...stored.execution!, directory } })
   runtime.store.saveSettings({ ...runtime.store.settings(), executor: { ...runtime.store.settings().executor, prepare: 'exit 1' } })
   subprocess.spawn.mockClear()
-  await runtime.engine.retryTicket(ticket.id)
+  runtime.engine.retryTicket(ticket.id)
   await runtime.idle()
   expect(subprocess.spawn.mock.calls.some(([spec]) => spec.argv[0] === 'sh')).toBe(false)
   expect(runtime.store.tickets.get(ticket.id)!.assignments.at(-1)!.state).toBe('running')
