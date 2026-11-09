@@ -32,8 +32,8 @@ function host(overrides: Partial<SourceContextDeps> = {}) {
   const sources = new SourceRegistry(() => store.settings(), board)
   const deployment = testDeployment()
   sources.register(feishuKind); sources.register(githubKind)
-  const assessor: Assessor = { request: vi.fn(async () => {}) }
-  const executor: Executor = { start: vi.fn(async () => {}), deliver: vi.fn(async () => {}), stop: vi.fn(async () => {}) }
+  const assessor: Assessor = { request: vi.fn(() => {}) }
+  const executor: Executor = { start: vi.fn(() => {}), deliver: vi.fn(() => {}), stop: vi.fn(() => {}) }
   const outbox = { send: () => {}, status: () => undefined, withdraw: () => {} }
   const engine = new Engine({ repo: store, scope: sources, policy: () => settingsPolicy(store.settings(), sources), assessor, executor, outbox })
   const commands = new Commands(() => deployment, {}, new AbortController().signal)
@@ -1069,8 +1069,8 @@ describe('feishu event consumer', () => {
     const board = new HealthBoard()
     const sources = new SourceRegistry(() => store.settings(), board)
     sources.register(feishuKind)
-    const assessor: Assessor = { request: vi.fn(async () => {}) }
-    const executor: Executor = { start: vi.fn(async () => {}), deliver: vi.fn(async () => {}), stop: vi.fn(async () => {}) }
+    const assessor: Assessor = { request: vi.fn(() => {}) }
+    const executor: Executor = { start: vi.fn(() => {}), deliver: vi.fn(() => {}), stop: vi.fn(() => {}) }
     const outbox = { send: () => {}, status: () => undefined, withdraw: () => {} }
     const policy = () => settingsPolicy(store.settings(), sources)
     const engine = new Engine({ repo: store, scope: sources, policy, assessor, executor, outbox })

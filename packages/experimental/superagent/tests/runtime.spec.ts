@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { DatabaseSync } from 'node:sqlite'
 import { join } from 'node:path'
-import { afterEach, beforeEach, describe, expect, expectTypeOf, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, expectTypeOf, it, vi, type Mock } from 'vitest'
 import type { UserMessage } from '@deepseek-ai/dsh-llm'
 import { renderPrompt } from '@deepseek-ai/dsh-system-prompt'
 import { Runtime } from '../src/app/runtime.ts'
@@ -1576,14 +1576,15 @@ it('gives an explicit ticket\'s worker a prompt without the limits of an inferre
 })
 
 it('runs a launch that fails for a passing reason again on the launch backoff three times, then fails its ticket; a failed prepare fails at once', async () => {
-  const original = controller.resolveAgent.getMockImplementation()! as (id: string) => Promise<unknown>
+  const resolveAgent = vi.mocked(controller.resolveAgent) as Mock<(id: string) => Promise<unknown>>
+  const original = resolveAgent.getMockImplementation()!
   const later = async (now: number) => {
     vi.useFakeTimers({ toFake: ['Date'], now })
     try { await runtime.pump(); await runtime.idle() } finally { vi.useRealTimers() }
   }
   for (const [index, error] of [Object.assign(new Error('Service Unavailable'), { status: 503 }), Object.assign(new Error('read ECONNRESET'), { code: 'ECONNRESET' })].entries()) {
     let tries = 0
-    controller.resolveAgent.mockImplementation(async (id: string) => {
+    resolveAgent.mockImplementation(async (id: string) => {
       if (id.startsWith('worker-')) { tries++; throw error }
       return original(id)
     })
@@ -1597,7 +1598,7 @@ it('runs a launch that fails for a passing reason again on the launch backoff th
     }
     expect(tries).toBe(4)
     expect(runtime.store.tickets.get(ticket.id)!.assignments.at(-1)!.report).toMatchObject({ state: 'failed' })
-    controller.resolveAgent.mockImplementation(original)
+    resolveAgent.mockImplementation(original)
   }
   // A prepare command whose output names a passing failure is not run again on its own.
   const runs = () => subprocess.spawn.mock.calls.filter(([spec]) => (spec as { argv: string[] }).argv[0] === 'sh').length

@@ -89,7 +89,7 @@ export function usePoll<T>(load: () => Promise<T>, deps: readonly unknown[], int
       } catch (failure) {
         if (active) setState(previous => ({ ...previous, error: failure instanceof Error ? failure : new Error(String(failure)) }))
       } finally {
-        if (active) timer = setTimeout(run, document.hidden ? intervalMs * HIDDEN_FACTOR : intervalMs)
+        if (active) timer = setTimeout(() => { void run() }, document.hidden ? intervalMs * HIDDEN_FACTOR : intervalMs)
       }
     }
     const run = () => (queue = queue.then(once))
