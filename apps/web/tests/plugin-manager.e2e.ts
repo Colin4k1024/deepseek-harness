@@ -446,8 +446,9 @@ describe('web e2e: plugin manager', () => {
     await panel.getByRole('heading', { name: '实验性插件', exact: true, level: 1 }).waitFor()
     expect(await panel.locator('[data-plugin-group="more"] [data-plugin-package]').count())
       .toBe(OPTIONAL_BUNDLES.length + ON_DEMAND_BUNDLES.length)
-    expect(await panel.getByText('实验性', { exact: true }).count())
-      .toBe(OPTIONAL_BUNDLES.filter(name => name.startsWith('@deepseek-ai/dsh-experimental-')).length)
+    const experimentalCount = [...OPTIONAL_BUNDLES, ...ON_DEMAND_BUNDLES]
+      .filter(name => name.startsWith('@deepseek-ai/dsh-experimental-')).length
+    expect(await panel.getByText('实验性', { exact: true }).count()).toBe(experimentalCount)
     expect(await panel.locator('[data-plugin-group="bundles"]').count()).toBe(0)
     await panel.getByRole('button', { name: '返回插件', exact: true }).click()
     expect(await panel.locator('[data-plugin-group="bundles"] [data-plugin-package]').count()).toBe(2)

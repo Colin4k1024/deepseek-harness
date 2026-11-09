@@ -38,6 +38,10 @@
     - button "查看 开发者工具": 开发者工具
     - text: 实验性 查看调试会话原始数据、聊天消息分组数据，以及调试 NodeJS 后端
     - switch "启用 开发者工具"
+  - listitem:
+    - button "查看 Superagent": Superagent
+    - text: 实验性 未安装 监听单个 GitHub 仓库，把获授权的请求转为 Ticket，并在各自的 DSH 会话中执行。
+    - switch "启用 Superagent"
 - heading "已安装插件" [level=3]
 - list:
   - listitem:
