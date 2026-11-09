@@ -46,6 +46,12 @@ it('retains pagination limits and exact loaded counts rather than claiming compl
   expect(lark).toHaveBeenCalledTimes(2)
   expect(lark.mock.calls[1]![0]).toEqual(expect.arrayContaining(['--page-size', '2']))
 })
+it('refuses pagination that repeats a cursor', async () => {
+  const commands = new Commands(() => testDeployment(), {}, new AbortController().signal)
+  const context = { messageId: 'om_0', read: async () => ({ messages: [message(0)], next: 'same' }) }
+  await expect(admissionContext(context, commands, 2)).rejects.toThrow('pagination repeated a cursor')
+})
+
 it('gives a message outside a topic the five chat messages before it, and says it read the chat', async () => {
   const commands = new Commands(() => testDeployment(), {}, new AbortController().signal)
   const at = Date.parse('2026-09-11T12:00:00Z')

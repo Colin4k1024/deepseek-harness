@@ -44,6 +44,28 @@ it('refuses a Trigger while dsh-superagent stops, before the Engine stores anyth
   expect(h.engine.evaluateDue).toHaveBeenCalledOnce()
 })
 
+it('runs nothing while setup is incomplete or the host is closing', async () => {
+  for (const configured of [false, true]) {
+    const health = new HealthBoard().claim('runtime', { state: 'starting', detail: '' })
+    const engine = { receive: vi.fn(), evaluateDue: vi.fn() }
+    const effects = { kick: vi.fn(), idle: vi.fn(async () => {}) }
+    const value = new Passes({ engine, effects, health, lifetime: new AbortController().signal, configured: () => configured,
+      closing: () => true })
+    await value.pump()
+    expect(engine.evaluateDue).not.toHaveBeenCalled()
+    expect(effects.kick).not.toHaveBeenCalled()
+  }
+})
+
+it('stops a pass that begins closing after it kicks due effects', async () => {
+  let closing = false
+  const h = passes(() => closing)
+  h.effects.kick.mockImplementation(() => { closing = true })
+  await h.passes.pump()
+  expect(h.effects.kick).toHaveBeenCalledOnce()
+  expect(h.engine.evaluateDue).not.toHaveBeenCalled()
+})
+
 it('starts no timer once stopped, as a start-up that ends after a stop asks', async () => {
   vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
   try {

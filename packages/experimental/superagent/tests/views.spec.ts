@@ -3,6 +3,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { Store } from '../src/app/store.ts'
+import { Commands } from '../src/infra/commands.ts'
+import { testDeployment } from './fixtures/deployment.ts'
 import { SettingsSchema } from '../src/policy.ts'
 import { SourceRegistry } from '../src/sources/registry.ts'
 import { feishuKind } from '../src/sources/feishu.ts'
@@ -15,7 +17,7 @@ import { overview } from '../src/app/views/overview.ts'
 import { markdown, plain } from '../src/app/views/text.ts'
 import { policyHistory } from '../src/app/settings-history.ts'
 import { KV } from '../src/kv.ts'
-import { feishuLink } from '../src/sources/feishu-channel.ts'
+import { feishuLink, sendFeishu } from '../src/sources/feishu-channel.ts'
 import { feishuChannel, feishuTriggerId } from '../src/sources/feishu-trigger.ts'
 import { githubLink } from '../src/sources/github-channel.ts'
 import { githubChannel } from '../src/sources/github-trigger.ts'
@@ -34,6 +36,13 @@ const drop = (id: string, channel: ChannelRef, ticketId?: string) => {
   store.receipts.add(message)
   store.receipts.settle(message, 'channelGone')
 }
+
+it('links a Feishu chat with its defaults and refuses a reply with no target message', async () => {
+  expect(feishuLink({}, {})).toEqual({ url: 'https://applink.feishu.cn/client/chat/open?openChatId=', label: { zh: '飞书消息', en: 'Feishu message' } })
+  const commands = new Commands(() => testDeployment(), {}, new AbortController().signal)
+  await expect(sendFeishu({ commands }, { id: 'r', channel: { source: 'feishu', thread: 'feishu:oc_1', address: {} }, text: 'x', kind: 'reply' }))
+    .rejects.toThrow('Missing Feishu reply target')
+})
 
 it('names the Thread of each dropped message: the one of the Trigger its Channel answers, or the Channel\'s own', () => {
   // A Feishu Channel names its chat; the message it answers belongs to the Thread of the topic's root message.

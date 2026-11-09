@@ -1,6 +1,7 @@
 /** Runtime health reporting: per-component error states and recovery on subsequent success. */
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { Commands } from '../src/infra/commands.ts'
+import { HealthBoard } from '../src/infra/health.ts'
 import { feishu, startRuntime, type Host } from './fixtures/host.ts'
 
 let h: Host
@@ -14,6 +15,15 @@ async function at(ms: number) {
 }
 /** Retry a failed effect until it failed three times, after which its kind reports an error. */
 async function failThrice() { await at(2000); await at(6000) }
+
+it('releases a health entry once and ignores later writes from the released part', () => {
+  const board = new HealthBoard()
+  const entry = board.claim('released', { state: 'starting', detail: '' })
+  entry.release(); entry.release()
+  entry.set({ state: 'error', detail: 'late' })
+  expect(board.all).toEqual({})
+  expect(board.claim('released').get()).toBeUndefined()
+})
 
 it('reports a relay in error once it failed three times, clears it once the relay reached the main Session, and leaves the runtime ready', async () => {
   const steer = h.agents.get(h.runtime.masterId)!.steer

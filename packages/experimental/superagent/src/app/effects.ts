@@ -6,6 +6,7 @@
 export class Later extends Error {}
 /** Consecutive failures before an effect kind reports an error, matching the Sources poll failure threshold. */
 export const FAILURES_BEFORE_ERROR = 3
+import { required } from '../core/required.ts'
 import type { HealthBoard, HealthEntry } from '../infra/health.ts'
 import type { Store } from './store.ts'
 
@@ -63,7 +64,7 @@ export class Effects {
   private started = false
   private stopped = false
   constructor(private readonly store: Store, private readonly board: Pick<HealthBoard, 'claim'>, private readonly now = () => Date.now()) {
-    this.seq = Number(store.db.prepare('SELECT IFNULL(MAX(seq), 0) AS seq FROM effect').get()?.seq ?? 0)
+    this.seq = Number(required(store.db.prepare('SELECT IFNULL(MAX(seq), 0) AS seq FROM effect').get()).seq)
   }
   /**
    * Upserts an effect in the caller's transaction, coalescing with any waiting row of the same kind and key while keeping its queue
@@ -162,11 +163,11 @@ export class Effects {
   private report(kind: EffectKind): void {
     const row = this.store.db.prepare(`SELECT COUNT(*) AS waiting, MIN(since) AS since, MAX(attempts) AS attempts,
       (SELECT error FROM effect WHERE kind = ? AND attempts > 0 ORDER BY seq DESC LIMIT 1) AS error FROM effect WHERE kind = ?`).get(kind, kind)
-    const waiting = Number(row?.waiting ?? 0)
-    const failing = Number(row?.attempts ?? 0) >= FAILURES_BEFORE_ERROR && !this.handlers.get(kind)?.quiet
-    const detail = waiting ? `${waiting} waiting since ${String(row?.since)}` : 'Nothing waiting'
+    const waiting = Number(required(row).waiting)
+    const failing = Number(required(row).attempts) >= FAILURES_BEFORE_ERROR && !this.handlers.get(kind)?.quiet
+    const detail = waiting ? `${waiting} waiting since ${String(required(row).since)}` : 'Nothing waiting'
     this.health.get(kind)?.set(failing
-      ? { state: 'error', detail: `${detail}; the last failure: ${String(row?.error)}`, at: new Date(this.now()).toISOString() }
+      ? { state: 'error', detail: `${detail}; the last failure: ${String(required(row).error)}`, at: new Date(this.now()).toISOString() }
       : { state: 'ready', detail, at: new Date(this.now()).toISOString() })
   }
 }

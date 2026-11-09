@@ -15,6 +15,8 @@ it('reads bold, inline code and links, and shows a bare address by its host and 
       { kind: 'text', text: ', log at ' },
       { kind: 'link', text: 'ci.example.com/runs/123456789012345678…', url: log }])
   expect(linkify('<b>**not bold**</b>')).toEqual([{ kind: 'text', text: '<b>**not bold**</b>' }])
+  expect(linkify('https://example.com/')).toEqual([{ kind: 'link', text: 'example.com', url: 'https://example.com/' }])
+  expect(linkify('https://')).toEqual([{ kind: 'link', text: 'https://', url: 'https://' }])
 })
 
 it('keeps a link to anything but a web address as text, and leaves the punctuation after a bare address out of it', () => {

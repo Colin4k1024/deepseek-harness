@@ -605,6 +605,8 @@ it('shows a message that carries JSON, with or without a label, as its label and
   expect(preview(text)).toBe('GitHub PR #7 CI head: abc1234 checks: e2e · completed · failure lint · in_progress statuses:')
   expect(readable('see {this} later')).toBe('see {this} later')
   expect(readable('label: {not json}')).toBe('label: {not json}')
+  expect(readable('[1,2]')).toBe('1, 2')
+  expect(readable('{"answer":42}')).toBe('answer: 42')
 })
 
 it('ends a ticket on ready when no PR is bound', async () => {

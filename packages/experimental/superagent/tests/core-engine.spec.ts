@@ -162,6 +162,11 @@ describe('intake', () => {
     expect(h.repo.triggers.disposition('2')?.filtered).toEqual({ code: 'chat not allowed' })
     expect(h.repo.threads.get('chat:t1')?.pending).toEqual(['1'])
   })
+  it('refuses a trigger that names no Thread', () => {
+    const h = harness()
+    expect(() => h.engine.receive(trigger('1', { threads: [] }))).toThrow('A trigger must belong to at least one thread')
+    expect(h.repo.triggers.get('1')).toBeUndefined()
+  })
   it('records correlation for a trigger on several threads and evaluates only on the primary one', () => {
     const h = harness()
     h.engine.receive(trigger('1', { threads: [{ source: 'gh', id: 'pr-7' }, { source: 'gh', id: 'run-9' }] }))

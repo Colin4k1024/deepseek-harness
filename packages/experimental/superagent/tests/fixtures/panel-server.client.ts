@@ -104,6 +104,10 @@ export interface PanelServer {
   searching?: (query: string) => Promise<void>
   setup: SetupView
   health: Record<string, Health>
+  /** Optional Feishu health carried by the overview's source-error problem. */
+  sourceHealth?: Health | undefined
+  /** Optional next cursor returned by list pages. */
+  nextOffset?: number | null
   /** When true, all API requests return an empty 404 to simulate the host plugin being stopped. */
   down: boolean
   /** Count of responses not yet consumed by the client. */
@@ -241,7 +245,7 @@ const overviewView = (): ApiResponse<'GET overview'> => {
             source: {
               id: 'feishu',
               title: { zh: '飞书', en: 'Feishu' },
-              health: { name: 'feishu', state: 'error' as const, detail: 'socket closed' },
+              health: server.sourceHealth ?? { name: 'feishu', state: 'error' as const, detail: 'socket closed' },
             },
           },
         ]),
@@ -504,7 +508,7 @@ type Route<K extends keyof Api> = {
   query?: readonly Query<K>[]
   answer: (request: Request<K>) => Answer<K> | Promise<Answer<K>>
 } & (Api[K] extends { body: unknown } ? { body: true } : { body?: never })
-const page = <T>(items: T[]) => ({ items, total: items.length, next_offset: null })
+const page = <T>(items: T[]) => ({ items, total: items.length, next_offset: server.nextOffset ?? null })
 const ticketOf = (id: string) =>
   [...server.tickets.open, ...server.person, ...server.tickets.ended].find(ticket => ticket.id === id) ?? server.ticketDetails[id]
 const SourceSave = z.object({ enabled: z.boolean(), config: z.unknown() })

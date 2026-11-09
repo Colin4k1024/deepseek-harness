@@ -106,6 +106,19 @@ it('counts the messages not sent in the last day, linking to the Source status, 
   expect(tab(zh['tab.source'])?.getAttribute('aria-selected')).toBe('true')
 })
 
+it('words a Source health code through the localized health text', async () => {
+  server.sourceHealth = { state: 'error', detail: 'raw detail', code: 'pollFailures', values: { count: '3', error: 'EOF' } }
+  await mount()
+  expect(text()).toContain(zh['healthCode.pollFailures'].replace('{count}', '3').replace('{error}', 'EOF'))
+  expect(text()).not.toContain('raw detail')
+})
+
+it('shows the host-not-running error on the overview', async () => {
+  server.down = true
+  await mount()
+  expect(text()).toContain(zh.hostNotRunning)
+})
+
 it('names a failing part of dsh-superagent itself by its label', async () => {
   server.health = { launch: { state: 'error', detail: 'spawn failed' }, relay: { state: 'ready', detail: 'Nothing waiting' } }
   await mount()

@@ -42,11 +42,26 @@ it('filters the Thread list by activity, and unsubscribes from a Thread page aft
   expect(find(zh['threadFilter.subscribed'], '.dt-pill').getAttribute('aria-pressed')).toBe('true')
   await click(zh['threadFilter.recent'])
   expect(server.requests.some(request => request.path === 'threads?filter=recent&limit=20')).toBe(true)
+  await click(zh['threadFilter.subscribed'])
+  await settle()
+  expect(server.requests.some(request => request.path === 'threads?filter=subscribed&limit=20')).toBe(true)
   expect(document.querySelector('select[aria-label="来源"]')).toBeNull()
   await click('这个文案好奇怪')
   await click(zh.unsubscribe)
   await click(zh.confirm)
   expect(server.requests.some(request => request.path === 'threads/feishu:oc_1:om_root/unsubscribe')).toBe(true)
+})
+
+it('shows an empty Thread list and loads the next page of Threads', async () => {
+  server.threads = []
+  at({ page: 'trigger' })
+  await mount()
+  expect(text()).toContain(zh.threadsNone)
+  server.threads = [threadSummary()]
+  server.nextOffset = 20
+  await remount()
+  await click(zh.loadMore)
+  expect(server.requests.some(request => request.path === 'threads?filter=subscribed&limit=40')).toBe(true)
 })
 
 it('folds consecutive automated messages from one sender on a Thread, showing the newest with its text', async () => {

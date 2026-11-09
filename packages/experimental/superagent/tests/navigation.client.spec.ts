@@ -3,6 +3,7 @@ import { expect, it, vi } from 'vitest'
 import type { ISessions } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { openKnownSession } from '../src/client/navigation.ts'
+import { routeLabel } from '../src/client/route.ts'
 import { initialLocation, parseRoute, remember, setupPage } from '../src/client/route.ts'
 const id = 'orchestrator-test' as SessionId
 function fixture(ready = false) {
@@ -50,16 +51,34 @@ it('reopens the page this tab showed last, and the overview for a route that no 
   sessionStorage.setItem('dsh-superagent/route', '{')
   expect(initialLocation().route).toEqual({ page: 'overview' })
 })
+it('labels detail routes as Threads or Tickets and plain routes by their tab', () => {
+  const t = <K extends string>(key: K) => key
+  expect([routeLabel(t, { page: 'trigger', id: 'github:1' }), routeLabel(t, { page: 'execution', id: 't1' }),
+    routeLabel(t, { page: 'overview' })]).toEqual(['term.thread', 'term.ticket', 'tab.overview'])
+})
+
 it('reads each page a tab remembered with the parameters it takes, and leaves out what it does not know', () => {
   expect(parseRoute({ page: 'trigger', query: { filter: 'nope', trigger: 'e1' } })).toEqual({ page: 'trigger' })
   expect(parseRoute({ page: 'trigger', id: 'github:1', query: { trigger: 'e1', filter: 'recent' } }))
     .toEqual({ page: 'trigger', id: 'github:1', query: { trigger: 'e1' } })
   expect(parseRoute({ page: 'eval', query: { filter: 'stop', window: '7d' } })).toEqual({ page: 'eval', query: { filter: 'stop' } })
+  expect(parseRoute({ page: 'eval', query: { window: '24h' } })).toEqual({ page: 'eval', query: { window: '24h' } })
   expect(parseRoute({ page: 'execution', id: 5, query: { filter: 'idle' } })).toEqual({ page: 'execution', query: { filter: 'idle' } })
   expect(parseRoute({ page: 'settings', query: { group: 'policy', source: 'feishu' } }))
     .toEqual({ page: 'settings', query: { group: 'source', source: 'feishu' } })
   expect([parseRoute('overview'), parseRoute(null)]).toEqual([undefined, undefined])
 })
+it('keeps working when route memory cannot be written', () => {
+  const setItem = vi.fn(() => { throw new Error('quota exceeded') })
+  vi.stubGlobal('sessionStorage', { getItem: () => null, setItem })
+  try {
+    remember({ route: { page: 'overview' }, stack: [] })
+    expect(setItem).toHaveBeenCalledOnce()
+  } finally {
+    vi.unstubAllGlobals()
+  }
+})
+
 it('opens the settings that fix each setup problem: the Deployment group, or the card of the Source it names', () => {
   expect(setupPage('deployment')).toEqual({ page: 'settings', query: { group: 'deployment' } })
   for (const place of ['github', 'feishu'] as const) expect(setupPage(place)).toEqual({ page: 'settings', query: { group: 'source', source: place } })
