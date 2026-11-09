@@ -63,7 +63,7 @@ function setup(
   const engines: { engine?: Engine } = {}
   const host: AssessorHost = {
     get engine() {
-      return engines.engine
+      return engines.engine as Engine
     },
     commands,
     deployment: testDeployment(),
@@ -86,7 +86,8 @@ function setup(
   const executor: Executor = { start: () => {}, deliver: () => {}, stop: () => {} }
   const scope = { scope: () => ({ listened: true as const, observed: true }) }
   const outbox = { send: () => {}, status: () => undefined, withdraw: () => {} }
-  const engine = (engines.engine = new Engine({ repo, policy: () => policy, scope, assessor, executor, outbox }))
+  const engine = new Engine({ repo, policy: () => policy, scope, assessor, executor, outbox })
+  engines.engine = engine
   const tools: Record<string, (args: unknown, signal: AbortSignal) => Promise<unknown>> = {}
   tools.orchestrator_eval_read = (args, signal) => assessor.read({} as Agent, EvalReadSchema.parse(args), signal)
   tools.orchestrator_eval_decide = (args, signal) => {

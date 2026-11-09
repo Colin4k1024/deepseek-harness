@@ -23,7 +23,7 @@ kind: "package-reference"
 <a id="composition"></a>
 ## 组合
 
-组合包插入 Host 插件、GitHub Source 监听器、默认关闭的飞书 Source 监听器，以及其会话运行所需的两个 agent preset。profile 必须提供 `dsh-superagent` 行的 `stateDir`；缺少该配置时插件拒绝启动。参见 [examples/profile.cordis.patch.yml](examples/profile.cordis.patch.yml) 与 [docs/006-deployment.md](docs/006-deployment.md)。
+组合包插入 Host 插件、GitHub Source 监听器、默认关闭的飞书 Source 监听器，以及其会话运行所需的两个 agent preset。profile 必须提供 `dsh-superagent` 行的 `stateDir`；缺少该配置时插件拒绝启动。发布安装可在插件页的 Official 按需目录中发现它，开发检出可以安装 `link:` 依赖；两种路径都仍需完成 [docs/006-deployment.md](docs/006-deployment.md) 的 profile、状态目录与账号配置。
 
 <a id="model-experience"></a>
 ## 模型体验

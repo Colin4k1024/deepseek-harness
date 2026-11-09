@@ -23,7 +23,7 @@ English | [中文](README.zh.md)
 <a id="composition"></a>
 ## Composition
 
-The bundle inserts the Host plugin, the GitHub Source watcher, the disabled Feishu Source watcher, and the two agent presets its Sessions run under. The profile must supply the `dsh-superagent` row's `stateDir`; the plugin refuses to start without it. See [examples/profile.cordis.patch.yml](examples/profile.cordis.patch.yml) and [docs/006-deployment.md](docs/006-deployment.md).
+The bundle inserts the Host plugin, the GitHub Source watcher, the disabled Feishu Source watcher, and the two agent presets its Sessions run under. The profile must supply the `dsh-superagent` row's `stateDir`; the plugin refuses to start without it. Published installations can discover it in the Plugins page's Official on-demand catalog, and development checkouts can install a `link:` dependency. Either path still requires the profile, state directory, and account setup in [docs/006-deployment.md](docs/006-deployment.md).
 
 <a id="model-experience"></a>
 ## Model Experience

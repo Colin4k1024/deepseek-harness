@@ -5,6 +5,14 @@ import type { OfficialBundleCatalogEntry } from './official-bundles.ts'
 /** Official on-demand entries, independent of installed packages and registry availability. */
 export const OFFICIAL_ON_DEMAND_CATALOG: readonly OfficialBundleCatalogEntry[] = [
   {
+    packageName: '@deepseek-ai/dsh-experimental-superagent',
+    meta: {
+      title: { 'en': 'Superagent', 'zh': 'Superagent' },
+      description: { 'en': 'Watch one GitHub repository, turn authorized requests into Tickets, and execute each in its own DSH Session.', 'zh': '\u76D1\u542C\u5355\u4E2A GitHub \u4ED3\u5E93\uFF0C\u628A\u83B7\u6388\u6743\u7684\u8BF7\u6C42\u8F6C\u4E3A Ticket\uFF0C\u5E76\u5728\u5404\u81EA\u7684 DSH \u4F1A\u8BDD\u4E2D\u6267\u884C\u3002' },
+      icon: 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMzYiIGhlaWdodD0iMzYiIHZpZXdCb3g9IjAgMCAzNiAzNiIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB4PSI1IiB5PSI3IiB3aWR0aD0iMjYiIGhlaWdodD0iMjIiIHJ4PSI2IiBmaWxsPSJ1cmwoI2RzaF9zdXBlcmFnZW50X2FydF9SMCkiLz48cmVjdCB4PSIxMCIgeT0iMTIiIHdpZHRoPSIxNiIgaGVpZ2h0PSIxMiIgcng9IjMiIGZpbGw9IndoaXRlIiBmaWxsLW9wYWNpdHk9IjAuOTIiLz48cGF0aCBkPSJNMTQgMThoM00yMCAxOGg0IiBzdHJva2U9IiMzMjRERTIiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIi8+PGNpcmNsZSBjeD0iMjUiIGN5PSIxOCIgcj0iNCIgZmlsbD0idXJsKCNkc2hfc3VwZXJhZ2VudF9hcnRfUjEpIi8+PGRlZnM+PGxpbmVhckdyYWRpZW50IGlkPSJkc2hfc3VwZXJhZ2VudF9hcnRfUjAiIHgxPSIxOCIgeTE9IjciIHgyPSIxOCIgeTI9IjI5IiBncmFkaWVudFVuaXRzPSJ1c2VyU3BhY2VPblVzZSI+PHN0b3Agc3RvcC1jb2xvcj0iIzY5QjlGRiIvPjxzdG9wIG9mZnNldD0iMSIgc3RvcC1jb2xvcj0iIzMyNERFMiIvPjwvbGluZWFyR3JhZGllbnQ+PGxpbmVhckdyYWRpZW50IGlkPSJkc2hfc3VwZXJhZ2VudF9hcnRfUjEiIHgxPSIyNSIgeTE9IjE0IiB4Mj0iMjUiIHkyPSIyMiIgZ3JhZGllbnRVbml0cz0idXNlclNwYWNlT25Vc2UiPjxzdG9wIHN0b3AtY29sb3I9IiM0NUU3QTQiLz48c3RvcCBvZmZzZXQ9IjEiIHN0b3AtY29sb3I9IiMwNTkwOUQiLz48L2xpbmVhckdyYWRpZW50PjwvZGVmcz48L3N2Zz4K',
+    },
+  },
+  {
     packageName: '@deepseek-ai/dsh-subagent-claude-code',
     meta: {
       title: { 'en': 'Claude Code subagent', 'zh': 'Claude Code \u5B50\u667A\u80FD\u4F53' },

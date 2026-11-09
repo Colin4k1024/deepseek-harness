@@ -80,6 +80,7 @@ describe('release families', () => {
       '@deepseek-ai/dsh-skill-badge',
       '@deepseek-ai/dsh-experimental-speech-to-text-sensevoice',
       '@deepseek-ai/dsh-experimental-speech-to-text',
+      '@deepseek-ai/dsh-experimental-superagent',
       '@deepseek-ai/dsh-experimental-terminal-bundle',
       '@deepseek-ai/dsh-experimental-tool-agent-team',
       '@deepseek-ai/dsh-tool-ralph',

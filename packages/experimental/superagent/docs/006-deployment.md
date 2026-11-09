@@ -82,6 +82,8 @@ dsh plugin --profile superagent add "link:$PWD"
 
 The pinned version above is public; other versions must satisfy `engines.dsh` in `package.json`.
 
+In a published installation, the Plugins page also lists Superagent in the Official on-demand catalog. Select it in the dedicated profile, then continue with Machine configuration; on-demand installation does not remove the state-directory or account setup. The source-checkout block above is the development path.
+
 The fourth command creates `~/.dsh/profiles/superagent` from the DeepSeek Harness Web template. The fifth installs this bundle. Set `DSH_HOME` to relocate the default `~/.dsh` directory.
 
 Run the profile-creation command only for a new installation. If the profile already exists, that command replaces it and deletes its `cordis.patch.yml`, including machine configuration. Do not use it for upgrades.

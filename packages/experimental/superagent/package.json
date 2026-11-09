@@ -52,6 +52,7 @@
     }
   },
   "files": [
+    "icon.svg",
     "locale/*.json",
     "lib/index.js",
     "lib/client.js",
@@ -65,6 +66,7 @@
     "lib/feishu-watch.js",
     "lib/types/**/*.d.ts"
   ],
+  "icon": "./icon.svg",
   "license": "MIT",
   "dependencies": {
     "@deepseek-ai/dsh-agent-instructions": "workspace:*",

@@ -14,7 +14,7 @@ Import the prototype into `packages/experimental/superagent` as `@deepseek-ai/ds
 
 Bundle patch rows rename only their module specifiers to the new package name. Durable identifiers stay unchanged: plugin record names (`dsh-superagent`, `dsh-superagent-github`, `dsh-superagent-feishu`), agent preset ids, skill prefixes, state directory schemas, and the config row id `dsh-superagent`. Existing profile patches and stored state keep working.
 
-Distribution stays a profile patch plus [SETUP.md](../../../../packages/experimental/superagent/SETUP.md); the bundle does not join `OPTIONAL_BUNDLES`, because it requires `stateDir`, repository accounts, and setup before it is usable, which violates the switch-on admission rule. Joining `ON_DEMAND_BUNDLES` remains open. GitHub and Feishu keep polling Sources; migration to `dsh-webhook` is future work, not part of the import.
+Distribution stays a profile patch plus [SETUP.md](../../../../packages/experimental/superagent/SETUP.md); the bundle does not join `OPTIONAL_BUNDLES`, because it requires `stateDir`, repository accounts, and setup before it is usable, which violates the switch-on admission rule. It joins `ON_DEMAND_BUNDLES` with package-owned localized metadata and an icon, so the Plugins page can discover it offline; selection installs the package but does not remove the setup requirement. GitHub and Feishu keep polling Sources; migration to `dsh-webhook` is future work, not part of the import.
 
 ## Alternatives considered
 
@@ -30,4 +30,4 @@ Distribution stays a profile patch plus [SETUP.md](../../../../packages/experime
 
 The import is behavior-preserving except for strictness the repository adds: `exactOptionalPropertyTypes` fixes in shared modules, the panel fixture's route to the client program, and test files named `*.client.spec.*` for face assignment. The panel's `src/navigation.ts` moved under `src/client/` because the client program must not compile host-only modules. Publication extras for the setup guides, prompts, skills, and watcher entries are registered in the workspace constraints gate.
 
-Known deferred work: repository oxlint currently reports style debt in the imported source, and per-file coverage below the repository bar. Both are tracked as follow-up integration phases before any promotion.
+Known deferred work: per-file coverage remains below the repository bar. The imported source now passes repository oxlint. Coverage is tracked as a follow-up integration phase before any promotion.

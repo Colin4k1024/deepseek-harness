@@ -14,7 +14,7 @@ Status: implemented
 
 bundle patch 行只把模块名改为新包名。持久标识符保持不变：插件记录名（`dsh-superagent`、`dsh-superagent-github`、`dsh-superagent-feishu`）、agent preset id、技能前缀、状态目录 schema 以及配置行 id `dsh-superagent`。已有的 profile patch 与存储状态可以继续工作。
 
-分发方式保持为 profile patch 加 [SETUP.md](../../../../packages/experimental/superagent/SETUP.md)；该 bundle 不加入 `OPTIONAL_BUNDLES`，因为它需要 `stateDir`、仓库账号与安装配置才能可用，不满足"开关即用"的准入规则。是否加入 `ON_DEMAND_BUNDLES` 仍待定。GitHub 与飞书保持轮询式 Source；迁移到 `dsh-webhook` 是后续工作，不属于本次导入。
+分发方式保持为 profile patch 加 [SETUP.md](../../../../packages/experimental/superagent/SETUP.md)；该 bundle 不加入 `OPTIONAL_BUNDLES`，因为它需要 `stateDir`、仓库账号与安装配置才能可用，不满足"开关即用"的准入规则。它加入 `ON_DEMAND_BUNDLES`，携带包自有本地化元信息与图标，插件页可离线发现；选择安装不会免除安装配置。GitHub 与飞书保持轮询式 Source；迁移到 `dsh-webhook` 是后续工作，不属于本次导入。
 
 ## Alternatives considered
 
@@ -30,4 +30,4 @@ bundle patch 行只把模块名改为新包名。持久标识符保持不变：�
 
 导入除仓库新增的严格性外保持行为不变：共享模块的 `exactOptionalPropertyTypes` 修复、面板 fixture 归入 client 程序、以及按 face 归属把测试文件命名为 `*.client.spec.*`。面板的 `src/navigation.ts` 移到 `src/client/` 之下，因为 client 程序不得编译仅限 Host 的模块。安装指南、提示词、技能与监听入口的发布项已在 workspace constraints 门禁登记。
 
-已知的后续工作：仓库 oxlint 目前报告导入源码的风格债务，逐文件覆盖率也低于仓库标准。两者均作为后续集成阶段跟踪，完成前不做任何升格。
+已知的后续工作：逐文件覆盖率仍低于仓库标准，导入源码已通过仓库 oxlint。覆盖率作为后续集成阶段跟踪，完成前不做任何升格。

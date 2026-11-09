@@ -12,7 +12,7 @@ function apply<T extends object>(base: T, overrides: Overrides<T>): T {
     const value = overrides[key]
     if (value === undefined) {
       const { [key]: _removed, ...rest } = result
-      result = rest
+      result = rest as T & object
     }
     else result[key] = value
   }

@@ -43,27 +43,31 @@ it('keeps one effect per key with the latest payload, and runs it again when a n
   effects.enqueue('relay', 'k', relay('first'))
   await vi.waitFor(() =>{  expect(run).toHaveBeenCalledTimes(1) })
   effects.enqueue('relay', 'k', relay('second')); effects.enqueue('relay', 'k', relay('third'))
-  hold.resolve()
+  hold.resolve(undefined)
   await effects.idle()
   expect(run.mock.calls.map(([payload]) => payload.text)).toEqual(['first', 'third'])
 })
 
 it('runs a kind oldest first, as many at once as its limit allows, and holds it while the limit is 0', async () => {
-  const holds = new Map<string, ReturnType<typeof deferred>>()
+  const holds = new Map<string, ReturnType<typeof deferred<undefined>>>()
   let limit = 2
-  const run = vi.fn(async (_payload: unknown, key: string) => { const hold = deferred(); holds.set(key, hold); await hold.promise })
+  const run = vi.fn(async (_payload: unknown, key: string) => {
+    const hold = deferred<undefined>()
+    holds.set(key, hold)
+    await hold.promise
+  })
   effects.handle('launch', run, { limit: () => limit })
   for (const key of ['a', 'b', 'c']) effects.enqueue('launch', key, { ticketId: key, assignmentId: key })
   await vi.waitFor(() =>{  expect(run.mock.calls.map(([, key]) => key)).toEqual(['a', 'b']) })
   limit = 0
-  holds.get('a')!.resolve()
+  holds.get('a')!.resolve(undefined)
   await vi.waitFor(() =>{  expect(effects.pending('launch', 'a')).toBe(false) })
   effects.kick(); await Promise.resolve()
   expect(run).toHaveBeenCalledTimes(2)
   limit = 2
-  holds.get('b')!.resolve()
+  holds.get('b')!.resolve(undefined)
   await vi.waitFor(() =>{  expect(run.mock.calls.map(([, key]) => key)).toEqual(['a', 'b', 'c']) })
-  holds.get('c')!.resolve()
+  holds.get('c')!.resolve(undefined)
   await effects.idle()
 })
 
@@ -110,7 +114,7 @@ it('starts nothing once drained, keeps what waits and what shutdown cut short, a
   await Promise.resolve()
   const drained = effects.drain()
   effects.enqueue('relay', 'later', relay('b'))
-  hold.resolve(); await drained
+  hold.resolve(undefined); await drained
   const next = new Effects(store, new HealthBoard(), () => clock)
   next.start()
   const run = vi.fn(async (_payload: { text: string }, _key: string) => {})
@@ -165,7 +169,7 @@ it('keeps an effect cancelled and queued again while its first run goes on, whic
   await vi.waitFor(() =>{  expect(run).toHaveBeenCalledOnce() })
   effects.cancel('relay', 'k')
   effects.enqueue('relay', 'k', relay('second'))
-  hold.resolve()
+  hold.resolve(undefined)
   await effects.idle()
   expect(run.mock.calls.map(([payload]) => payload.text)).toEqual(['first', 'second'])
   expect(effects.pending('relay')).toBe(false)
@@ -178,7 +182,7 @@ it('queues an effect after a restart behind the ones that waited, for a kind tha
   effects.enqueue('relay', 'second', relay('b'))
   await vi.waitFor(() =>{  expect(effects.pending('relay', 'first')).toBe(true) })
   const drained = effects.drain()
-  hold.resolve(); await drained
+  hold.resolve(undefined); await drained
   // Sequence numbers continue across restarts so newly queued effects run after existing pending ones.
   const next = new Effects(store, new HealthBoard(), () => clock)
   next.enqueue('relay', 'third', relay('c'))
