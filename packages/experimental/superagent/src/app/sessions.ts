@@ -23,11 +23,17 @@ import { KV } from '../kv.ts'
 import type { RegisterTool, Tool } from './tools/tool.ts'
 
 /** Validates the optional image attachment a tool's canonical JSON output may carry. */
-const ImageAttachmentSchema = z.object({
-  attachmentId: z.string().min(1), mediaType: z.enum(['image/png', 'image/jpeg', 'image/webp', 'image/gif']),
-  bytes: z.number().int().nonnegative(), width: z.number().int().positive(), height: z.number().int().positive(),
-  name: z.string().optional(), originalDimensions: z.object({ width: z.number().int().positive(), height: z.number().int().positive() }).optional(),
-}).strict()
+const ImageAttachmentSchema = z
+  .object({
+    attachmentId: z.string().min(1),
+    mediaType: z.enum(['image/png', 'image/jpeg', 'image/webp', 'image/gif']),
+    bytes: z.number().int().nonnegative(),
+    width: z.number().int().positive(),
+    height: z.number().int().positive(),
+    name: z.string().optional(),
+    originalDimensions: z.object({ width: z.number().int().positive(), height: z.number().int().positive() }).optional(),
+  })
+  .strict()
 
 /** Host dependencies used by `Sessions`. */
 export interface SessionsHost {
@@ -51,10 +57,16 @@ export interface SessionsHost {
  * What Sessions registered for an agent it decorated: the releases of its prompt section, tools and skill scope, the scope
  * its skills are registered in, and the skills of one prompt revision; for a worker's subagent, only its tool limits.
  */
-interface SessionBinding { disposers: (() => void)[]; scope?: Context; skills?: { revision: number; dispose: () => void } | undefined; subagent?: true }
+interface SessionBinding {
+  disposers: (() => void)[]
+  scope?: Context
+  skills?: { revision: number; dispose: () => void } | undefined
+  subagent?: true
+}
 
 /** The agent presets Executor Sessions and the main Session are created with, which the bundle's patch defines. */
-export const WORKER_PRESET = 'dsh-superagent-worker', ROUTER_PRESET = 'dsh-superagent-router'
+export const WORKER_PRESET = 'dsh-superagent-worker',
+  ROUTER_PRESET = 'dsh-superagent-router'
 declare module '@deepseek-ai/cordis' {
   interface Events {
     /** DSH's agent preset registry selected `agentPreset` for a Session. */
@@ -84,13 +96,20 @@ const SLEEP = /(?:^|[;&|({!`\n]|\b(?:do|then|else|elif|if|while|until|time|exec|
  * job wait its timeout; the router preset ends both after 5 seconds.
  */
 function noWait({ name, arguments: input }: { name: string; arguments: unknown }, routed: () => boolean): string | undefined {
-  const args = (input ?? {}) as { command?: unknown; timeoutMs?: unknown; run_in_background?: unknown; wait?: unknown; timeout_ms?: unknown }
+  const args = (input ?? {}) as {
+    command?: unknown
+    timeoutMs?: unknown
+    run_in_background?: unknown
+    wait?: unknown
+    timeout_ms?: unknown
+  }
   if (name === 'bash') {
     const sleeps = typeof args.command === 'string' && SLEEP.test(args.command)
-    if (sleeps || typeof args.timeoutMs === 'number' && args.timeoutMs > 30_000) return NO_WAIT
+    if (sleeps || (typeof args.timeoutMs === 'number' && args.timeoutMs > 30_000)) return NO_WAIT
     if (args.timeoutMs === undefined && args.run_in_background !== true && !routed()) return DEFAULT_WAIT
   }
-  if (name === 'job_output' && args.wait === true && (typeof args.timeout_ms === 'number' ? args.timeout_ms > 5_000 : !routed())) return NO_WAIT
+  if (name === 'job_output' && args.wait === true && (typeof args.timeout_ms === 'number' ? args.timeout_ms > 5_000 : !routed()))
+    return NO_WAIT
   return undefined
 }
 
@@ -133,20 +152,28 @@ export class Sessions {
       this.retryHealth.observe(agent.id, event)
       this.updateModelHealth()
     })
-    ctx.on('agent/created', async ({ agent }) => { await this.decorate(agent); return undefined })
+    ctx.on('agent/created', async ({ agent }) => {
+      await this.decorate(agent)
+      return undefined
+    })
     // Opening a Session in DSH's Web UI before its first turn may select the default preset for it: select ours again. After
     // its first turn DSH refuses any selection, which leaves it as it is.
     ctx.inject(['agentPresets'], (child) => {
       child.on('agent-preset/selected', (sessionId, preset) => {
-        const ticketId = ticketOfSession(sessionId), agent = ctx.agents.get(sessionId as SessionId)
-        const ours = sessionId === this.host.masterId ? ROUTER_PRESET : ticketId && this.host.store.tickets.get(ticketId) ? WORKER_PRESET : undefined
+        const ticketId = ticketOfSession(sessionId),
+          agent = ctx.agents.get(sessionId as SessionId)
+        const ours =
+          sessionId === this.host.masterId ? ROUTER_PRESET : ticketId && this.host.store.tickets.get(ticketId) ? WORKER_PRESET : undefined
         if (!ours || preset === ours || !agent) return
         const presets = child.get('agentPresets') as { select(agent: Agent, preset: string): Promise<string> }
         presets.select(agent, ours).catch(() => {})
       })
     })
     ctx.on('agent/status', ({ agent, status }) => {
-      if (status === 'idle' && !this.host.closing()) { this.retryHealth.clear(agent.id); this.updateModelHealth() }
+      if (status === 'idle' && !this.host.closing()) {
+        this.retryHealth.clear(agent.id)
+        this.updateModelHealth()
+      }
     })
   }
   /**
@@ -230,26 +257,41 @@ export class Sessions {
   }
   /** Whether a Session is authorized to read `revision` (its active revision or any revision it previously ran under). */
   mayRead(sessionId: string, revision: number): boolean {
-    return revision === this.promptVersion(sessionId).revision || (this.host.store.get(KV.sessions.prompts(sessionId)) ?? []).includes(revision)
+    return (
+      revision === this.promptVersion(sessionId).revision || (this.host.store.get(KV.sessions.prompts(sessionId)) ?? []).includes(revision)
+    )
   }
   /** Returns a tool registrar for `agent` that renders tool output as JSON text and attaches `output.image` as an image when present. */
   private registerTool(agent: Agent, binding: SessionBinding): RegisterTool {
     return (name, description, schema, execute) => {
-      binding.disposers.push(agent.ctx.tools.register({ name, description, parameters: z.toJSONSchema(schema),
-        output: { schema: { type: 'object', additionalProperties: true }, render: (_args, value) => {
-          const text = { type: 'text' as const, text: JSON.stringify(value) }
-          const image = value && typeof value === 'object' && 'image' in value
-            ? ImageAttachmentSchema.safeParse(value.image) : undefined
-          if (image?.success !== true) return [text]
-          const { attachmentId, bytes, height, mediaType, width, name, originalDimensions } = image.data
-          const attachment: ImageAttachmentRef = {
-            attachmentId: AttachmentId(attachmentId), bytes, height, mediaType, width,
-            ...name === undefined ? {} : { name },
-            ...originalDimensions === undefined ? {} : { originalDimensions },
-          }
-          return [text, { type: 'image' as const, attachment }]
-        } },
-        execute: (args, execution) => execute(schema.parse(args), execution.signal) }))
+      binding.disposers.push(
+        agent.ctx.tools.register({
+          name,
+          description,
+          parameters: z.toJSONSchema(schema),
+          output: {
+            schema: { type: 'object', additionalProperties: true },
+            render: (_args, value) => {
+              const text = { type: 'text' as const, text: JSON.stringify(value) }
+              const image =
+                value && typeof value === 'object' && 'image' in value ? ImageAttachmentSchema.safeParse(value.image) : undefined
+              if (image?.success !== true) return [text]
+              const { attachmentId, bytes, height, mediaType, width, name, originalDimensions } = image.data
+              const attachment: ImageAttachmentRef = {
+                attachmentId: AttachmentId(attachmentId),
+                bytes,
+                height,
+                mediaType,
+                width,
+                ...(name === undefined ? {} : { name }),
+                ...(originalDimensions === undefined ? {} : { originalDimensions }),
+              }
+              return [text, { type: 'image' as const, attachment }]
+            },
+          },
+          execute: (args, execution) => execute(schema.parse(args), execution.signal),
+        }),
+      )
     }
   }
   /** Returns `sessionId`'s active model-budget retry state (`{ model_retry }`) for status listings, or `{}` when not waiting on one. */

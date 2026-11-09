@@ -131,15 +131,33 @@ export function applyEnvironment(variables: Record<string, string | undefined>, 
   const values = { ...variables, PATH: [workerBin(stateDir), path].join(delimiter) }
   const previous = Object.fromEntries(Object.keys(values).map(name => [name, process.env[name]]))
   const apply = (env: Record<string, string | undefined>): void => {
-    for (const [name, value] of Object.entries(env)) { if (value === undefined) Reflect.deleteProperty(process.env, name); else process.env[name] = value }
+    for (const [name, value] of Object.entries(env)) {
+      if (value === undefined) Reflect.deleteProperty(process.env, name)
+      else process.env[name] = value
+    }
   }
   apply(values)
-  return () => { apply(previous) }
+  return () => {
+    apply(previous)
+  }
 }
 
 /** Spawns a command through the DSH subprocess runtime, which strips credential-shaped environment variables. */
-export async function runAsWorker(subprocess: SubprocessRuntime, argv: string[], cwd: string, signal: AbortSignal, env?: Record<string, string>): Promise<string> {
-  const handle = subprocess.spawn({ argv, cwd, graceMs: 2000, signal, ...env ? { env } : {}, stdio: { stdin: 'ignore', stdout: { maxBytes: 1 << 20 }, stderr: { maxBytes: 1 << 16 } } })
+export async function runAsWorker(
+  subprocess: SubprocessRuntime,
+  argv: string[],
+  cwd: string,
+  signal: AbortSignal,
+  env?: Record<string, string>,
+): Promise<string> {
+  const handle = subprocess.spawn({
+    argv,
+    cwd,
+    graceMs: 2000,
+    signal,
+    ...(env ? { env } : {}),
+    stdio: { stdin: 'ignore', stdout: { maxBytes: 1 << 20 }, stderr: { maxBytes: 1 << 16 } },
+  })
   const { exitCode } = await handle.done
   const read = (reader: SubprocessOutputReader | undefined): string => reader?.readFrom(0).text ?? ''
   if (exitCode === 0) return read(handle.collected.stdout)

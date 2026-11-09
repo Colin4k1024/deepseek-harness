@@ -10,23 +10,34 @@ import { Prompts, composePrompt, defaultPrompts } from '../src/app/prompts.ts'
 import { masterPrompt } from '../src/app/context.ts'
 
 let directory: string
-beforeEach(() => { directory = mkdtempSync(join(tmpdir(), 'orchestrator-migration-')) })
-afterEach(() => { rmSync(directory, { recursive: true, force: true }) })
+beforeEach(() => {
+  directory = mkdtempSync(join(tmpdir(), 'orchestrator-migration-'))
+})
+afterEach(() => {
+  rmSync(directory, { recursive: true, force: true })
+})
 
 /** Seed a SQLite database in the schema 10 layout (including the legacy `outbox.sent` column and `inbox` table). */
-function schema10(path: string, records: Record<string, unknown>, rows: { ticket?: object[]; decision?: object[]; thread?: object[]; trigger?: object[] } = {}): void {
+function schema10(
+  path: string,
+  records: Record<string, unknown>,
+  rows: { ticket?: object[]; decision?: object[]; thread?: object[]; trigger?: object[] } = {},
+): void {
   new Store(path).close()
   const db = new DatabaseSync(path)
   db.exec('DROP TABLE outbox; CREATE TABLE outbox (id TEXT PRIMARY KEY, value TEXT NOT NULL, sent INTEGER NOT NULL DEFAULT 0)')
-  const set = (name: string, value: unknown) => db.prepare('INSERT INTO kv VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').run(name, JSON.stringify(value))
+  const set = (name: string, value: unknown) =>
+    db.prepare('INSERT INTO kv VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').run(name, JSON.stringify(value))
   set('schema', 10)
   for (const [name, value] of Object.entries(records)) set(name, value)
-  for (const ticket of rows.ticket ?? []) db.prepare('INSERT INTO ticket VALUES (?,?)').run((ticket as { id: string }).id, JSON.stringify(ticket))
+  for (const ticket of rows.ticket ?? [])
+    db.prepare('INSERT INTO ticket VALUES (?,?)').run((ticket as { id: string }).id, JSON.stringify(ticket))
   for (const decision of rows.decision ?? []) {
     const { id, threadKey } = decision as { id: string; threadKey: string }
     db.prepare('INSERT INTO decision VALUES (?,?,?)').run(id, threadKey, JSON.stringify(decision))
   }
-  for (const thread of rows.thread ?? []) db.prepare('INSERT INTO thread VALUES (?,?)').run((thread as { key: string }).key, JSON.stringify(thread))
+  for (const thread of rows.thread ?? [])
+    db.prepare('INSERT INTO thread VALUES (?,?)').run((thread as { key: string }).key, JSON.stringify(thread))
   for (const trigger of rows.trigger ?? []) {
     const { id, at } = trigger as { id: string; at: string }
     db.prepare('INSERT INTO trigger VALUES (?,?,?)').run(id, JSON.stringify(trigger), at)
@@ -177,50 +188,122 @@ it('keeps each message as a receipt of what became of it, with why one was dropp
   const path = join(directory, 'db.sqlite')
   schema10(path, {})
   const db = new DatabaseSync(path)
-  const message = (id: string, sent: number, fields: object = {}) => db.prepare('INSERT INTO outbox (id, value, sent) VALUES (?, ?, ?)')
-    .run(id, JSON.stringify({ id, channel: { source: 'feishu', thread: 'feishu:oc_1:om_1', address: {} }, text: id, kind: 'reply', attempts: 2,
-      error: 'offline', nextAttemptAt: 1, ...fields }), sent)
+  const message = (id: string, sent: number, fields: object = {}) =>
+    db
+      .prepare('INSERT INTO outbox (id, value, sent) VALUES (?, ?, ?)')
+      .run(
+        id,
+        JSON.stringify({
+          id,
+          channel: { source: 'feishu', thread: 'feishu:oc_1:om_1', address: {} },
+          text: id,
+          kind: 'reply',
+          attempts: 2,
+          error: 'offline',
+          nextAttemptAt: 1,
+          ...fields,
+        }),
+        sent,
+      )
   message('gone', 1, { dropped: { at: '2026-09-01T00:00:00.000Z', reason: 'The conversation can no longer receive messages' } })
   message('ignored', 1, { dropped: { at: '2026-09-02T00:00:00.000Z', reason: 'The Source no longer listens to this conversation' } })
   message('sent', 1)
   message('waiting', 0)
   db.close()
   const store = new Store(path)
-  expect(store.read.droppedReplies().map(item => [item.id, item.dropped.reason])).toEqual([['ignored', 'channelIgnored'], ['gone', 'channelGone']])
+  expect(store.read.droppedReplies().map(item => [item.id, item.dropped.reason])).toEqual([
+    ['ignored', 'channelIgnored'],
+    ['gone', 'channelGone'],
+  ])
   expect(['gone', 'sent', 'waiting'].map(id => store.replyStatus(id))).toEqual(['dropped', 'sent', 'pending'])
   // A receipt holds no attempts: the message that waits has a `reply` effect, which keeps the ones it had and counts on.
-  expect(store.receipts.get('waiting')).toEqual({ id: 'waiting', channel: { source: 'feishu', thread: 'feishu:oc_1:om_1', address: {} }, text: 'waiting',
-    kind: 'reply', status: 'pending' })
-  expect(store.db.prepare('SELECT kind, key, attempts, error FROM effect').all()).toEqual([{ kind: 'reply', key: 'waiting', attempts: 2, error: 'offline' }])
-  expect(store.db.prepare("SELECT name FROM pragma_table_xinfo('outbox')").all().map(row => row.name)).not.toContain('sent')
+  expect(store.receipts.get('waiting')).toEqual({
+    id: 'waiting',
+    channel: { source: 'feishu', thread: 'feishu:oc_1:om_1', address: {} },
+    text: 'waiting',
+    kind: 'reply',
+    status: 'pending',
+  })
+  expect(store.db.prepare('SELECT kind, key, attempts, error FROM effect').all()).toEqual([
+    { kind: 'reply', key: 'waiting', attempts: 2, error: 'offline' },
+  ])
+  expect(
+    store.db
+      .prepare("SELECT name FROM pragma_table_xinfo('outbox')")
+      .all()
+      .map(row => row.name),
+  ).not.toContain('sent')
   store.close()
 })
 
 it('changes nothing when one step fails: the database stays at schema 10 as it was', () => {
   const path = join(directory, 'db.sqlite')
-  const ticket = { id: 't1', title: 'Fix', decisionId: 'd1', channels: [], state: 'open', assignments: [], inputs: [], undelivered: [], summary: '', createdAt: '1',
-    updatedAt: '2', mandate: mandate({ via: 'listed' }), meta: { sourceTriggerId: 'trig-1', workspace: '/w/fix-1' } }
+  const ticket = {
+    id: 't1',
+    title: 'Fix',
+    decisionId: 'd1',
+    channels: [],
+    state: 'open',
+    assignments: [],
+    inputs: [],
+    undelivered: [],
+    summary: '',
+    createdAt: '1',
+    updatedAt: '2',
+    mandate: mandate({ via: 'listed' }),
+    meta: { sourceTriggerId: 'trig-1', workspace: '/w/fix-1' },
+  }
   // The current settings must validate; an invalid value aborts the migration transaction.
   schema10(path, { settings: { executor: { maxWorkers: 'many' } } }, { ticket: [ticket] })
-  expect(() => new Store(path)).toThrow(/^The orchestrator database is unchanged at schema 10: its migration to schema 11 failed: the settings: /)
+  expect(() => new Store(path)).toThrow(
+    /^The orchestrator database is unchanged at schema 10: its migration to schema 11 failed: the settings: /,
+  )
   const db = new DatabaseSync(path)
   expect(db.prepare("SELECT value FROM kv WHERE key='schema'").get()).toEqual({ value: '10' })
-  expect(JSON.parse(String(db.prepare("SELECT value FROM ticket WHERE id='t1'").get()!.value))).toMatchObject({ meta: { workspace: '/w/fix-1' } })
+  expect(JSON.parse(String(db.prepare("SELECT value FROM ticket WHERE id='t1'").get()!.value))).toMatchObject({
+    meta: { workspace: '/w/fix-1' },
+  })
   db.close()
 })
 
 it('reads every basis an earlier gate recorded in the current shape', () => {
   const scope = { chatId: 'oc_1', direct: false }
-  expect(basisOf({ source: 'feishu', scope, row: 'oc_1', sender: 'Alice', addressed: 'mention' })).toEqual({ via: 'addressed', source: 'feishu', scope, row: 'oc_1',
-    sender: 'Alice', addressed: 'mention' })
-  expect(basisOf({ source: 'feishu', scope, followup: true, rules: ['r'] })).toEqual({ via: 'followup', source: 'feishu', scope, rules: ['r'] })
-  expect(basisOf({ source: 'feishu', scope, addressed: 'direct', admission: 'unlistedAddressed' })).toEqual({ via: 'admission', source: 'feishu', scope,
-    cell: 'unlistedAddressed', addressed: 'direct' })
+  expect(basisOf({ source: 'feishu', scope, row: 'oc_1', sender: 'Alice', addressed: 'mention' })).toEqual({
+    via: 'addressed',
+    source: 'feishu',
+    scope,
+    row: 'oc_1',
+    sender: 'Alice',
+    addressed: 'mention',
+  })
+  expect(basisOf({ source: 'feishu', scope, followup: true, rules: ['r'] })).toEqual({
+    via: 'followup',
+    source: 'feishu',
+    scope,
+    rules: ['r'],
+  })
+  expect(basisOf({ source: 'feishu', scope, addressed: 'direct', admission: 'unlistedAddressed' })).toEqual({
+    via: 'admission',
+    source: 'feishu',
+    scope,
+    cell: 'unlistedAddressed',
+    addressed: 'direct',
+  })
   // Observed under an earlier gate that recorded no cell: the sender had to be on the list.
-  expect(basisOf({ source: 'feishu', scope, sender: 'Alice', observation: true, mode: 'auto', rules: ['r'] })).toEqual({ via: 'listed', source: 'feishu', scope,
-    sender: 'Alice', rules: ['r'], observation: { mode: 'auto' } })
-  expect(basisOf({ chatId: 'oc_1', direct: true, followup: true, member: 'ou_a' })).toEqual({ via: 'followup', source: 'feishu', scope: { chatId: 'oc_1', direct: true },
-    sender: 'ou_a' })
+  expect(basisOf({ source: 'feishu', scope, sender: 'Alice', observation: true, mode: 'auto', rules: ['r'] })).toEqual({
+    via: 'listed',
+    source: 'feishu',
+    scope,
+    sender: 'Alice',
+    rules: ['r'],
+    observation: { mode: 'auto' },
+  })
+  expect(basisOf({ chatId: 'oc_1', direct: true, followup: true, member: 'ou_a' })).toEqual({
+    via: 'followup',
+    source: 'feishu',
+    scope: { chatId: 'oc_1', direct: true },
+    sender: 'ou_a',
+  })
   expect(basisOf({ member: 'ou_a', mention: true })).toEqual({ via: 'listed', sender: 'ou_a', addressed: 'mention' })
   expect(basisOf({ legacyAuthority: 'explicit_mention' })).toEqual({ via: 'listed', authority: 'explicit_mention' })
   expect(basisOf({ via: 'followup' })).toEqual({ via: 'followup' })
@@ -474,7 +557,9 @@ it('names the ticket it stopped at when a ticket does not read, and leaves the d
   const path = join(directory, 'db.sqlite')
   const { inputs: _inputs, ...broken } = ticket10('t9')
   schema10(path, {}, { ticket: [broken] })
-  expect(() => new Store(path)).toThrow(/^The orchestrator database is unchanged at schema 10: its migration to schema 11 failed: ticket t9: /)
+  expect(() => new Store(path)).toThrow(
+    /^The orchestrator database is unchanged at schema 10: its migration to schema 11 failed: ticket t9: /,
+  )
   const db = new DatabaseSync(path)
   expect(db.prepare("SELECT value FROM kv WHERE key='schema'").get()).toEqual({ value: '10' })
   expect(JSON.parse(String(db.prepare("SELECT value FROM ticket WHERE id='t9'").get()!.value))).toEqual(broken)

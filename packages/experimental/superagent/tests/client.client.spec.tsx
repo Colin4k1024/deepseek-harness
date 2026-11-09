@@ -7,19 +7,43 @@ import { apply } from '../src/client/plugin.tsx'
 import { zh } from '../src/client/locales.ts'
 import { SettingsSchema } from '../src/policy.ts'
 
-declare global { var IS_REACT_ACT_ENVIRONMENT: boolean }
+declare global {
+  var IS_REACT_ACT_ENVIRONMENT: boolean
+}
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
 
-type Entry = { options: { name: string; id?: string; key?: string; order?: number; locale?: string; label?: () => string }; component: ComponentType<Record<string, unknown>> }
+type Entry = {
+  options: { name: string; id?: string; key?: string; order?: number; locale?: string; label?: () => string }
+  component: ComponentType<Record<string, unknown>>
+}
 const t = ((key: keyof typeof zh) => zh[key] ?? key) as never
 function fixture(listed: string[]) {
   const entries: Entry[] = []
   const dictionaries: Record<string, unknown> = {}
   const ctx = {
-    slots: { inject: (_name: string, register: () => void) =>{  register() }, register: (options: Entry['options'], component: Entry['component']) => { entries.push({ options, component }); return () => {} } },
-    locale: { register: (ns: string, value: unknown) => { dictionaries[ns] = value; return () => {} }, bind: () => t },
-    effect: (effect: () => unknown) => { effect() },
-    sessions: { list: { getSnapshot: () => ({ phase: 'ready', byId: Object.fromEntries(listed.map(id => [id, {}])) }) }, refresh: vi.fn(async () => {}) },
+    slots: {
+      inject: (_name: string, register: () => void) => {
+        register()
+      },
+      register: (options: Entry['options'], component: Entry['component']) => {
+        entries.push({ options, component })
+        return () => {}
+      },
+    },
+    locale: {
+      register: (ns: string, value: unknown) => {
+        dictionaries[ns] = value
+        return () => {}
+      },
+      bind: () => t,
+    },
+    effect: (effect: () => unknown) => {
+      effect()
+    },
+    sessions: {
+      list: { getSnapshot: () => ({ phase: 'ready', byId: Object.fromEntries(listed.map(id => [id, {}])) }) },
+      refresh: vi.fn(async () => {}),
+    },
     uiWorkspace: { openSession: vi.fn() },
     // Omit config form service so Deployment renders read-only.
     get: () => undefined,

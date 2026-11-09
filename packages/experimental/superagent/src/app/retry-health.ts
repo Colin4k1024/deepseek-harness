@@ -62,31 +62,61 @@ export class RetryHealth {
     if (event.type === 'turn/start' || event.type === 'turn/end') {
       if (!ordinal(data.turn) || data.turn < state.turn) return
       if (data.turn > state.turn) Object.assign(state, { turn: data.turn, step: -1, ended: false, settled: false, active: undefined })
-      if (event.type === 'turn/end') { state.active = undefined; state.ended = true }
+      if (event.type === 'turn/end') {
+        state.active = undefined
+        state.ended = true
+      }
       return
     }
     if (event.type === 'llm/retry-started') return // A retry attempt starting does not mean the budget failure has recovered.
     if (!['step/start', 'llm/retry', 'assistant/message'].includes(event.type)) return
     if (!ordinal(data.turn) || !ordinal(data.step)) return
-    if (data.turn < state.turn || data.turn === state.turn && (state.ended || data.step < state.step)) return
+    if (data.turn < state.turn || (data.turn === state.turn && (state.ended || data.step < state.step))) return
     if (event.type === 'assistant/message') {
       const source = record(record(data.message)?.source)
-      if (state.active && data.turn === state.turn && data.step === state.step && data.interrupted !== true && source?.kind === 'model' && source.provider === state.active.provider) {
-        state.active = undefined; state.settled = true
+      if (
+        state.active &&
+        data.turn === state.turn &&
+        data.step === state.step &&
+        data.interrupted !== true &&
+        source?.kind === 'model' &&
+        source.provider === state.active.provider
+      ) {
+        state.active = undefined
+        state.settled = true
       }
       return
     }
-    if (data.turn > state.turn || data.step > state.step) Object.assign(state, { turn: data.turn, step: data.step, ended: false, settled: false, active: undefined })
+    if (data.turn > state.turn || data.step > state.step)
+      Object.assign(state, { turn: data.turn, step: data.step, ended: false, settled: false, active: undefined })
     if (event.type === 'step/start' || state.settled) return
-    if (typeof data.retryId !== 'string' || !data.retryId || typeof data.provider !== 'string' || typeof data.retry !== 'number' || !Number.isInteger(data.retry) || data.retry < 1) return
-    if (!budgetFailure(data.failure)) { state.active = undefined; return }
+    if (
+      typeof data.retryId !== 'string' ||
+      !data.retryId ||
+      typeof data.provider !== 'string' ||
+      typeof data.retry !== 'number' ||
+      !Number.isInteger(data.retry) ||
+      data.retry < 1
+    )
+      return
+    if (!budgetFailure(data.failure)) {
+      state.active = undefined
+      return
+    }
     const attempts = Math.min(data.retry, Number.MAX_SAFE_INTEGER)
     const previous = state.active?.id === data.retryId && state.active.provider === data.provider ? state.active.status : undefined
     if (previous && attempts <= previous.attempts) return
     const at = new Date(event.time).toISOString()
-    state.active = { id: data.retryId, provider: data.provider, status: {
-      sessionId, provider: /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,79}$/.test(data.provider) ? data.provider : 'unknown', attempts,
-      since: previous?.since ?? at, lastAt: at,
-    } }
+    state.active = {
+      id: data.retryId,
+      provider: data.provider,
+      status: {
+        sessionId,
+        provider: /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,79}$/.test(data.provider) ? data.provider : 'unknown',
+        attempts,
+        since: previous?.since ?? at,
+        lastAt: at,
+      },
+    }
   }
 }

@@ -80,13 +80,15 @@ export const builtInPart = (part: string): BuiltInPart | undefined =>
   Object.hasOwn(builtInParts(), part) ? builtInParts()[part as PartKey] : undefined
 /** The text of a built-in part: the team's override, else the built-in one. */
 const builtIn = (config: PromptConfig, part: PartKey): string =>
-  (config.overrides && Object.hasOwn(config.overrides, part) ? required(config.overrides[part]).text : undefined) ?? builtInParts()[part].text
+  (config.overrides && Object.hasOwn(config.overrides, part) ? required(config.overrides[part]).text : undefined) ??
+  builtInParts()[part].text
 /** Fill a template's placeholders in one pass, so text filled in is not read for placeholders again. */
 const fill = (template: string, values: Record<string, string>): string =>
-  template.replace(/\{(\w+)\}/g, (match, name: string) => Object.hasOwn(values, name) ? required(values[name]) : match)
+  template.replace(/\{(\w+)\}/g, (match, name: string) => (Object.hasOwn(values, name) ? required(values[name]) : match))
 /** The execution environment part: its template with the variables, or, while setup waits, that it waits. */
 export function environmentSection(config: PromptConfig, variables: Variable[] | undefined): string {
-  return variables ? fill(builtIn(config, 'runtime/environment'), { variables: environmentLines(variables) })
+  return variables
+    ? fill(builtIn(config, 'runtime/environment'), { variables: environmentLines(variables) })
     : 'Execution environment: dsh-superagent is waiting for setup; the management panel names what is missing.'
 }
 /**
@@ -141,24 +143,35 @@ export class PromptConflict extends Error {}
  */
 export class Prompts {
   private readonly versions: Versions<PromptVersion>
-  constructor(private readonly store: Store, private readonly maxChars: () => number, private readonly environment: () => Variable[] | undefined,
-    private readonly feishu: () => boolean) {
+  constructor(
+    private readonly store: Store,
+    private readonly maxChars: () => number,
+    private readonly environment: () => Variable[] | undefined,
+    private readonly feishu: () => boolean,
+  ) {
     this.versions = new Versions(store, KV.prompts.revision, KV.prompts.version)
   }
   /** A role's prompt; the main Session's Policy section follows the settings as they are now, at each model request. */
   compose(config: PromptConfig, role: Role, variables = this.environment()): string {
-    return composePrompt(config, role, environmentSection(config, variables), role === 'orchestrator' ? policySection(this.store.settings(), config) : undefined)
+    return composePrompt(
+      config,
+      role,
+      environmentSection(config, variables),
+      role === 'orchestrator' ? policySection(this.store.settings(), config) : undefined,
+    )
   }
   /**
    * Returns skills to register in every Session: built-in Source skills (`feishu` only when a Feishu bot is configured) followed by team
    * skills.
    */
   skills(config: PromptConfig): [string, string][] {
-    return [...this.feishu() ? ['feishu'] : [], 'github', ...Object.keys(config.skills)].map(name => [name, composeSkill(config, name)])
+    return [...(this.feishu() ? ['feishu'] : []), 'github', ...Object.keys(config.skills)].map(name => [name, composeSkill(config, name)])
   }
   current(): PromptVersion {
     const revision = this.versions.revision()
-    return revision ? this.version(revision) : { revision: 0, previousRevision: null, savedAt: '', source: 'defaults', config: defaultPrompts() }
+    return revision
+      ? this.version(revision)
+      : { revision: 0, previousRevision: null, savedAt: '', source: 'defaults', config: defaultPrompts() }
   }
   /** Reads a revision by number; revision 0 resolves to built-in defaults before the first save persists it. */
   version(revision: number): PromptVersion {
@@ -196,32 +209,46 @@ export class Prompts {
   defaultChanged(config: PromptConfig): DefaultChange[] {
     return Object.entries(config.overrides ?? {}).flatMap(([part, { base }]): DefaultChange[] => {
       const now = builtInPart(part)
-      if (!now) return [{ part, ...base === undefined ? {} : { base }, removed: true as const }]
+      if (!now) return [{ part, ...(base === undefined ? {} : { base }), removed: true as const }]
       if (base === undefined || base === builtInBase(now.text)) return []
       const previous = this.store.get(KV.prompts.builtIn(base))
-      return [{ part, base, ...previous === undefined ? {} : { previous } }]
+      return [{ part, base, ...(previous === undefined ? {} : { previous }) }]
     })
   }
   preview(value: unknown) {
     const config = this.validate(value)
-    const environment = environmentSection(config, this.environment()), policy = policySection(this.store.settings(), config)
-    return { orchestrator: composePrompt(config, 'orchestrator', environment, policy), worker: composePrompt(config, 'worker', environment),
+    const environment = environmentSection(config, this.environment()),
+      policy = policySection(this.store.settings(), config)
+    return {
+      orchestrator: composePrompt(config, 'orchestrator', environment, policy),
+      worker: composePrompt(config, 'worker', environment),
       parts: { orchestrator: promptParts(config, 'orchestrator', environment, policy), worker: promptParts(config, 'worker', environment) },
-      skills: Object.fromEntries(this.skills(config)), scope: 'Team sections, skills, and overrides of built-in parts, which follow their built-in text until overridden. Workers additionally inherit the host prompt and repository AGENTS.md. Prompt text changes what the agents are told, not what dsh-superagent allows: tool permissions, the gate and account wrappers stay.' }
+      skills: Object.fromEntries(this.skills(config)),
+      scope:
+        'Team sections, skills, and overrides of built-in parts, which follow their built-in text until overridden. Workers additionally inherit the host prompt and repository AGENTS.md. Prompt text changes what the agents are told, not what dsh-superagent allows: tool permissions, the gate and account wrappers stay.',
+    }
   }
   save(value: unknown, baseRevision: number, source: SettingsOrigin): PromptVersion {
     const config = this.validate(value)
     return this.store.atomic(() => {
       const previous = this.current()
-      if (previous.revision !== baseRevision) throw new PromptConflict(`Prompt version changed to ${previous.revision}; compare the latest version before saving`)
+      if (previous.revision !== baseRevision)
+        throw new PromptConflict(`Prompt version changed to ${previous.revision}; compare the latest version before saving`)
       // Persist the built-in defaults as revision 0 before recording the first custom revision.
       if (previous.revision === 0 && !this.versions.get(0)) this.versions.keep(previous)
       // The built-in text each override was edited from, kept to show what an upgrade changed in it.
       for (const [part, { base }] of Object.entries(config.overrides ?? {})) {
         const text = builtInParts()[part as PartKey].text
-        if (base === builtInBase(text) && this.store.get(KV.prompts.builtIn(base)) === undefined) this.store.set(KV.prompts.builtIn(base), text)
+        if (base === builtInBase(text) && this.store.get(KV.prompts.builtIn(base)) === undefined)
+          this.store.set(KV.prompts.builtIn(base), text)
       }
-      return this.versions.save(revision => ({ revision, previousRevision: previous.revision, savedAt: new Date().toISOString(), source, config }))
+      return this.versions.save(revision => ({
+        revision,
+        previousRevision: previous.revision,
+        savedAt: new Date().toISOString(),
+        source,
+        config,
+      }))
     })
   }
   history(offset = 0, limit = 20) {
@@ -233,21 +260,33 @@ export class Prompts {
       // Pre-team-section revisions are not comparable field-by-field.
       const legacy = version.legacy || (version.previousRevision !== null && this.versions.get(version.previousRevision)?.legacy)
       if (legacy) return { ...summary, changed: ['legacy'] }
-      const entries = (value: PromptConfig) => ({ communication: value.communication, scope: value.scope, delivery: value.delivery,
+      const entries = (value: PromptConfig) => ({
+        communication: value.communication,
+        scope: value.scope,
+        delivery: value.delivery,
         ...Object.fromEntries(Object.entries(value.skills).map(([name, text]) => ['skill/' + name, text])),
         // An override changes with its text or with the built-in text it was edited from.
-        ...Object.fromEntries(Object.entries(value.overrides ?? {}).map(([part, override]) => [part, JSON.stringify(override)])) })
+        ...Object.fromEntries(Object.entries(value.overrides ?? {}).map(([part, override]) => [part, JSON.stringify(override)])),
+      })
       const before = previous ? entries(previous) : {}
       const after = entries(config)
-      const changed = previous ? [...new Set([...Object.keys(before), ...Object.keys(after)])].filter(name => (before as Record<string, string>)[name] !== (after as Record<string, string>)[name]) : []
+      const changed = previous
+        ? [...new Set([...Object.keys(before), ...Object.keys(after)])].filter(
+          name => (before as Record<string, string>)[name] !== (after as Record<string, string>)[name],
+        )
+        : []
       return { ...summary, changed }
     })
     return { revisions, next_offset: offset + revisions.length <= current.revision ? offset + revisions.length : null }
   }
 }
 /** Save a new prompt revision and notify the main Session when the change originated outside its own tool call. */
-export async function savePrompts(host: { store: Pick<Store, 'atomic'>; prompts: Pick<Prompts, 'save'>; sessions: Pick<Sessions, 'notify' | 'delivery'> },
-  config: unknown, baseRevision: number, origin: SettingsOrigin) {
+export async function savePrompts(
+  host: { store: Pick<Store, 'atomic'>; prompts: Pick<Prompts, 'save'>; sessions: Pick<Sessions, 'notify' | 'delivery'> },
+  config: unknown,
+  baseRevision: number,
+  origin: SettingsOrigin,
+) {
   const version = host.store.atomic(() => {
     const saved = host.prompts.save(config, baseRevision, origin)
     if (origin !== 'tool') host.sessions.notify(...promptsNotice(saved.revision))

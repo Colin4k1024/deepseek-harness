@@ -220,28 +220,56 @@ it('replaces a working-set column an earlier build defined otherwise, and drops 
 it('lists in the same order in SQLite and in memory, and undoes a failed nested transaction alone in both', () => {
   const store = new Store(join(directory, 'orchestrator.sqlite'))
   const order = (items: { id?: string; key?: string }[]) => items.map(item => item.id ?? item.key)
-  const decision = (id: string): Decision => ({ id, evalId: '', threadKey: 'github:1', triggerIds: [], policyVersion: '', at: id, kind: 'ignore', reason: [],
-    strength: 'explicit' })
+  const decision = (id: string): Decision => ({
+    id,
+    evalId: '',
+    threadKey: 'github:1',
+    triggerIds: [],
+    policyVersion: '',
+    at: id,
+    kind: 'ignore',
+    reason: [],
+    strength: 'explicit',
+  })
   const run = (repo: Repositories) => {
     repo.tickets.save(ticket('first', 'open', [{ state: 'running' }]))
     repo.tickets.save(ticket('second', 'ended', [{ state: 'ended' }]))
     repo.tickets.save(ticket('third', 'open', [{ state: 'pending' }]))
     // Saving a ticket again keeps its place.
     repo.tickets.save({ ...repo.tickets.get('first')!, title: 'again' })
-    repo.threads.save(thread('1', 'github', { pending: ['a'] })); repo.threads.save(thread('2', 'github')); repo.threads.save(thread('3', 'github', { pending: ['b'] }))
+    repo.threads.save(thread('1', 'github', { pending: ['a'] }))
+    repo.threads.save(thread('2', 'github'))
+    repo.threads.save(thread('3', 'github', { pending: ['b'] }))
     repo.decisions.save(decision('d2'))
     repo.decisions.save(decision('d1'))
     // A failed nested transaction undoes its own writes; the one around it goes on and keeps its own.
     repo.atomic(() => {
       repo.tickets.save(ticket('outer', 'open', []))
-      expect(() => repo.atomic(() => { repo.tickets.save(ticket('inner', 'open', [])); throw new Error('boom') })).toThrow('boom')
+      expect(() =>
+        repo.atomic(() => {
+          repo.tickets.save(ticket('inner', 'open', []))
+          throw new Error('boom')
+        }),
+      ).toThrow('boom')
     })
-    return { tickets: order(repo.tickets.list()), open: order(repo.tickets.open()), active: order(repo.tickets.active()), threads: order(repo.threads.list()),
-      activeThreads: order(repo.threads.active()), decisions: order(repo.decisions.byThread('github:1')) }
+    return {
+      tickets: order(repo.tickets.list()),
+      open: order(repo.tickets.open()),
+      active: order(repo.tickets.active()),
+      threads: order(repo.threads.list()),
+      activeThreads: order(repo.threads.active()),
+      decisions: order(repo.decisions.byThread('github:1')),
+    }
   }
   const memory = run(new MemoryRepositories())
-  expect(memory).toEqual({ tickets: ['outer', 'third', 'second', 'first'], open: ['outer', 'third', 'first'], active: ['third', 'first'],
-    threads: ['github:1', 'github:2', 'github:3'], activeThreads: ['github:1', 'github:3'], decisions: ['d2', 'd1'] })
+  expect(memory).toEqual({
+    tickets: ['outer', 'third', 'second', 'first'],
+    open: ['outer', 'third', 'first'],
+    active: ['third', 'first'],
+    threads: ['github:1', 'github:2', 'github:3'],
+    activeThreads: ['github:1', 'github:3'],
+    decisions: ['d2', 'd1'],
+  })
   expect(run(store)).toEqual(memory)
   store.close()
 })

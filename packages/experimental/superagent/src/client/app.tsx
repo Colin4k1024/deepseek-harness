@@ -108,84 +108,210 @@ function Header({ masterId }: { masterId: string | undefined }) {
   const [result, setResult] = useState<{ query: string; value: SearchView }>()
   // Ignore responses from superseded or cleared search requests.
   const latest = useRef(0)
-  const show = (value?: { query: string; value: SearchView }) => { latest.current++; setResult(value) }
+  const show = (value?: { query: string; value: SearchView }) => {
+    latest.current++
+    setResult(value)
+  }
   const search = useRef<HTMLFormElement>(null)
   useEffect(() => {
     if (!result) return
-    const close = (event: PointerEvent) => { if (!search.current?.contains(event.target as Node)) show() }
+    const close = (event: PointerEvent) => {
+      if (!search.current?.contains(event.target as Node)) show()
+    }
     document.addEventListener('pointerdown', close)
-    return () => { document.removeEventListener('pointerdown', close) }
+    return () => {
+      document.removeEventListener('pointerdown', close)
+    }
   }, [result])
   const submit = (event: FormEvent) => {
     event.preventDefault()
     const text = query.trim()
-    if (!text) { show(); return }
+    if (!text) {
+      show()
+      return
+    }
     const request = ++latest.current
-    call('GET search', { query: { q: text } }).then((value) => { if (request === latest.current) setResult({ query: text, value }) },
-      (failure: unknown) => { if (request === latest.current) notify(errorText(failure)) })
+    call('GET search', { query: { q: text } }).then(
+      (value) => {
+        if (request === latest.current) setResult({ query: text, value })
+      },
+      (failure: unknown) => {
+        if (request === latest.current) notify(errorText(failure))
+      },
+    )
   }
-  return <header className="dt-head">
-    <div className="dt-head-title"><h1 className="dt-title">{t('title')}</h1></div>
-    <div className="dt-toolbar">
-      <form ref={search} className="dt-search" role="search" onSubmit={submit} onKeyDown={(event) => { if (event.key === 'Escape') show() }}>
-        <Input type="search" icon={<Icon name="search" />} value={query} placeholder={t('searchPlaceholder')} aria-label={t('searchLabel')}
-          onChange={(event) => { setQuery(event.target.value); if (!event.target.value) show() }} />
-        {result && <SearchResults result={result.value} query={result.query} onClose={() => { show() }} />}
-      </form>
-      <Button variant="ghost" size="sm" icon={<Icon name="question" />} aria-label={t('glossary')} title={t('glossary')} aria-haspopup="dialog"
-        onClick={() => { setGlossary(true) }} />
-      <Button variant="outline" size="sm" icon={<Icon name="session" size={14} />} disabled={!masterId}
-        onClick={() => { if (masterId) openSession(masterId).catch((failure: unknown) => { notify(errorText(failure)) }) }}>{t('openMaster')}</Button>
-    </div>
-    <Glossary open={glossary} onClose={() => { setGlossary(false) }} />
-  </header>
+  return (
+    <header className="dt-head">
+      <div className="dt-head-title">
+        <h1 className="dt-title">{t('title')}</h1>
+      </div>
+      <div className="dt-toolbar">
+        <form
+          ref={search}
+          className="dt-search"
+          role="search"
+          onSubmit={submit}
+          onKeyDown={(event) => {
+            if (event.key === 'Escape') show()
+          }}
+        >
+          <Input
+            type="search"
+            icon={<Icon name="search" />}
+            value={query}
+            placeholder={t('searchPlaceholder')}
+            aria-label={t('searchLabel')}
+            onChange={(event) => {
+              setQuery(event.target.value)
+              if (!event.target.value) show()
+            }}
+          />
+          {result && (
+            <SearchResults
+              result={result.value}
+              query={result.query}
+              onClose={() => {
+                show()
+              }}
+            />
+          )}
+        </form>
+        <Button
+          variant="ghost"
+          size="sm"
+          icon={<Icon name="question" />}
+          aria-label={t('glossary')}
+          title={t('glossary')}
+          aria-haspopup="dialog"
+          onClick={() => {
+            setGlossary(true)
+          }}
+        />
+        <Button
+          variant="outline"
+          size="sm"
+          icon={<Icon name="session" size={14} />}
+          disabled={!masterId}
+          onClick={() => {
+            if (masterId)
+              openSession(masterId).catch((failure: unknown) => {
+                notify(errorText(failure))
+              })
+          }}
+        >
+          {t('openMaster')}
+        </Button>
+      </div>
+      <Glossary
+        open={glossary}
+        onClose={() => {
+          setGlossary(false)
+        }}
+      />
+    </header>
+  )
 }
 
 function Pages({ route, openTab, deploymentForm }: { route: Route; openTab: (tab: Tab) => void; deploymentForm: DeploymentForm }) {
   const { t } = usePanel()
   const { state, error, reload } = usePanelData()
   // Keep the active tab scrolled into view on narrow screens when routes change via links.
-  useEffect(() => { scrollIntoView(document.getElementById(`dt-tab-${route.page}`), { block: 'nearest', inline: 'nearest' }) }, [route.page])
-  const waiting = error ? <p className="dt-error" role="alert">{error.message}</p> : <p className="dt-hint">{t('loading')}</p>
+  useEffect(() => {
+    scrollIntoView(document.getElementById(`dt-tab-${route.page}`), { block: 'nearest', inline: 'nearest' })
+  }, [route.page])
+  const waiting = error ? (
+    <p className="dt-error" role="alert">
+      {error.message}
+    </p>
+  ) : (
+    <p className="dt-hint">{t('loading')}</p>
+  )
   const page = (() => {
     switch (route.page) {
-      case 'overview': return <OverviewPage />
-      case 'source': return <SourceStatus />
-      case 'trigger': return route.id !== undefined ? <ThreadPage key={route.id} id={route.id} target={route.query?.trigger} />
-        : <TriggerStatus filter={route.query?.filter ?? 'subscribed'} />
-      case 'eval': return <EvalStatus filter={route.query?.filter ?? 'work'} window={route.query?.window}
-        paused={!!state?.paused} />
-      case 'execution': return route.id !== undefined ? <TicketPage key={route.id} id={route.id} />
-        : state ? <ExecutionStatus filter={route.query?.filter ?? 'open'} state={state} reload={reload} /> : waiting
-      case 'settings': return state ? <SettingsPage key={state.masterId} group={route.query.group} query={route.query} state={state}
-        deploymentForm={deploymentForm} /> : waiting
+      case 'overview':
+        return <OverviewPage />
+      case 'source':
+        return <SourceStatus />
+      case 'trigger':
+        return route.id !== undefined ? (
+          <ThreadPage key={route.id} id={route.id} target={route.query?.trigger} />
+        ) : (
+          <TriggerStatus filter={route.query?.filter ?? 'subscribed'} />
+        )
+      case 'eval':
+        return <EvalStatus filter={route.query?.filter ?? 'work'} window={route.query?.window} paused={!!state?.paused} />
+      case 'execution':
+        return route.id !== undefined ? (
+          <TicketPage key={route.id} id={route.id} />
+        ) : state ? (
+          <ExecutionStatus filter={route.query?.filter ?? 'open'} state={state} reload={reload} />
+        ) : (
+          waiting
+        )
+      case 'settings':
+        return state ? (
+          <SettingsPage key={state.masterId} group={route.query.group} query={route.query} state={state} deploymentForm={deploymentForm} />
+        ) : (
+          waiting
+        )
     }
   })()
-  return <div className="dt-page">
-    <div className="dt-column">
-      <Header masterId={state?.masterId} />
-      {error && state && <p className="dt-error" role="status">{error.message}</p>}
-      <SegmentedTabs className="dt-tabs" label={t('pagesLabel')} value={route.page} onChange={openTab}
-        items={TABS.map(value => ({ value, label: t(`tab.${value}`), id: `dt-tab-${value}`, panelId: 'dt-page' }))} />
-      <main id="dt-page" role="tabpanel" aria-labelledby={`dt-tab-${route.page}`} className="dt-main">{page}</main>
+  return (
+    <div className="dt-page">
+      <div className="dt-column">
+        <Header masterId={state?.masterId} />
+        {error && state && (
+          <p className="dt-error" role="status">
+            {error.message}
+          </p>
+        )}
+        <SegmentedTabs
+          className="dt-tabs"
+          label={t('pagesLabel')}
+          value={route.page}
+          onChange={openTab}
+          items={TABS.map(value => ({ value, label: t(`tab.${value}`), id: `dt-tab-${value}`, panelId: 'dt-page' }))}
+        />
+        <main id="dt-page" role="tabpanel" aria-labelledby={`dt-tab-${route.page}`} className="dt-main">
+          {page}
+        </main>
+      </div>
     </div>
-  </div>
+  )
 }
 
 /** Root panel component managing route history and shared panel state. */
 export function App({ t, openSession, deploymentForm }: AppProps) {
   const [location, setLocation] = useState(initialLocation)
-  useEffect(() => { remember(location) }, [location])
+  useEffect(() => {
+    remember(location)
+  }, [location])
   // Preserve the last opened settings group across navigation so the Settings tab reopens at it.
-  const move = useCallback((next: (current: Location) => Pick<Location, 'route' | 'stack'>) =>{
-    setLocation(current => ({ ...next(current), group: lastSettingsGroup(current) })) }, [])
+  const move = useCallback((next: (current: Location) => Pick<Location, 'route' | 'stack'>) => {
+    setLocation(current => ({ ...next(current), group: lastSettingsGroup(current) }))
+  }, [])
   /** Navigates to `route`; `replace` swaps the current entry (filters, paging) instead of pushing a back step. */
-  const navigate = useCallback((route: Route, replace = false) => { move(current => ({ route,
-    stack: replace ? current.stack : [...current.stack, current.route].slice(-20) })) }, [move])
-  const back = useCallback(() => { move(current => ({ route: current.stack.at(-1) ?? HOME, stack: current.stack.slice(0, -1) })) }, [move])
-  const openTab = useCallback((tab: Tab) => { move(current => ({ stack: [], route: tab === 'settings'
-    ? settingsRoute(lastSettingsGroup(current)) : { page: tab, id: undefined } })) }, [move])
-  return <PanelProvider t={t} openSession={openSession} navigate={navigate} back={back} backLabel={routeLabel(t, location.stack.at(-1) ?? HOME)}>
-    <Pages route={location.route} openTab={openTab} deploymentForm={deploymentForm} />
-  </PanelProvider>
+  const navigate = useCallback(
+    (route: Route, replace = false) => {
+      move(current => ({ route, stack: replace ? current.stack : [...current.stack, current.route].slice(-20) }))
+    },
+    [move],
+  )
+  const back = useCallback(() => {
+    move(current => ({ route: current.stack.at(-1) ?? HOME, stack: current.stack.slice(0, -1) }))
+  }, [move])
+  const openTab = useCallback(
+    (tab: Tab) => {
+      move(current => ({
+        stack: [],
+        route: tab === 'settings' ? settingsRoute(lastSettingsGroup(current)) : { page: tab, id: undefined },
+      }))
+    },
+    [move],
+  )
+  return (
+    <PanelProvider t={t} openSession={openSession} navigate={navigate} back={back} backLabel={routeLabel(t, location.stack.at(-1) ?? HOME)}>
+      <Pages route={location.route} openTab={openTab} deploymentForm={deploymentForm} />
+    </PanelProvider>
+  )
 }

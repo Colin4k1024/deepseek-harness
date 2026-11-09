@@ -199,12 +199,16 @@ it('tells the main Session of a follow-up to an ended ticket once the ticket res
   await h.runtime.settings.pause(true, 'panel')
   h.deliveries.mockClear()
   const message = followup('2', '再改一下标题')
-  h.runtime.receive(message); await h.runtime.idle()
+  h.runtime.receive(message)
+  await h.runtime.idle()
   expect(notices(h)).toEqual([])
   await h.runtime.settings.pause(false, 'panel')
-  await h.runtime.pump(); await h.runtime.idle()
+  await h.runtime.pump()
+  await h.runtime.idle()
   expect(h.runtime.store.tickets.get(ticket.id)!.ended).toBeUndefined()
-  expect(notices(h)).toEqual([expect.objectContaining({ trigger_id: message.id, delivered_to: [expect.objectContaining({ ticket_id: ticket.id })] })])
+  expect(notices(h)).toEqual([
+    expect.objectContaining({ trigger_id: message.id, delivered_to: [expect.objectContaining({ ticket_id: ticket.id })] }),
+  ])
 })
 
 it('tells the main Session nothing of a message it attached to an ended ticket, which resumes for it', async () => {
@@ -230,12 +234,15 @@ it('tells the main Session of a follow-up an earlier version queued for Eval, wh
     h!.runtime.store.triggers.saveDisposition(message.id, { fanout: [ticket.id], at: message.at })
     h!.runtime.store.threads.save({ ...h!.runtime.store.threads.get(THREAD)!, pending: [message.id] })
   })
-  await h.runtime.pump(); await h.runtime.idle()
+  await h.runtime.pump()
+  await h.runtime.idle()
   expect(h.runtime.store.threads.get(THREAD)).toMatchObject({ pending: [] })
-  expect(notices(h)).toEqual([expect.objectContaining({ trigger_id: message.id, delivered_to: [expect.objectContaining({ ticket_id: ticket.id })] })])
+  expect(notices(h)).toEqual([
+    expect.objectContaining({ trigger_id: message.id, delivered_to: [expect.objectContaining({ ticket_id: ticket.id })] }),
+  ])
 })
 
-it('sends a request on a thread a worker follows only for context to Eval, and marks the worker\'s copy as context', async () => {
+it("sends a request on a thread a worker follows only for context to Eval, and marks the worker's copy as context", async () => {
   h = await startRuntime()
   const { ticket, sessionId } = await h.acceptedTicket(feishu('1', '@bot 修一下回归'))
   await h.runTool(sessionId, 'orchestrator_thread_follow', { thread: `feishu:${CHAT}:om_9`, reason: 'The same page.' })

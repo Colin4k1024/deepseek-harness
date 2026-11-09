@@ -80,19 +80,27 @@ export function followupOwners(trigger: Pick<Trigger, 'id' | 'human' | 'threads'
   // The disposition alone rules most messages out, so a Thread or a ticket is read only for one that may have an owner.
   const returned = new Set(disposition.handbacks?.map(item => item.ticketId))
   const reached = disposition.fanout.filter(id => !returned.has(id) && !disposition.context?.includes(id))
-  if (!reached.length || records.threads.get(threadKey(required(trigger.threads[0])))?.evaluating?.triggerIds.includes(trigger.id)) return []
+  if (!reached.length || records.threads.get(threadKey(required(trigger.threads[0])))?.evaluating?.triggerIds.includes(trigger.id))
+    return []
   return reached.filter((id) => {
     const ticket = records.tickets.get(id)
-    return !!ticket && (liveTicket(ticket) || (ticket.ended?.by !== 'human'
-      && ticket.inputs.some(input => input.kind === 'trigger' && input.triggerId === trigger.id && ticket.undelivered.includes(input.id))))
+    return (
+      !!ticket &&
+      (liveTicket(ticket) ||
+        (ticket.ended?.by !== 'human' &&
+          ticket.inputs.some(
+            input => input.kind === 'trigger' && input.triggerId === trigger.id && ticket.undelivered.includes(input.id),
+          )))
+    )
   })
 }
 /**
  * Whether a Decision settled what a person's message asks for: a stop on it, taken or refused, decides only that ticket's
  * work, routing it to a ticket leaves it to that ticket's worker, and an unavailable one decided nothing.
  */
-export const settled = (decision: Pick<Decision, 'kind' | 'reason'>): boolean => !['stop', 'unavailable'].includes(decision.kind)
-  && !decision.reason.some(reason => ['stopNotExplicit', 'stopUnknown', 'routed'].includes(reason.code))
+export const settled = (decision: Pick<Decision, 'kind' | 'reason'>): boolean =>
+  !['stop', 'unavailable'].includes(decision.kind) &&
+  !decision.reason.some(reason => ['stopNotExplicit', 'stopUnknown', 'routed'].includes(reason.code))
 
 export type Strength = 'explicit' | 'inferred'
 /** The cells of a receiving scope's row in the admission table, by whether the sender is listed and addresses the agent. */

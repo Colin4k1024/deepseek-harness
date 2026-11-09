@@ -5,8 +5,17 @@ import { join } from 'node:path'
 import { promisify } from 'node:util'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { SENSITIVE_ENV_PATTERN, type SubprocessRuntime } from '@deepseek-ai/dsh-subprocess'
-import { GIT_LOCATION, agentVariables, credentialHelper, runAsWorker, verifyDirectory, withoutDirectory, workerBin, workerGitConfig, writeEnvironment }
-  from '../src/infra/environment.ts'
+import {
+  GIT_LOCATION,
+  agentVariables,
+  credentialHelper,
+  runAsWorker,
+  verifyDirectory,
+  withoutDirectory,
+  workerBin,
+  workerGitConfig,
+  writeEnvironment,
+} from '../src/infra/environment.ts'
 import { CliError } from '../src/infra/commands.ts'
 import { testDeployment } from './fixtures/deployment.ts'
 import { gitEnv } from './fixtures/git.ts'
@@ -15,35 +24,64 @@ import { gitEnv } from './fixtures/git.ts'
 vi.setConfig({ testTimeout: 30_000 })
 const exec = promisify(execFile)
 let dir: string
-const program = (path: string, body: string): string => { writeFileSync(path, `#!/bin/sh\n${body}\n`); chmodSync(path, 0o755); return path }
+const program = (path: string, body: string): string => {
+  writeFileSync(path, `#!/bin/sh\n${body}\n`)
+  chmodSync(path, 0o755)
+  return path
+}
 /** Worker shell environment after DSH strips credential-shaped variables. */
 const workerEnv = (env: Record<string, string | undefined>): Record<string, string> =>
-  Object.fromEntries(Object.entries(env).filter((entry): entry is [string, string] => entry[1] !== undefined && !SENSITIVE_ENV_PATTERN.test(entry[0])))
-beforeEach(() => { dir = mkdtempSync(join(tmpdir(), 'environment-')); mkdirSync(join(dir, 'real')) })
-afterEach(() => { rmSync(dir, { recursive: true, force: true }) })
+  Object.fromEntries(
+    Object.entries(env).filter((entry): entry is [string, string] => entry[1] !== undefined && !SENSITIVE_ENV_PATTERN.test(entry[0])),
+  )
+beforeEach(() => {
+  dir = mkdtempSync(join(tmpdir(), 'environment-'))
+  mkdirSync(join(dir, 'real'))
+})
+afterEach(() => {
+  rmSync(dir, { recursive: true, force: true })
+})
 
 describe('worker shims', () => {
-  it('run a wrapper that calls `gh` by name without reaching the shim again, and keep the caller\'s other PATH entries', async () => {
+  it("run a wrapper that calls `gh` by name without reaching the shim again, and keep the caller's other PATH entries", async () => {
     program(join(dir, 'real', 'gh'), 'echo "{\\"login\\":\\"agent-bot\\",\\"config\\":\\"$GH_CONFIG_DIR\\",\\"path\\":\\"$PATH\\"}"')
     const wrapper = program(join(dir, 'gh-agent'), `GH_CONFIG_DIR=${dir}/agent-config exec gh "$@"`)
     await writeEnvironment(testDeployment({ stateDir: dir, github: { ...testDeployment().github, cli: wrapper }, feishu: undefined }), [])
     const bin = workerBin(dir)
     const path = [bin, join(dir, 'venv'), join(dir, 'real'), '/usr/bin', '/bin'].join(':')
     const { stdout } = await exec('gh', ['api', 'user'], { env: { PATH: path }, timeout: 10_000 })
-    expect(JSON.parse(stdout)).toEqual({ login: 'agent-bot', config: `${dir}/agent-config`, path: [join(dir, 'venv'), join(dir, 'real'), '/usr/bin', '/bin'].join(':') })
+    expect(JSON.parse(stdout)).toEqual({
+      login: 'agent-bot',
+      config: `${dir}/agent-config`,
+      path: [join(dir, 'venv'), join(dir, 'real'), '/usr/bin', '/bin'].join(':'),
+    })
   })
-  it('make `lark-cli` fail without a Feishu bot and each blocked command fail with the agent\'s login', async () => {
+  it("make `lark-cli` fail without a Feishu bot and each blocked command fail with the agent's login", async () => {
     await writeEnvironment(testDeployment({ stateDir: dir, feishu: undefined }), ['personal-gh'])
     const bin = workerBin(dir)
-    await expect(exec(join(bin, 'lark-cli'), ['im', '+chat-list'])).rejects.toMatchObject({ code: 1, stderr: 'lark-cli is unavailable: this installation has no Feishu bot.\n' })
-    await expect(exec(join(bin, 'personal-gh'), [])).rejects.toMatchObject({ code: 1, stderr: 'personal-gh is blocked in this installation; use gh, which acts as agent-bot.\n' })
+    await expect(exec(join(bin, 'lark-cli'), ['im', '+chat-list'])).rejects.toMatchObject({
+      code: 1,
+      stderr: 'lark-cli is unavailable: this installation has no Feishu bot.\n',
+    })
+    await expect(exec(join(bin, 'personal-gh'), [])).rejects.toMatchObject({
+      code: 1,
+      stderr: 'personal-gh is blocked in this installation; use gh, which acts as agent-bot.\n',
+    })
   })
   it('keep `gh` and `lark-cli` working, and shim no `git`, when the blocked commands name the commands workers need', async () => {
-    const gh = program(join(dir, 'gh-agent'), 'echo gh "$@"'), lark = program(join(dir, 'lark-bot'), 'echo lark "$@"')
+    const gh = program(join(dir, 'gh-agent'), 'echo gh "$@"'),
+      lark = program(join(dir, 'lark-bot'), 'echo lark "$@"')
     const base = testDeployment()
-    await writeEnvironment(testDeployment({ stateDir: dir, github: { ...base.github, cli: gh }, feishu: { ...base.feishu!, cli: lark } }), ['gh', 'git', 'lark-cli'])
+    await writeEnvironment(testDeployment({ stateDir: dir, github: { ...base.github, cli: gh }, feishu: { ...base.feishu!, cli: lark } }), [
+      'gh',
+      'git',
+      'lark-cli',
+    ])
     const bin = workerBin(dir)
-    expect([(await exec(join(bin, 'gh'), ['api', 'user'])).stdout, (await exec(join(bin, 'lark-cli'), ['im'])).stdout]).toEqual(['gh api user\n', 'lark im\n'])
+    expect([(await exec(join(bin, 'gh'), ['api', 'user'])).stdout, (await exec(join(bin, 'lark-cli'), ['im'])).stdout]).toEqual([
+      'gh api user\n',
+      'lark im\n',
+    ])
     expect(readdirSync(bin)).not.toContain('git')
   })
   it('replace only what dsh-superagent wrote and refuse anything else in its places', async () => {

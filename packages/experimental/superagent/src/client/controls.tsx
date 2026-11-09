@@ -123,44 +123,116 @@ export function SegmentedControl<V extends string>({ options, value, onChange, l
   disabled?: boolean
   className?: string
 }) {
-  return <div role="tablist" aria-label={label} className={cx('dt-segmented', className)}
-    style={{ gridTemplateColumns: `repeat(${options.length}, minmax(0, 1fr))` }}
-    onKeyDown={(event) => { if (!disabled) walk(event, options.map(option => option.value), value, onChange) }}>
-    {options.map(option => <button key={option.value} type="button" role="tab" aria-selected={option.value === value}
-      tabIndex={option.value === value ? 0 : -1}
-      title={option.title} disabled={disabled} className="dt-segment"
-      onClick={() => { if (option.value !== value) onChange(option.value) }}>{option.label}</button>)}
-  </div>
+  return (
+    <div
+      role="tablist"
+      aria-label={label}
+      className={cx('dt-segmented', className)}
+      style={{ gridTemplateColumns: `repeat(${options.length}, minmax(0, 1fr))` }}
+      onKeyDown={(event) => {
+        if (!disabled)
+          walk(
+            event,
+            options.map(option => option.value),
+            value,
+            onChange,
+          )
+      }}
+    >
+      {options.map(option => (
+        <button
+          key={option.value}
+          type="button"
+          role="tab"
+          aria-selected={option.value === value}
+          tabIndex={option.value === value ? 0 : -1}
+          title={option.title}
+          disabled={disabled}
+          className="dt-segment"
+          onClick={() => {
+            if (option.value !== value) onChange(option.value)
+          }}
+        >
+          {option.label}
+        </button>
+      ))}
+    </div>
+  )
 }
 
-export function Input({ icon, className, ...rest }: { icon?: ReactNode; className?: string | undefined } & InputHTMLAttributes<HTMLInputElement>) {
-  return <span className={cx('dt-input', className)}>{icon !== undefined && <span
-    className="dt-input-icon">{icon}</span>}<input {...rest} /></span>
+export function Input({
+  icon,
+  className,
+  ...rest
+}: { icon?: ReactNode; className?: string | undefined } & InputHTMLAttributes<HTMLInputElement>) {
+  return (
+    <span className={cx('dt-input', className)}>
+      {icon !== undefined && <span className="dt-input-icon">{icon}</span>}
+      <input {...rest} />
+    </span>
+  )
 }
 
-export function Switch({ checked, onChange, label,
-  className }: { checked: boolean; onChange: (next: boolean) => void; label: string; className?: string }) {
-  return <button type="button" role="switch" aria-checked={checked} aria-label={label} className={cx('dt-switch', className)}
-    onClick={() => { onChange(!checked) }}>
-    <span className="dt-switch-thumb" />
-  </button>
+export function Switch({
+  checked,
+  onChange,
+  label,
+  className,
+}: {
+  checked: boolean
+  onChange: (next: boolean) => void
+  label: string
+  className?: string
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label={label}
+      className={cx('dt-switch', className)}
+      onClick={() => {
+        onChange(!checked)
+      }}
+    >
+      <span className="dt-switch-thumb" />
+    </button>
+  )
 }
 
 export type DotState = 'done' | 'warning' | 'ongoing' | 'error' | 'idle'
 export function StateDot({ state, className }: { state: DotState; className?: string }) {
   if (state === 'ongoing') {
-    return <svg className={cx('dt-spinner', className)} data-state="ongoing" width={14} height={14} viewBox="0 0 24 24" aria-hidden="true">
-      <g><circle cx="12" cy="12" r="9.5" /><circle cx="12" cy="12" r="9.5" /></g>
-    </svg>
+    return (
+      <svg className={cx('dt-spinner', className)} data-state="ongoing" width={14} height={14} viewBox="0 0 24 24" aria-hidden="true">
+        <g>
+          <circle cx="12" cy="12" r="9.5" />
+          <circle cx="12" cy="12" r="9.5" />
+        </g>
+      </svg>
+    )
   }
   return <span className={cx('dt-state-dot', className)} data-state={state} aria-hidden="true" />
 }
 export function Dot({ state, label }: { state: DotState; label?: string }) {
   const dot = <StateDot className="dt-dot" state={state} />
-  return label ? <span className="dt-dot-wrap" title={label} role="img" aria-label={label}>{dot}</span> : dot
+  return label ? (
+    <span className="dt-dot-wrap" title={label} role="img" aria-label={label}>
+      {dot}
+    </span>
+  ) : (
+    dot
+  )
 }
 
-export function DisclosureRow({ icon, title, open, onToggle, collapsedContent, children }: {
+export function DisclosureRow({
+  icon,
+  title,
+  open,
+  onToggle,
+  collapsedContent,
+  children,
+}: {
   icon: ReactNode
   title: ReactNode
   open: boolean

@@ -56,20 +56,33 @@ export class AgentDelivery {
         }
         offset += events.length
       }
-    })().catch((error: unknown) => { delete state.loaded; throw error })
+    })().catch((error: unknown) => {
+      delete state.loaded
+      throw error
+    })
     await state.loaded
     return state
   }
   async holds(agent: Agent, requestId: string): Promise<boolean> {
     const id = messageId(requestId)
-    return (await this.history(agent)).ids.has(id) || [...agent.inbox.nextTurn, ...agent.inbox.nextStep].some(message => deliveryId(message) === id)
+    return (
+      (await this.history(agent)).ids.has(id) ||
+      [...agent.inbox.nextTurn, ...agent.inbox.nextStep].some(message => deliveryId(message) === id)
+    )
   }
   /**
    * Delivers once to the selected inbox, or injects into history without waking the agent, and flushes Session persistence before
    * acknowledging the producer.
    */
-  async send(agent: Agent, requestId: string, text: string, mode: 'queue' | 'steer' | { inject: string }, signal: AbortSignal, authorize?: () => void,
-    accepted?: () => void): Promise<void> {
+  async send(
+    agent: Agent,
+    requestId: string,
+    text: string,
+    mode: 'queue' | 'steer' | { inject: string },
+    signal: AbortSignal,
+    authorize?: () => void,
+    accepted?: () => void,
+  ): Promise<void> {
     signal.throwIfAborted()
     const seen = await this.history(agent)
     signal.throwIfAborted()

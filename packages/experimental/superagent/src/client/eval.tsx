@@ -125,90 +125,201 @@ function AdmissionTable({ rows, labels, table, explicit, onChange }: {
 }) {
   const { t } = usePanel()
   const name = (row: AdmissionRowView) => labels[row.id] ?? localized(t, row.label)
-  const set = (row: string, cell: AdmissionCell, value: Admission) => { onChange({ ...table, [row]: { ...table[row], [cell]: value } }) }
+  const set = (row: string, cell: AdmissionCell, value: Admission) => {
+    onChange({ ...table, [row]: { ...table[row], [cell]: value } })
+  }
   const select = (row: AdmissionRowView, cell: AdmissionCell) => {
     const value = table[row.id]?.[cell] ?? ADMISSION_DEFAULTS[cell]
     // Reserve a fixed-width slot for the warning icon so selecting a value never shifts column widths.
-    return <td key={cell}><span className="dt-admission-cell">
-      <select className="dt-select" aria-label={`${name(row)} · ${t(`admissionCell.${cell}`)}`} value={value} onChange={(event) => { set(row.id,
-        cell, event.target.value as Admission) }}>
-        {ADMISSION_OPTIONS[cell].map(option => <option key={option} value={option}>{t(`admissionValue.${option}`)}</option>)}
-      </select>
-      <span className="dt-admission-slot">{cell === 'unlistedAddressed' && value === 'explicit' && <InfoTip
-        text={t('admissionAnyoneWarning')} icon="alert" warn />}</span>
-    </span></td>
+    return (
+      <td key={cell}>
+        <span className="dt-admission-cell">
+          <select
+            className="dt-select"
+            aria-label={`${name(row)} · ${t(`admissionCell.${cell}`)}`}
+            value={value}
+            onChange={(event) => {
+              set(row.id, cell, event.target.value as Admission)
+            }}
+          >
+            {ADMISSION_OPTIONS[cell].map(option => (
+              <option key={option} value={option}>
+                {t(`admissionValue.${option}`)}
+              </option>
+            ))}
+          </select>
+          <span className="dt-admission-slot">
+            {cell === 'unlistedAddressed' && value === 'explicit' && <InfoTip text={t('admissionAnyoneWarning')} icon="alert" warn />}
+          </span>
+        </span>
+      </td>
+    )
   }
-  return <Section title={t('admission')} hint={t('admissionHint')}>
-    <Hint>{explicit}</Hint>
-    <table className="dt-table dt-admission">
-      <thead>
-        <tr><th rowSpan={2}>{t('admissionScope')}</th><th>{t('admissionListed')}</th><th colSpan={2}>{t('admissionUnlisted')}</th></tr>
-        <tr><th>{t('admissionUnaddressed')}</th><th>{t('admissionAddressed')}</th><th>{t('admissionUnaddressed')}</th></tr>
-      </thead>
-      <tbody>{rows.map(row => <tr key={row.id}>
-        <td className="dt-admission-scope">{name(row)}<small>{localized(t, row.note)}</small></td>
-        {CELLS.map(cell => row.cells[cell] ? select(row, cell) : <td key={cell} className="dt-admission-na"
-          aria-label={t('admissionNotReceived')}>—</td>)}
-      </tr>)}</tbody>
-    </table>
-    <Hint>{t('admissionFootnote')}</Hint>
-  </Section>
+  return (
+    <Section title={t('admission')} hint={t('admissionHint')}>
+      <Hint>{explicit}</Hint>
+      <table className="dt-table dt-admission">
+        <thead>
+          <tr>
+            <th rowSpan={2}>{t('admissionScope')}</th>
+            <th>{t('admissionListed')}</th>
+            <th colSpan={2}>{t('admissionUnlisted')}</th>
+          </tr>
+          <tr>
+            <th>{t('admissionUnaddressed')}</th>
+            <th>{t('admissionAddressed')}</th>
+            <th>{t('admissionUnaddressed')}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map(row => (
+            <tr key={row.id}>
+              <td className="dt-admission-scope">
+                {name(row)}
+                <small>{localized(t, row.note)}</small>
+              </td>
+              {CELLS.map(cell =>
+                row.cells[cell] ? (
+                  select(row, cell)
+                ) : (
+                  <td key={cell} className="dt-admission-na" aria-label={t('admissionNotReceived')}>
+                    —
+                  </td>
+                ),
+              )}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <Hint>{t('admissionFootnote')}</Hint>
+    </Section>
+  )
 }
 
 function PolicyBlock() {
   const { t } = usePanel()
-  const { settings: { blocks, sources, policyVersion }, reload } = useSettings()
+  const {
+    settings: { blocks, sources, policyVersion },
+    reload,
+  } = useSettings()
   const draft = useBlockDraft('policy', blocks.policy.value, blocks.policy.revision)
   const policy = draft.value
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const parts = sources.filter(source => source.installed && source.policy)
   const [tab, setTab] = useState<string>()
   const current = parts.find(source => source.id === tab) ?? parts[0]
-  const edit = (next: Partial<typeof policy>) => { draft.edit({ ...policy, ...next }) }
-  const toggle = (id: string) => { const next = new Set(expanded); if (next.has(id)) next.delete(id); else next.add(id); setExpanded(next) }
+  const edit = (next: Partial<typeof policy>) => {
+    draft.edit({ ...policy, ...next })
+  }
+  const toggle = (id: string) => {
+    const next = new Set(expanded)
+    if (next.has(id)) next.delete(id)
+    else next.add(id)
+    setExpanded(next)
+  }
   const insert = (rule: Rule, at: number) => {
     setExpanded(new Set([...expanded, rule.id]))
     edit({ rules: [...policy.rules.slice(0, at), rule, ...policy.rules.slice(at)] })
   }
   // Expand all rules when native form validation fails inside a collapsed rule.
-  const reveal = (target: EventTarget) => { if (target instanceof Element
-    && target.closest('.dt-rules')) setExpanded(new Set(policy.rules.map(rule => rule.id))) }
+  const reveal = (target: EventTarget) => {
+    if (target instanceof Element && target.closest('.dt-rules')) setExpanded(new Set(policy.rules.map(rule => rule.id)))
+  }
   const part = (id: string) => (policy.sources[id] ?? { allowed: [] }) as Part
-  const add = () => { insert({ id: randomUUID(), name: '', enabled: true, instruction: '' }, policy.rules.length) }
-  return <form className="dt-form dt-block" onSubmit={(event) => { void draft.submit(event) }}
-    onInvalidCapture={(event) => { reveal(event.target) }}>
-    <Fields disabled={draft.busy}>
-      <h2 className="dt-block-title">{t('term.policy')}<InfoTip text={t('policyIntro')} /></h2>
-      <p className="dt-flow">
-        <LabelValue label={t('policyVersion')} value={<span className="dt-mono">{policyVersion.slice(0, 8)}</span>} /><InfoTip
-          text={t('policyVersionHint')} />
-      </p>
-      <Section title={t('rules')} hint={t('rulesHint')} action={<Button variant="ghost" size="sm" icon={<Icon name="plus" />}
-        onClick={add}>{t('addRule')}</Button>}>
-        {policy.rules.length ? <ul className="dt-rules">{policy.rules.map((rule, index) => <RuleRow key={rule.id} rule={rule}
-          expanded={expanded.has(rule.id)}
-          onToggle={() => { toggle(rule.id) }} onChange={(next) => { edit({ rules: policy.rules.map((item, position) => position === index ? next
-            : item) }) }}
-          onDuplicate={() => { insert({ ...rule, id: randomUUID(), name: `${rule.name}${t('copySuffix')}`.slice(0, LIMITS.ruleName) },
-            index + 1) }}
-          onRemove={() => { edit({ rules: policy.rules.filter((_, position) => position !== index) }) }} />)}</ul>
-          : <Hint>{t('rulesEmpty')}</Hint>}
-      </Section>
-      {current && <Section title={t('policyPerSource')} hint={t('policyPerSourceHint')}>
-        {parts.length > 1 && <div className="dt-subtabs" role="tablist" aria-label={t('policyPerSource')}>
-          {parts.map(source => <button key={source.id} type="button" role="tab" aria-selected={source === current} className="dt-subtab"
-            onClick={() => { setTab(source.id) }}>
-            {localized(t, source.title)}
-          </button>)}
-        </div>}
-        <SourcePart key={current.id} source={current} part={part(current.id)}
-          saved={(blocks.policy.value.sources[current.id] ?? {})} dirty={draft.dirty}
-          reload={reload} onChange={(next) => { edit({ sources: { ...policy.sources,
-            [current.id]: next as typeof policy.sources[string] } }) }} />
-      </Section>}
-    </Fields>
-    <SaveBar {...draft} onDiscard={draft.discard} />
-  </form>
+  const add = () => {
+    insert({ id: randomUUID(), name: '', enabled: true, instruction: '' }, policy.rules.length)
+  }
+  return (
+    <form
+      className="dt-form dt-block"
+      onSubmit={(event) => {
+        void draft.submit(event)
+      }}
+      onInvalidCapture={(event) => {
+        reveal(event.target)
+      }}
+    >
+      <Fields disabled={draft.busy}>
+        <h2 className="dt-block-title">
+          {t('term.policy')}
+          <InfoTip text={t('policyIntro')} />
+        </h2>
+        <p className="dt-flow">
+          <LabelValue label={t('policyVersion')} value={<span className="dt-mono">{policyVersion.slice(0, 8)}</span>} />
+          <InfoTip text={t('policyVersionHint')} />
+        </p>
+        <Section
+          title={t('rules')}
+          hint={t('rulesHint')}
+          action={
+            <Button variant="ghost" size="sm" icon={<Icon name="plus" />} onClick={add}>
+              {t('addRule')}
+            </Button>
+          }
+        >
+          {policy.rules.length ? (
+            <ul className="dt-rules">
+              {policy.rules.map((rule, index) => (
+                <RuleRow
+                  key={rule.id}
+                  rule={rule}
+                  expanded={expanded.has(rule.id)}
+                  onToggle={() => {
+                    toggle(rule.id)
+                  }}
+                  onChange={(next) => {
+                    edit({ rules: policy.rules.map((item, position) => (position === index ? next : item)) })
+                  }}
+                  onDuplicate={() => {
+                    insert({ ...rule, id: randomUUID(), name: `${rule.name}${t('copySuffix')}`.slice(0, LIMITS.ruleName) }, index + 1)
+                  }}
+                  onRemove={() => {
+                    edit({ rules: policy.rules.filter((_, position) => position !== index) })
+                  }}
+                />
+              ))}
+            </ul>
+          ) : (
+            <Hint>{t('rulesEmpty')}</Hint>
+          )}
+        </Section>
+        {current && (
+          <Section title={t('policyPerSource')} hint={t('policyPerSourceHint')}>
+            {parts.length > 1 && (
+              <div className="dt-subtabs" role="tablist" aria-label={t('policyPerSource')}>
+                {parts.map(source => (
+                  <button
+                    key={source.id}
+                    type="button"
+                    role="tab"
+                    aria-selected={source === current}
+                    className="dt-subtab"
+                    onClick={() => {
+                      setTab(source.id)
+                    }}
+                  >
+                    {localized(t, source.title)}
+                  </button>
+                ))}
+              </div>
+            )}
+            <SourcePart
+              key={current.id}
+              source={current}
+              part={part(current.id)}
+              saved={blocks.policy.value.sources[current.id] ?? {}}
+              dirty={draft.dirty}
+              reload={reload}
+              onChange={(next) => {
+                edit({ sources: { ...policy.sources, [current.id]: next as (typeof policy.sources)[string] } })
+              }}
+            />
+          </Section>
+        )}
+      </Fields>
+      <SaveBar {...draft} onDiscard={draft.discard} />
+    </form>
+  )
 }
 
 function EvalBlock() {

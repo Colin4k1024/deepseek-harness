@@ -107,9 +107,23 @@ export class Evals extends EnginePart {
     }
     const evalId = key('eval', thread.key, policy.version, at, ...thread.pending)
     const deadline = new Date(Date.parse(at) + policy.evalTimeoutMs).toISOString()
-    const { strength, trigger: { actor }, basis } = strongest
-    thread.evaluating = { id: evalId, threadKey: thread.key, triggerIds: thread.pending, primary: strongest.trigger.id, strength, actor, basis,
-      policyVersion: policy.version, startedAt: at, deadline }
+    const {
+      strength,
+      trigger: { actor },
+      basis,
+    } = strongest
+    thread.evaluating = {
+      id: evalId,
+      threadKey: thread.key,
+      triggerIds: thread.pending,
+      primary: strongest.trigger.id,
+      strength,
+      actor,
+      basis,
+      policyVersion: policy.version,
+      startedAt: at,
+      deadline,
+    }
     thread.pending = []
     this.repo.threads.save(thread)
     for (const trigger of triggers) {
@@ -274,10 +288,23 @@ export class Evals extends EnginePart {
     const gate = policy.gate(trigger, thread, this.ticketsOnThread(thread))
     if (!gate.admissible) throw new UserError('notAdmissible', { reason: gate.reason })
     const at = this.now()
-    if (thread.pending.includes(trigger.id)) { thread.pending = thread.pending.filter(id => id !== trigger.id); this.repo.threads.save(thread) }
-    const id = key('eval', thread.key, 'direct', trigger.id, kind, ...ticketId ? [ticketId] : [], at)
-    return { id, threadKey: thread.key, triggerIds: [trigger.id], primary: trigger.id,
-      strength: gate.strength, actor: trigger.actor, basis: gate.basis, policyVersion: policy.version, startedAt: at, deadline: at }
+    if (thread.pending.includes(trigger.id)) {
+      thread.pending = thread.pending.filter(id => id !== trigger.id)
+      this.repo.threads.save(thread)
+    }
+    const id = key('eval', thread.key, 'direct', trigger.id, kind, ...(ticketId ? [ticketId] : []), at)
+    return {
+      id,
+      threadKey: thread.key,
+      triggerIds: [trigger.id],
+      primary: trigger.id,
+      strength: gate.strength,
+      actor: trigger.actor,
+      basis: gate.basis,
+      policyVersion: policy.version,
+      startedAt: at,
+      deadline: at,
+    }
   }
   /** Apply an outcome to an Eval of a Thread: the one in progress, or a gate-only one. */
   private decideEval(thread: Thread, evaluation: Evaluation, outcome: AssessmentOutcome): Decision {
@@ -320,16 +347,28 @@ export class Evals extends EnginePart {
     const decision = this.record(thread, evaluation, outcome)
     // Direct (gate-only) evaluations do not clear the thread's active evaluation.
     if (thread.evaluating?.id !== evaluation.id) return decision
-    delete thread.evaluating; delete thread.expired
+    delete thread.evaluating
+    delete thread.expired
     this.repo.threads.save(thread)
     this.options.assessor.release?.(evaluation.id)
     return decision
   }
   private record(thread: Thread, evaluation: Evaluation, outcome: Finished): Decision {
     const at = this.now()
-    const decision: Decision = { id: key('decision', evaluation.id), evalId: evaluation.id, threadKey: thread.key, triggerIds: evaluation.triggerIds,
-      policyVersion: evaluation.policyVersion, at, kind: outcome.kind, reason: outcome.reason, strength: evaluation.strength,
-      ...(outcome.ticketId ? { ticketId: outcome.ticketId } : {}), ...(outcome.mandate ? { mandate: outcome.mandate } : {}), ...(outcome.audit ? { audit: outcome.audit } : {}) }
+    const decision: Decision = {
+      id: key('decision', evaluation.id),
+      evalId: evaluation.id,
+      threadKey: thread.key,
+      triggerIds: evaluation.triggerIds,
+      policyVersion: evaluation.policyVersion,
+      at,
+      kind: outcome.kind,
+      reason: outcome.reason,
+      strength: evaluation.strength,
+      ...(outcome.ticketId ? { ticketId: outcome.ticketId } : {}),
+      ...(outcome.mandate ? { mandate: outcome.mandate } : {}),
+      ...(outcome.audit ? { audit: outcome.audit } : {}),
+    }
     this.repo.decisions.save(decision)
     for (const id of evaluation.triggerIds) {
       const disposition = this.repo.triggers.disposition(id) ?? { fanout: [], at }

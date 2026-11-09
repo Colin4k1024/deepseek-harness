@@ -4,45 +4,89 @@ import { required } from '../core/required.ts'
 import type { Trigger } from '../core/index.ts'
 import { validItems, type Commands } from '../infra/commands.ts'
 import { admissionImageKeys, readAdmissionImage } from './feishu-image.ts'
-import { feishuRef, feishuTime, HistoricalMessageSchema, HistoryPageSchema, historyText, withMentionNames, type HistoricalMessage }
-  from './feishu-trigger.ts'
+import {
+  feishuRef,
+  feishuTime,
+  HistoricalMessageSchema,
+  HistoryPageSchema,
+  historyText,
+  withMentionNames,
+  type HistoricalMessage,
+} from './feishu-trigger.ts'
 import type { ContextMessage, ThreadContext } from './kind.ts'
 import { textValue } from '../infra/text.ts'
 
 /** Retained source message reference anchoring context reads; `at` is the timestamp around which `chatAround` queries. */
-export interface FeishuRef { triggerId: string; chatId: string; messageId: string; at?: string }
+export interface FeishuRef {
+  triggerId: string
+  chatId: string
+  messageId: string
+  at?: string
+}
 const messageId = z.string().regex(/^om_[a-zA-Z0-9_-]+$/)
 const sourceSchema = z.object({
-  message_id: messageId, chat_id: z.string(), root_id: messageId.optional(), parent_id: messageId.optional(),
-  thread_id: z.string().regex(/^omt?_[a-zA-Z0-9_-]+$/).optional(), deleted: z.boolean().optional(),
+  message_id: messageId,
+  chat_id: z.string(),
+  root_id: messageId.optional(),
+  parent_id: messageId.optional(),
+  thread_id: z
+    .string()
+    .regex(/^omt?_[a-zA-Z0-9_-]+$/)
+    .optional(),
+  deleted: z.boolean().optional(),
 })
 const messageSchema = z.object({
-  message_id: messageId, chat_id: z.string(), content: z.string().optional(), msg_type: z.string(),
+  message_id: messageId,
+  chat_id: z.string(),
+  content: z.string().optional(),
+  msg_type: z.string(),
   sender: z.object({ id: z.string(), name: z.string().optional(), open_bot_id: z.string().optional(), sender_type: z.string() }),
-  create_time: z.string(), update_time: z.string().optional(), updated: z.boolean().optional(), deleted: z.boolean().optional(),
+  create_time: z.string(),
+  update_time: z.string().optional(),
+  updated: z.boolean().optional(),
+  deleted: z.boolean().optional(),
   mentions: z.array(z.object({ id: z.string(), name: z.string().optional(), key: z.string().optional() })).optional(),
-  message_app_link: z.string().optional(), thread_id: z.string().optional(), root_id: z.string().optional(), parent_id: z.string().optional(),
+  message_app_link: z.string().optional(),
+  thread_id: z.string().optional(),
+  root_id: z.string().optional(),
+  parent_id: z.string().optional(),
 })
 export type FeishuMessage = z.infer<typeof messageSchema>
 /** A topic page; messages are validated individually so an unreadable item is skipped alone and counted. */
-const threadSchema = z.object({ messages: z.array(z.unknown()), has_more: z.boolean(), page_token: z.string().optional(),
-  thread_id: z.string() })
+const threadSchema = z.object({
+  messages: z.array(z.unknown()),
+  has_more: z.boolean(),
+  page_token: z.string().optional(),
+  thread_id: z.string(),
+})
 
 /** Reads the CLI-provided AppLink for the source message alone, without retaining expanded thread content. */
 export async function readFeishuLink(commands: Commands, ref: FeishuRef): Promise<string> {
   const id = messageId.parse(ref.messageId)
-  const result = z.object({ messages: z.array(z.object({ message_id: messageId, chat_id: z.string(), message_app_link: z.url().optional(), deleted: z.boolean().optional() })) })
+  const result = z
+    .object({
+      messages: z.array(
+        z.object({ message_id: messageId, chat_id: z.string(), message_app_link: z.url().optional(), deleted: z.boolean().optional() }),
+      ),
+    })
     .parse(await commands.lark(['im', '+messages-mget', '--message-ids', id, '--no-reactions']))
   const message = result.messages.find(item => item.message_id === id)
-  if (!message || message.deleted || message.chat_id !== ref.chatId || !message.message_app_link) throw new Error('Source message link unavailable')
+  if (!message || message.deleted || message.chat_id !== ref.chatId || !message.message_app_link)
+    throw new Error('Source message link unavailable')
   return message.message_app_link
 }
 
 /** Resource references are anchored to an accepted trigger instead of arbitrary chat or message IDs. */
 export function feishuReferences(ref: FeishuRef) {
   const read = (section: string) => `feishu/${ref.triggerId}/${section}`
-  return { skill: 'dsh-superagent-feishu', message: read('message'), root: read('root'), parent: read('parent'), thread: read('thread'),
-    around: read('around') }
+  return {
+    skill: 'dsh-superagent-feishu',
+    message: read('message'),
+    root: read('root'),
+    parent: read('parent'),
+    thread: read('thread'),
+    around: read('around'),
+  }
 }
 
 /** Validates a model-supplied resource string before any network request; only `thread` and `around` take pagination cursors. */

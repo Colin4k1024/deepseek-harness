@@ -12,42 +12,81 @@ import { githubKind } from '../src/sources/github.ts'
 import { SourceRegistry } from '../src/sources/registry.ts'
 
 /** Assessor fixture backed by in-memory repositories and fake GitHub Issue and file reads. */
-function setup(strength: 'explicit' | 'inferred' = 'inferred', bodies = Array.from({ length: 5 }, (_, i) => `comment ${i}`),
-  threadContext?: AssessorHost['threadContext']) {
-  const comments = bodies.map((body, i) => ({ id: i, html_url: `https://github.com/acme/widgets/issues/1#c${i}`,
-    user: { login: 'bob' }, created_at: '2026-09-09T00:00:00Z', body }))
+function setup(
+  strength: 'explicit' | 'inferred' = 'inferred',
+  bodies = Array.from({ length: 5 }, (_, i) => `comment ${i}`),
+  threadContext?: AssessorHost['threadContext'],
+) {
+  const comments = bodies.map((body, i) => ({
+    id: i,
+    html_url: `https://github.com/acme/widgets/issues/1#c${i}`,
+    user: { login: 'bob' },
+    created_at: '2026-09-09T00:00:00Z',
+    body,
+  }))
   const gate = { issue: undefined as Promise<void> | undefined }
   const commands = {
-    repository: 'acme/widgets', deployment: testDeployment(),
-    withSignal() { return commands },
+    repository: 'acme/widgets',
+    deployment: testDeployment(),
+    withSignal() {
+      return commands
+    },
     gh: vi.fn(async (args: string[]) => {
       await gate.issue
       const number = Number(/issues\/(\d+)/.exec(args[1]!)?.[1])
-      return args[1]!.includes('/comments') ? comments : { id: 100 + number, number, state: 'open',
-        html_url: `https://github.com/acme/widgets/issues/${number}`,
-        user: { login: 'bob' }, created_at: '2026-09-09T00:00:00Z', title: 'Issue', body: 'body' }
+      return args[1]!.includes('/comments')
+        ? comments
+        : {
+          id: 100 + number,
+          number,
+          state: 'open',
+          html_url: `https://github.com/acme/widgets/issues/${number}`,
+          user: { login: 'bob' },
+          created_at: '2026-09-09T00:00:00Z',
+          title: 'Issue',
+          body: 'body',
+        }
     }),
     run: vi.fn(async () => 'export const value = 1\n'),
     // A string first argument is a raw file path; otherwise validate the fake gh response against the schema.
-    api: vi.fn(async (schema: unknown, ...rest: string[]) => typeof schema === 'string' ? 'export const value = 1\n'
-      : (schema as { parse(value: unknown): unknown }).parse(await (commands as unknown as { gh(args: string[]): Promise<unknown> }).gh(['api', rest[0]!]))),
+    api: vi.fn(async (schema: unknown, ...rest: string[]) =>
+      typeof schema === 'string'
+        ? 'export const value = 1\n'
+        : (schema as { parse(value: unknown): unknown }).parse(
+          await (commands as unknown as { gh(args: string[]): Promise<unknown> }).gh(['api', rest[0]!]),
+        ),
+    ),
   } as unknown as Commands
   const repo = new MemoryRepositories()
   const sources = new SourceRegistry(() => SettingsSchema.parse({}))
   sources.register(githubKind)
   const engines: { engine?: Engine } = {}
   const host: AssessorHost = {
-    get engine() { return engines.engine }, commands, deployment: testDeployment(), settings: () => SettingsSchema.parse({}),
+    get engine() {
+      return engines.engine
+    },
+    commands,
+    deployment: testDeployment(),
+    settings: () => SettingsSchema.parse({}),
     threadContext: threadContext ?? (trigger => sources.threadContext(trigger)),
-    effects: { enqueue: () => {}, handle: () => {} }, paused: () => false, deliver: async () => {}, candidateCard: async candidate => ({ eval_id: candidate.evalId }),
+    effects: { enqueue: () => {}, handle: () => {} },
+    paused: () => false,
+    deliver: async () => {},
+    candidateCard: async candidate => ({ eval_id: candidate.evalId }),
   }
   const assessor = new MasterAssessor(host)
-  const policy: Policy = { version: 'v1', paused: false, evalTimeoutMs: 600_000, gate: () => ({ admissible: true, strength, basis: { via: 'followup' } }),
-    revalidate: () => true, admitsInferred: rules => rules.length > 0 }
+  const policy: Policy = {
+    version: 'v1',
+    paused: false,
+    evalTimeoutMs: 600_000,
+    gate: () => ({ admissible: true, strength, basis: { via: 'followup' } }),
+    revalidate: () => true,
+    admitsInferred: rules => rules.length > 0,
+  }
   const executor: Executor = { start: () => {}, deliver: () => {}, stop: () => {} }
   const scope = { scope: () => ({ listened: true as const, observed: true }) }
   const outbox = { send: () => {}, status: () => undefined, withdraw: () => {} }
-  const engine = engines.engine = new Engine({ repo, policy: () => policy, scope, assessor, executor, outbox })
+  const engine = (engines.engine = new Engine({ repo, policy: () => policy, scope, assessor, executor, outbox }))
   const tools: Record<string, (args: unknown, signal: AbortSignal) => Promise<unknown>> = {}
   tools.orchestrator_eval_read = (args, signal) => assessor.read({} as Agent, EvalReadSchema.parse(args), signal)
   tools.orchestrator_eval_decide = (args, signal) => {

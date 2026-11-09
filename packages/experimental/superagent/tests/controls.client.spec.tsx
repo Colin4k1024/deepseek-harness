@@ -6,25 +6,38 @@ import { createRoot } from 'react-dom/client'
 import { expect, it } from 'vitest'
 import { Modal, SegmentedTabs } from '../src/client/controls.tsx'
 
-declare global { var IS_REACT_ACT_ENVIRONMENT: boolean }
+declare global {
+  var IS_REACT_ACT_ENVIRONMENT: boolean
+}
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
 
 it('imports no DSH client runtime package, only React and type declarations', () => {
   const dir = join(import.meta.dirname, '../src/client')
   for (const name of readdirSync(dir)) {
     const source = readFileSync(join(dir, name), 'utf8')
-    for (const match of source.matchAll(/^import (type )?[^'"]*from '(@deepseek-ai\/[^']+)'/gm)) expect({ name, from: match[2], typeOnly: !!match[1] }).toMatchObject({ typeOnly: true })
-    expect(source).not.toContain('dsh-client-ui-primitives\'')
+    for (const match of source.matchAll(/^import (type )?[^'"]*from '(@deepseek-ai\/[^']+)'/gm))
+      expect({ name, from: match[2], typeOnly: !!match[1] }).toMatchObject({ typeOnly: true })
+    expect(source).not.toContain("dsh-client-ui-primitives'")
   }
 })
 
 it('imports each module of the panel only from modules that do not import it back', () => {
   const dir = join(import.meta.dirname, '../src/client')
-  const graph = new Map(readdirSync(dir).filter(name => /\.tsx?$/.test(name)).map(name => [name, [...readFileSync(join(dir, name), 'utf8')
-    .matchAll(/^import [^'"]*from '\.\/([\w-]+\.tsx?)'/gm)].map(match => match[1]!)]))
-  const done = new Set<string>(), cycles: string[] = []
+  const graph = new Map(
+    readdirSync(dir)
+      .filter(name => /\.tsx?$/.test(name))
+      .map(name => [
+        name,
+        [...readFileSync(join(dir, name), 'utf8').matchAll(/^import [^'"]*from '\.\/([\w-]+\.tsx?)'/gm)].map(match => match[1]!),
+      ]),
+  )
+  const done = new Set<string>(),
+    cycles: string[] = []
   const visit = (name: string, path: string[]): void => {
-    if (path.includes(name)) { cycles.push([...path.slice(path.indexOf(name)), name].join(' → ')); return }
+    if (path.includes(name)) {
+      cycles.push([...path.slice(path.indexOf(name)), name].join(' → '))
+      return
+    }
     if (done.has(name)) return
     for (const next of graph.get(name) ?? []) visit(next, [...path, name])
     done.add(name)

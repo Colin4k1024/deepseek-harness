@@ -93,61 +93,107 @@ export const sourceTrigger = (host: { store: Pick<Store, 'triggers'> }, ticket: 
  * requests.
  */
 export function mandateInstructions(mandate: Pick<Mandate, 'strength'>): string {
-  return mandate.strength === 'inferred' ? 'This ticket has limited proactive authorization. Independently verify that it is a small change '
-    + 'internal to one module within the accepted rule scope. If it requires public-interface or behavior changes, new interaction, product '
-    + 'decisions or clarification, stop and report dropped; do not expand scope.' : ''
+  return mandate.strength === 'inferred'
+    ? 'This ticket has limited proactive authorization. Independently verify that it is a small change ' +
+        'internal to one module within the accepted rule scope. If it requires public-interface or behavior changes, new interaction, product ' +
+        'decisions or clarification, stop and report dropped; do not expand scope.'
+    : ''
 }
 /** Builds a newly accepted ticket's Execution metadata: its worktree name, workspace directory, and assignment text. */
-export function ticketExecution(ticket: Ticket, outcome: Extract<AssessmentOutcome, { kind: 'accept' }>, settings: Settings,
-  stateDir: string): Execution {
+export function ticketExecution(
+  ticket: Ticket,
+  outcome: Extract<AssessmentOutcome, { kind: 'accept' }>,
+  settings: Settings,
+  stateDir: string,
+): Execution {
   const name = ticketWorktreeName(outcome.name ?? '', ticket.id)
   const note = outcome.note ? `\nRouting note (not the source request): ${outcome.note}` : ''
   const ruleIds = ticket.mandate.basis.rules
-  const rules = settings.policy.rules.filter(rule => ruleIds?.includes(rule.id))
-    .map(rule => `\n- ${rule.name} (${rule.id}): ${rule.instruction}`).join('')
-  const precedence = rules ? `\nMatched rules; their procedure and communication instructions take precedence over the default acknowledgement and messaging policy for this ticket:${rules}` : ''
+  const rules = settings.policy.rules
+    .filter(rule => ruleIds?.includes(rule.id))
+    .map(rule => `\n- ${rule.name} (${rule.id}): ${rule.instruction}`)
+    .join('')
+  const precedence = rules
+    ? `\nMatched rules; their procedure and communication instructions take precedence over the default acknowledgement and messaging policy for this ticket:${rules}`
+    : ''
   // The origin trigger is delivered alongside the assignment, so `assignment` omits the trigger text.
-  const assignment = ticket.mandate.strength === 'inferred' && ruleIds
-    ? `Proactively accepted under ${ruleIds.join(', ')}. Scope: ${outcome.scope}.${precedence}${note}`
-    : note.trim()
+  const assignment =
+    ticket.mandate.strength === 'inferred' && ruleIds
+      ? `Proactively accepted under ${ruleIds.join(', ')}. Scope: ${outcome.scope}.${precedence}${note}`
+      : note.trim()
   return { name, directory: join(executionRoot(settings, stateDir), name), assignment }
 }
 /** Character limits for inline assignment and trigger text in worker messages; longer text is read via its resource. */
-const ASSIGNMENT_CHARS = 1500, TRIGGER_CHARS = 600
-/** Returns `text` up to `limit` characters, or a truncated preview with total character count and the resource path to read the full text. */
+const ASSIGNMENT_CHARS = 1500,
+  TRIGGER_CHARS = 600
+/**
+ * Returns `text` up to `limit` characters, or a truncated preview with total character count and the resource path to read the full
+ * text.
+ */
 const capped = (text: string, limit: number, read: string) =>
   text.length <= limit ? { text } : { text: `${text.slice(0, limit)}…`, chars: text.length, read }
 /**
  * Formats a Trigger for worker delivery: author, thread, timestamp, text up to `TRIGGER_CHARS`, source message link,
  * optional routing note, and a preview of the replied-to message when the worker has not yet seen it.
  */
-export function triggerMessage(trigger: Trigger, link: { source_url?: string; source_url_read?: string }, note?: string, repliesTo?: Trigger) {
-  return { trigger_id: trigger.id, from: trigger.actor.id, thread: threadKey(required(trigger.threads[0])), at: trigger.at,
-    ...capped(trigger.text, TRIGGER_CHARS, `trigger/${trigger.id}`), ...link, ...(note ? { routing_note: note } : {}),
-    ...(repliesTo ? { replies_to: { trigger_id: repliesTo.id, preview: repliesTo.text.replace(/\s+/g, ' ').slice(0, 160) } } : {}) }
+export function triggerMessage(
+  trigger: Trigger,
+  link: { source_url?: string; source_url_read?: string },
+  note?: string,
+  repliesTo?: Trigger,
+) {
+  return {
+    trigger_id: trigger.id,
+    from: trigger.actor.id,
+    thread: threadKey(required(trigger.threads[0])),
+    at: trigger.at,
+    ...capped(trigger.text, TRIGGER_CHARS, `trigger/${trigger.id}`),
+    ...link,
+    ...(note ? { routing_note: note } : {}),
+    ...(repliesTo ? { replies_to: { trigger_id: repliesTo.id, preview: repliesTo.text.replace(/\s+/g, ' ').slice(0, 160) } } : {}),
+  }
 }
 /** Formats a peer trigger from the ticket's acceptance batch with author, timestamp, 160-character preview, and read resource path. */
-export const batchLine = (trigger: Trigger) => ({ trigger_id: trigger.id, from: trigger.actor.id, at: trigger.at,
-  preview: trigger.text.replace(/\s+/g, ' ').slice(0, 160), read: `trigger/${trigger.id}` })
+export const batchLine = (trigger: Trigger) => ({
+  trigger_id: trigger.id,
+  from: trigger.actor.id,
+  at: trigger.at,
+  preview: trigger.text.replace(/\s+/g, ' ').slice(0, 160),
+  read: `trigger/${trigger.id}`,
+})
 /** Returns the other triggers in a ticket's origin batch (excluding the primary `origin.triggerId`), oldest first. */
-export const batchOf = (host: { store: Pick<Store, 'triggers'> }, ticket: Ticket): Trigger[] => ticket.origin.triggerIds
-  .filter(id => id !== ticket.origin.triggerId).flatMap(id => host.store.triggers.get(id) ?? [])
-const RESUMED = 'This ticket ended earlier and the message that follows, on its thread, resumed it under the same mandate. If it asks for '
-  + 'more within the original scope, inspect the worktree, git history and PR state and continue; if it asks for work beyond that scope or '
-  + 'for another ticket, hand it back with orchestrator_trigger_handback and report dropped; if it needs nothing, such as thanks, '
-  + 'report dropped without a message. Report ready when the follow-up is done. Do not repeat completed work.'
+export const batchOf = (host: { store: Pick<Store, 'triggers'> }, ticket: Ticket): Trigger[] =>
+  ticket.origin.triggerIds.filter(id => id !== ticket.origin.triggerId).flatMap(id => host.store.triggers.get(id) ?? [])
+const RESUMED =
+  'This ticket ended earlier and the message that follows, on its thread, resumed it under the same mandate. If it asks for ' +
+  'more within the original scope, inspect the worktree, git history and PR state and continue; if it asks for work beyond that scope or ' +
+  'for another ticket, hand it back with orchestrator_trigger_handback and report dropped; if it needs nothing, such as thanks, ' +
+  'report dropped without a message. Report ready when the follow-up is done. Do not repeat completed work.'
 const RETRIED = 'A person retried this ticket. Continue the assignment from the current worktree, git history and PR state.'
 /** Formats a policy-change input for the worker; inputs recorded before `effect` existed fall back to a general notice. */
 function policyMessage(effect?: PolicyEffect): string {
   if (!effect) return 'Policy change: the access or admission rules changed. Check that the remaining work stays within the assignment.'
-  return ['Policy change:',
-    ...(effect.rules ?? []).map(rule => rule.change === 'disabled'
-      ? `Rule ${rule.name} (${rule.id}), which this ticket was accepted under, no longer applies: finish only a change within it, or report dropped.`
-      : `Rule ${rule.name} (${rule.id}), which this ticket was accepted under, changed. Keep the remaining work within it as it reads now: ${rule.instruction}`),
-    ...effect.proactive === false ? ['Work inferred from a rule is no longer accepted, as the accept mode is no longer auto: finish only '
-      + 'what is in progress within the assignment, or report dropped, and take on nothing new.'] : [],
-    ...effect.requesterAllowed === false ? [`The sender this ticket is for, ${effect.requester ? `${effect.requester.id} on ${effect.requester.source}` : 'who '
-      + 'asked for it'}, may no longer start work here: finish the assignment within its scope, and take no new requests from them on it.`] : []].join('\n')
+  return [
+    'Policy change:',
+    ...(effect.rules ?? []).map(rule =>
+      rule.change === 'disabled'
+        ? `Rule ${rule.name} (${rule.id}), which this ticket was accepted under, no longer applies: finish only a change within it, or report dropped.`
+        : `Rule ${rule.name} (${rule.id}), which this ticket was accepted under, changed. Keep the remaining work within it as it reads now: ${rule.instruction}`,
+    ),
+    ...(effect.proactive === false
+      ? [
+        'Work inferred from a rule is no longer accepted, as the accept mode is no longer auto: finish only ' +
+            'what is in progress within the assignment, or report dropped, and take on nothing new.',
+      ]
+      : []),
+    ...(effect.requesterAllowed === false
+      ? [
+        `The sender this ticket is for, ${
+          effect.requester ? `${effect.requester.id} on ${effect.requester.source}` : 'who ' + 'asked for it'
+        }, may no longer start work here: finish the assignment within its scope, and take no new requests from them on it.`,
+      ]
+      : []),
+  ].join('\n')
 }
 /** Resource path under which a worker session reads the full text of a ticket input. */
 export const inputResource = (ticketId: string, inputId: string): string => `ticket/${ticketId}/input/${key(inputId)}`
@@ -331,21 +377,25 @@ export class DshExecutor implements Executor {
         }
         this.host.engine.inputsDelivered(ticketId, assignment.id, [inputId])
       }
-    } finally { if (woken) this.slots.free(ticketId) }
+    } finally {
+      if (woken) this.slots.free(ticketId)
+    }
   }
   private async deliverInput(ticket: Ticket, assignment: Assignment, input: TicketInput): Promise<void> {
     // Re-check right before session delivery because the ticket may have ended while awaiting `sourceLink`.
     const live = () => {
       const current = this.host.store.tickets.get(ticket.id)
-      if (!current || !liveTicket(current) || runningAssignment(current)?.id !== assignment.id) throw new Error('The ticket ended or another Assignment took it over')
+      if (!current || !liveTicket(current) || runningAssignment(current)?.id !== assignment.id)
+        throw new Error('The ticket ended or another Assignment took it over')
       // A stop of the worker's background work that started meanwhile ends with a cancel, which would drop the Input.
-      if (this.stopping.has(ticket.id)) throw new Later('The worker\'s background work is stopping')
+      if (this.stopping.has(ticket.id)) throw new Later("The worker's background work is stopping")
     }
     live()
     const trigger = input.kind === 'trigger' ? await this.triggerCard(ticket, input.triggerId, input.note) : undefined
     const message = inputMessage(input, trigger)
     if (message === undefined) return
-    const text = message.length > ASSIGNMENT_CHARS ? JSON.stringify(capped(message, ASSIGNMENT_CHARS, inputResource(ticket.id, input.id))) : message
+    const text =
+      message.length > ASSIGNMENT_CHARS ? JSON.stringify(capped(message, ASSIGNMENT_CHARS, inputResource(ticket.id, input.id))) : message
     await this.host.sessions.prompt(workerSessionId(ticket.id), input.id, text, 'steer', live)
   }
   /** Formats a trigger on `ticket` for the worker, including a preview of the replied-to message when the worker has not yet seen it. */
@@ -407,8 +457,13 @@ export class DshExecutor implements Executor {
     }
     await until(stop(), undefined, SHUTDOWN_STOP_MS)
   }
-  /** Number of open tickets whose worker holds a worker slot: its turn runs, or its shell jobs or subagents still run after its turn ended. */
-  activeCount(): number { return this.host.store.tickets.open().filter(ticket => this.running(ticket)).length }
+  /**
+   * Number of open tickets whose worker holds a worker slot: its turn runs, or its shell jobs or subagents still run after its
+   * turn ended.
+   */
+  activeCount(): number {
+    return this.host.store.tickets.open().filter(ticket => this.running(ticket)).length
+  }
   /** Whether a ticket's worker holds a worker slot: its turn runs, or its shell jobs or subagents do after its turn ended. */
   private running(ticket: Ticket): boolean {
     if (!runningAssignment(ticket)) return false

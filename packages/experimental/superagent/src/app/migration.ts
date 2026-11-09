@@ -195,16 +195,27 @@ function migrateSettingsRecords(store: Store): void {
   const stored = store.get<unknown>('settings')
   if (stored !== undefined) {
     const settings = SettingsSchema.parse(migrateSettings(stored))
-    store.set('settings', { ...settings, sources: Object.fromEntries(Object.entries(settings.sources).filter(([id]) => !REMOVED_SOURCES.includes(id))) })
+    store.set('settings', {
+      ...settings,
+      sources: Object.fromEntries(Object.entries(settings.sources).filter(([id]) => !REMOVED_SOURCES.includes(id))),
+    })
   }
   // Preserve unparseable historical revisions as-is so a corrupt history entry does not block startup.
   for (const name of store.keys('settings-version:')) {
     const version = required(store.get<StoredSettingsVersion>(name))
     const settings = SettingsSchema.safeParse(migrateSettings(version.settings))
-    store.set(name, { ...version, source: ORIGINS[version.source] ?? version.source, ...settings.success ? { settings: settings.data } : {} })
+    store.set(name, {
+      ...version,
+      source: ORIGINS[version.source] ?? version.source,
+      ...(settings.success ? { settings: settings.data } : {}),
+    })
   }
 }
-interface Member { name?: string; feishuId?: string; github?: string }
+interface Member {
+  name?: string
+  feishuId?: string
+  github?: string
+}
 /**
  * Convert legacy flat settings (chat lists in Policy, top-level pause flag) or pre-schema-11 domain settings into current domain blocks:
  * strips fields replaced by rule instructions and prompts (Executor reviewers and branch prefix, rule `visual` flag, `autoMergeLineLimit`,
@@ -230,8 +241,11 @@ export function migrateSettings(value: unknown): unknown {
   return withoutRemovedFields({
     sources: { feishu: { enabled: true, config: feishu }, github: { enabled: true, config: { pollSeconds: old.pollSeconds ?? 60 } } },
     policy: { ...(old.members ? { members: old.members } : {}), ...(old.admission?.rules ? { rules: old.admission.rules } : {}) },
-    eval: { ...(old.admission?.mode ? { mode: old.admission.mode } : {}), ...(old.admission?.timeoutSeconds ? { timeoutSeconds: old.admission.timeoutSeconds } : {}),
-      model: old.models?.orchestrator ?? null },
+    eval: {
+      ...(old.admission?.mode ? { mode: old.admission.mode } : {}),
+      ...(old.admission?.timeoutSeconds ? { timeoutSeconds: old.admission.timeoutSeconds } : {}),
+      model: old.models?.orchestrator ?? null,
+    },
     executor: { model: old.models?.worker ?? null, ...(old.maxWorkers ? { maxWorkers: old.maxWorkers } : {}), paused: old.paused ?? false },
   })
 }
@@ -240,60 +254,121 @@ function withoutRemovedFields(value: Stored): Stored {
   // `paused` is now a top-level setting rather than a field on `executor`.
   const { reviewer: _reviewer, visualReviewer: _visualReviewer, branchPrefix: _branchPrefix, paused, ...kept } = executor ?? {}
   const { members, memberChat, autoMergeLineLimit: _limit, rules: storedRules, ...policyRest } = policy ?? {}
-  const rules = Array.isArray(storedRules) ? storedRules.map((rule: unknown) => { if (!isObject(rule)) return rule; const { visual: _visual, ...fields } = rule; return fields })
+  const rules = Array.isArray(storedRules)
+    ? storedRules.map((rule: unknown) => {
+      if (!isObject(rule)) return rule
+      const { visual: _visual, ...fields } = rule
+      return fields
+    })
     : storedRules
-  const people = Array.isArray(members) ? members as Member[] : undefined
-  const parts = people ? {
-    feishu: { allowed: people.filter(member => member.feishuId).map(member => ({ id: required(member.feishuId), ...(member.name ? { name: member.name } : {}) })),
-      ...(memberChat ? { syncChat: memberChat } : {}) },
-    github: { allowed: people.filter(member => member.github).map(member => ({ id: required(member.github) })) },
-  } : undefined
+  const people = Array.isArray(members) ? (members as Member[]) : undefined
+  const parts = people
+    ? {
+      feishu: {
+        allowed: people
+          .filter(member => member.feishuId)
+          .map(member => ({ id: required(member.feishuId), ...(member.name ? { name: member.name } : {}) })),
+        ...(memberChat ? { syncChat: memberChat } : {}),
+      },
+      github: { allowed: people.filter(member => member.github).map(member => ({ id: required(member.github) })) },
+    }
+    : undefined
   // The GitHub Source no longer configures a dedicated merge account; auto-merge policy now lives in prompts.
-  const withoutMerge = (id: string, config: unknown) => { if (id !== 'github' || !isObject(config)) return config; const { mergeCli: _mergeCli, ...fields } = config; return fields }
-  const instances = sources ? Object.fromEntries(Object.entries(sources).map(([id, instance]) => {
-    const { authority: _authority, ...fields } = instance
-    return [id, 'config' in fields ? { ...fields, config: withoutMerge(id, fields.config) } : fields]
-  })) : undefined
+  const withoutMerge = (id: string, config: unknown) => {
+    if (id !== 'github' || !isObject(config)) return config
+    const { mergeCli: _mergeCli, ...fields } = config
+    return fields
+  }
+  const instances = sources
+    ? Object.fromEntries(
+      Object.entries(sources).map(([id, instance]) => {
+        const { authority: _authority, ...fields } = instance
+        return [id, 'config' in fields ? { ...fields, config: withoutMerge(id, fields.config) } : fields]
+      }),
+    )
+    : undefined
   // Rewrite environment variable prefixes from the project's earlier names in `prepare` commands.
   if (typeof kept.prepare === 'string') kept.prepare = kept.prepare.replace(/\bDSH_(?:TAG|GO|FREELANCER)_/g, 'DSH_SUPERAGENT_')
-  return { ...rest, ...(typeof paused === 'boolean' ? { paused } : {}), ...(executor ? { executor: kept } : {}),
+  return {
+    ...rest,
+    ...(typeof paused === 'boolean' ? { paused } : {}),
+    ...(executor ? { executor: kept } : {}),
     ...(instances ? { sources: instances } : {}),
-    ...(policy ? { policy: { ...policyRest, ...(rules ? { rules } : {}), ...(parts ? { sources: parts } : {}) } } : {}) }
+    ...(policy ? { policy: { ...policyRest, ...(rules ? { rules } : {}), ...(parts ? { sources: parts } : {}) } } : {}),
+  }
 }
 
 /** Prompt configuration shape saved before team sections existed, when all sections (including fixed ones) were editable. */
-const LegacyPromptConfigSchema = z.object({ shared: z.string(), orchestrator: z.string(), worker: z.string(), guides: z.record(z.string(), z.string()) })
+const LegacyPromptConfigSchema = z.object({
+  shared: z.string(),
+  orchestrator: z.string(),
+  worker: z.string(),
+  guides: z.record(z.string(), z.string()),
+})
 /** Guide names from legacy prompt configurations that are now fixed built-in prompt sections or skills. */
 const LEGACY_FIXED = new Set(['cli', 'subscriptions', 'replies', 'reviews', 'dispatch', 'work', 'feishu', 'github'])
 /** Tool names used in saved prompts before the domain vocabulary rename, paired with what replaces them now. */
 const RENAMED_TOOLS: readonly (readonly [string, string])[] = [
-  ['orchestrator_subscription_remove', 'orchestrator_thread_unsubscribe'], ['orchestrator_subscriptions', 'orchestrator_threads'],
-  ['orchestrator_create_task', 'orchestrator_route (kind accept)'], ['orchestrator_send_task', 'orchestrator_route (kind attach)'],
-  ['orchestrator_reopen_task', 'orchestrator_route (kind attach)'], ['orchestrator_ticket_reopen', 'orchestrator_route (kind attach)'],
-  ['orchestrator_stop_task', 'orchestrator_route (kind stop)'], ['orchestrator_ignore_event', 'orchestrator_route (kind ignore)'],
-  ['orchestrator_request_status', 'orchestrator_ticket_request_status'], ['orchestrator_inspect_task', 'orchestrator_ticket_inspect'],
-  ['orchestrator_observations', 'orchestrator_decisions'], ['orchestrator_event_replay', 'orchestrator_trigger_requeue'],
-  ['orchestrator_tasks', 'orchestrator_tickets'], ['orchestrator_assess', 'orchestrator_eval'], ['admission_read', 'orchestrator_eval_read'],
+  ['orchestrator_subscription_remove', 'orchestrator_thread_unsubscribe'],
+  ['orchestrator_subscriptions', 'orchestrator_threads'],
+  ['orchestrator_create_task', 'orchestrator_route (kind accept)'],
+  ['orchestrator_send_task', 'orchestrator_route (kind attach)'],
+  ['orchestrator_reopen_task', 'orchestrator_route (kind attach)'],
+  ['orchestrator_ticket_reopen', 'orchestrator_route (kind attach)'],
+  ['orchestrator_stop_task', 'orchestrator_route (kind stop)'],
+  ['orchestrator_ignore_event', 'orchestrator_route (kind ignore)'],
+  ['orchestrator_request_status', 'orchestrator_ticket_request_status'],
+  ['orchestrator_inspect_task', 'orchestrator_ticket_inspect'],
+  ['orchestrator_observations', 'orchestrator_decisions'],
+  ['orchestrator_event_replay', 'orchestrator_trigger_requeue'],
+  ['orchestrator_tasks', 'orchestrator_tickets'],
+  ['orchestrator_assess', 'orchestrator_eval'],
+  ['admission_read', 'orchestrator_eval_read'],
   ['admission_decide', 'orchestrator_eval_decide'],
 ]
 /** Read-only tools replaced by `orchestrator_read <resource>`, mapped to their resource paths. */
-const READ_TOOLS: Readonly<Record<string, string>> = { orchestrator_tickets: 'tickets', orchestrator_threads: 'threads', orchestrator_decisions: 'decisions',
-  orchestrator_settings_read: 'settings', orchestrator_prompts_read: 'prompts', orchestrator_models: 'models', orchestrator_ticket_inspect: 'ticket/<id>' }
+const READ_TOOLS: Readonly<Record<string, string>> = {
+  orchestrator_tickets: 'tickets',
+  orchestrator_threads: 'threads',
+  orchestrator_decisions: 'decisions',
+  orchestrator_settings_read: 'settings',
+  orchestrator_prompts_read: 'prompts',
+  orchestrator_models: 'models',
+  orchestrator_ticket_inspect: 'ticket/<id>',
+}
 /**
  * Rewrites skill and variable prefixes from the project's earlier names (`dsh-tag`, `dsh-go`, `dsh-freelancer`), replaces retired
  * read tools with `orchestrator_read`, and the four routing tools with `orchestrator_route` and their kind.
  */
-const currentNames = (value: string): string => value.replace(/\bdsh-(?:tag|go|freelancer)-/g, 'dsh-superagent-').replace(/\bDSH_(?:TAG|GO|FREELANCER)_/g, 'DSH_SUPERAGENT_')
-  .replace(/\borchestrator_(?:tickets|threads|decisions|settings_read|prompts_read|models|ticket_inspect)\b/g, name => `orchestrator_read ${READ_TOOLS[name]}`)
-  .replace(/\borchestrator_(?:ticket_(accept|attach|stop)|trigger_(ignore))\b/g, (_name, ticket?: string, trigger?: string) =>
-    `orchestrator_route (kind ${ticket ?? trigger ?? ''})`)
+const currentNames = (value: string): string =>
+  value
+    .replace(/\bdsh-(?:tag|go|freelancer)-/g, 'dsh-superagent-')
+    .replace(/\bDSH_(?:TAG|GO|FREELANCER)_/g, 'DSH_SUPERAGENT_')
+    .replace(
+      /\borchestrator_(?:tickets|threads|decisions|settings_read|prompts_read|models|ticket_inspect)\b/g,
+      name => `orchestrator_read ${READ_TOOLS[name]}`,
+    )
+    .replace(
+      /\borchestrator_(?:ticket_(accept|attach|stop)|trigger_(ignore))\b/g,
+      (_name, ticket?: string, trigger?: string) => `orchestrator_route (kind ${ticket ?? trigger ?? ''})`,
+    )
 /** Rewrites a legacy skill body to current tool, argument, resource, section, skill, and variable names. */
 function legacyText(value: string): string {
   let result = value
   for (const [from, to] of RENAMED_TOOLS) result = result.replace(new RegExp(`\\b${from}\\b`, 'g'), to)
-  return currentNames(result.replaceAll('reply_to_event_id', 'reply_to_trigger_id').replace(/\bevent_id\b/g, 'trigger_id').replace(/\btask_id\b/g, 'ticket_id')
-    .replaceAll('related_tasks', 'related_tickets').replace(/(?<![\w/-])event\//g, 'trigger/').replace(/(?<![\w/-])task\//g, 'ticket/').replaceAll('<event-id>', '<trigger-id>')
-    .replace(/\bguide\/([a-z][a-z0-9-]*)\b/g, (_match, name: string) => LEGACY_FIXED.has(name) ? `the ${name} section` : `skill dsh-superagent-${name}`))
+  return currentNames(
+    result
+      .replaceAll('reply_to_event_id', 'reply_to_trigger_id')
+      .replace(/\bevent_id\b/g, 'trigger_id')
+      .replace(/\btask_id\b/g, 'ticket_id')
+      .replaceAll('related_tasks', 'related_tickets')
+      .replace(/(?<![\w/-])event\//g, 'trigger/')
+      .replace(/(?<![\w/-])task\//g, 'ticket/')
+      .replaceAll('<event-id>', '<trigger-id>')
+      .replace(/\bguide\/([a-z][a-z0-9-]*)\b/g, (_match, name: string) =>
+        LEGACY_FIXED.has(name) ? `the ${name} section` : `skill dsh-superagent-${name}`,
+      ),
+  )
 }
 /**
  * Upgrade a stored prompt configuration to current sections, tool names, and skill references; legacy configurations take
@@ -302,11 +377,23 @@ function legacyText(value: string): string {
 function normalize(config: unknown): PromptConfig {
   const legacy = LegacyPromptConfigSchema.safeParse(config)
   const limit = legacy.success ? /fewer than (\d+) lines \(additions plus deletions\)/.exec(legacy.data.guides.work ?? '')?.[1] : undefined
-  const current = legacy.success ? { ...teamDefaults, delivery: limit ? teamDefaults.delivery.replace(autoMergeThreshold(200), autoMergeThreshold(Number(limit))) : teamDefaults.delivery,
-    skills: Object.fromEntries(Object.entries(legacy.data.guides).filter(([name]) => !LEGACY_FIXED.has(name)).map(([name, body]) => [name, legacyText(body)])) }
+  const current = legacy.success
+    ? {
+      ...teamDefaults,
+      delivery: limit ? teamDefaults.delivery.replace(autoMergeThreshold(200), autoMergeThreshold(Number(limit))) : teamDefaults.delivery,
+      skills: Object.fromEntries(
+        Object.entries(legacy.data.guides)
+          .filter(([name]) => !LEGACY_FIXED.has(name))
+          .map(([name, body]) => [name, legacyText(body)]),
+      ),
+    }
     : PromptConfigSchema.parse(config)
-  return { communication: currentNames(current.communication), scope: currentNames(current.scope), delivery: currentNames(current.delivery),
-    skills: Object.fromEntries(Object.entries(current.skills).map(([name, body]) => [name, currentNames(body)])) }
+  return {
+    communication: currentNames(current.communication),
+    scope: currentNames(current.scope),
+    delivery: currentNames(current.delivery),
+    skills: Object.fromEntries(Object.entries(current.skills).map(([name, body]) => [name, currentNames(body)])),
+  }
 }
 /**
  * Normalize stored prompt revisions to current sections and names (recording original configs under `legacy` when saved
@@ -335,15 +422,31 @@ function migratePrompts(store: Store): void {
   const revision = store.get<number>('prompt-revision')
   const current = revision === undefined ? undefined : store.get<PromptVersion>(`prompt-version:${revision}`)
   const config = current?.config ?? { ...teamDefaults, skills: {} }
-  const delivery = config.delivery.includes(autoMergeThreshold(200)) ? config.delivery.replace(autoMergeThreshold(200), autoMergeThreshold(limit))
-    : limit === 200 ? config.delivery : `${config.delivery}\nEnable auto-merge only on a PR that changes fewer than ${limit} lines (additions plus deletions).`
-  const identities = mapped.length && !config.skills.identities ? { identities: ['The same colleague may use a different account on each Source. When you mention, assign or request a review from someone you met on another Source, use their account on this one:',
-    ...mapped.map(person => `- ${person.name ?? person.feishuId} (Feishu ${person.feishuId}) is @${person.github} on GitHub`)].join('\n') } : {}
+  const delivery = config.delivery.includes(autoMergeThreshold(200))
+    ? config.delivery.replace(autoMergeThreshold(200), autoMergeThreshold(limit))
+    : limit === 200
+      ? config.delivery
+      : `${config.delivery}\nEnable auto-merge only on a PR that changes fewer than ${limit} lines (additions plus deletions).`
+  const identities =
+    mapped.length && !config.skills.identities
+      ? {
+        identities: [
+          'The same colleague may use a different account on each Source. When you mention, assign or request a review from someone you met on another Source, use their account on this one:',
+          ...mapped.map(person => `- ${person.name ?? person.feishuId} (Feishu ${person.feishuId}) is @${person.github} on GitHub`),
+        ].join('\n'),
+      }
+      : {}
   const next = { ...config, delivery, skills: { ...config.skills, ...identities } }
   if (JSON.stringify(next) === JSON.stringify(config)) return
   const previous = current?.revision ?? 0
   if (!current) store.set('prompt-version:0', { revision: 0, previousRevision: null, savedAt: '', source: 'defaults', config })
-  store.set(`prompt-version:${previous + 1}`, { revision: previous + 1, previousRevision: previous, savedAt: new Date().toISOString(), source: 'settings-migration', config: next })
+  store.set(`prompt-version:${previous + 1}`, {
+    revision: previous + 1,
+    previousRevision: previous,
+    savedAt: new Date().toISOString(),
+    source: 'settings-migration',
+    config: next,
+  })
   store.set('prompt-revision', previous + 1)
 }
 
@@ -360,55 +463,106 @@ export function basisOf(stored: unknown): MandateBasis {
   if (typeof old.via === 'string') return old as unknown as MandateBasis
   // Older Feishu bases recorded `chatId` and `direct` at the top level instead of inside `scope`.
   const chat = text(old.chatId) ? { source: 'feishu', scope: { chatId: old.chatId, direct: old.direct === true } } : {}
-  const received = text(old.source) ? { source: old.source as string, ...isObject(old.scope) ? { scope: old.scope } : {}, ...text(old.row) ? { row: old.row as string } : {} } : chat
+  const received = text(old.source)
+    ? {
+      source: old.source as string,
+      ...(isObject(old.scope) ? { scope: old.scope } : {}),
+      ...(text(old.row) ? { row: old.row as string } : {}),
+    }
+    : chat
   const sender = text(old.sender) ?? text(old.member)
-  const common = { ...received, ...sender ? { sender } : {}, ...Array.isArray(old.rules) ? { rules: old.rules as string[] } : {} }
-  const addressed = old.addressed === 'mention' || old.addressed === 'direct' ? old.addressed
-    : old.direct === true ? 'direct' as const : old.mention === true ? 'mention' as const : undefined
+  const common = { ...received, ...(sender ? { sender } : {}), ...(Array.isArray(old.rules) ? { rules: old.rules as string[] } : {}) }
+  const addressed =
+    old.addressed === 'mention' || old.addressed === 'direct'
+      ? old.addressed
+      : old.direct === true
+        ? ('direct' as const)
+        : old.mention === true
+          ? ('mention' as const)
+          : undefined
   const mode = text(old.mode) as AcceptMode | undefined
   // Schema 6 imports recorded `legacyAuthority`.
   const authority = text(old.legacyAuthority) ? { authority: old.legacyAuthority as string } : {}
   if (old.followup === true) return { via: 'followup', ...common, ...authority }
   if (CELLS.includes(String(old.admission))) {
-    return { via: 'admission', ...common, cell: old.admission as AdmissionCell, ...addressed ? { addressed } : {}, ...old.observation === true ? { observation: { mode: mode ?? 'auto' } } : {} }
+    return {
+      via: 'admission',
+      ...common,
+      cell: old.admission as AdmissionCell,
+      ...(addressed ? { addressed } : {}),
+      ...(old.observation === true ? { observation: { mode: mode ?? 'auto' } } : {}),
+    }
   }
   if (addressed && sender && text(old.source)) return { via: 'addressed', ...common, addressed }
   // Any basis with neither a table cell nor `followup` came from a listed sender.
-  return { via: 'listed', ...common, ...addressed ? { addressed } : {}, ...old.observation === true ? { observation: mode ? { mode } : {} } : {}, ...authority }
+  return {
+    via: 'listed',
+    ...common,
+    ...(addressed ? { addressed } : {}),
+    ...(old.observation === true ? { observation: mode ? { mode } : {} } : {}),
+    ...authority,
+  }
 }
 /**
  * Upgrade a schema 10 ticket record to schema 11: extracts `origin`, `execution`, `delivery`, and followed PR threads
  * (`follows`) from `meta` and GitHub opener channels, merges reported `answers`, marks human trigger inputs (`human: true`),
  * and converts pending `reopen` inputs into `text` inputs for the worker.
  */
-export function ticketOf(old: Stored, answers = new Map<string, string[]>(), human: (triggerId: string) => boolean = () => false,
-  closed: (number: number) => Follow['closed'] = () => undefined): Ticket {
+export function ticketOf(
+  old: Stored,
+  answers = new Map<string, string[]>(),
+  human: (triggerId: string) => boolean = () => false,
+  closed: (number: number) => Follow['closed'] = () => undefined,
+): Ticket {
   const { meta: storedMeta, ...rest } = old as Stored & { meta?: Stored }
   const ticket = rest as unknown as Ticket
   const meta = storedMeta ?? {}
   const triggerId = text(meta.sourceTriggerId) ?? ''
-  const triggerIds = Array.isArray(meta.triggerIds) ? meta.triggerIds as string[] : triggerId ? [triggerId] : []
+  const triggerIds = Array.isArray(meta.triggerIds) ? (meta.triggerIds as string[]) : triggerId ? [triggerId] : []
   const directory = text(meta.workspace)
   // Remaining `meta` fields are obsolete: schema 6 task states stay in the `task` table, and accept fields live on `execution` and
   // `mandate`.
-  const execution: Execution | undefined = directory ? { name: text(meta.name) ?? basename(directory), directory,
-    assignment: text(meta.assignment) ?? text(meta.legacyPrompt) ?? '' } : undefined
-  const inputs = ticket.inputs.map((input): TicketInput => input.kind === 'trigger' ? { ...input, ...human(input.triggerId) ? { human: true } : {} }
-    : input.kind !== 'reopen' || !ticket.undelivered.includes(input.id) ? input
-      : { id: input.id, kind: 'text', at: input.at, text: JSON.stringify({ resumed: true, decision_id: input.decisionId, read: `ticket/${ticket.id}/assignment`,
-        note: 'This ticket ended earlier and a follow-up resumed it under the same mandate. Inspect the worktree, git history and PR state before continuing; do not repeat completed external operations.' }) })
-  const reported = [...new Set([...ticket.answers ?? [], ...answers.get(ticket.id) ?? []])]
+  const execution: Execution | undefined = directory
+    ? { name: text(meta.name) ?? basename(directory), directory, assignment: text(meta.assignment) ?? text(meta.legacyPrompt) ?? '' }
+    : undefined
+  const inputs = ticket.inputs.map(
+    (input): TicketInput =>
+      input.kind === 'trigger'
+        ? { ...input, ...(human(input.triggerId) ? { human: true } : {}) }
+        : input.kind !== 'reopen' || !ticket.undelivered.includes(input.id)
+          ? input
+          : {
+            id: input.id,
+            kind: 'text',
+            at: input.at,
+            text: JSON.stringify({
+              resumed: true,
+              decision_id: input.decisionId,
+              read: `ticket/${ticket.id}/assignment`,
+              note: 'This ticket ended earlier and a follow-up resumed it under the same mandate. Inspect the worktree, git history and PR state before continuing; do not repeat completed external operations.',
+            }),
+          },
+  )
+  const reported = [...new Set([...(ticket.answers ?? []), ...(answers.get(ticket.id) ?? [])])]
   const ended = ticket.ended && { ...ticket.ended, outcome: outcomeOf(ticket.ended) }
   const mandate = { ...ticket.mandate, basis: basisOf(ticket.mandate.basis) }
   const delivery = ticket.delivery ?? (text(meta.deliveryError) ? { error: meta.deliveryError as string, at: ticket.updatedAt } : undefined)
   const kept = execution ?? ticket.execution
   const follows = ticket.follows ?? followsOf(meta, ticket.channels, closed)
-  return { ...ticket, inputs, ...ended ? { ended } : {}, mandate, origin: originOf(ticket, triggerId, triggerIds),
+  return {
+    ...ticket,
+    inputs,
+    ...(ended ? { ended } : {}),
+    mandate,
+    origin: originOf(ticket, triggerId, triggerIds),
     // A ticket stopped by a person receives no further work, so clear any undelivered inputs.
-    ...ended && ended.by === 'human' ? { undelivered: [] } : {},
-    ...kept ? { execution: kept } : {}, ...delivery ? { delivery } : {},
-    channels: ticket.channels.filter(channel => !opener(channel)), ...follows.length ? { follows } : {},
-    ...reported.length ? { answers: reported } : {} }
+    ...(ended && ended.by === 'human' ? { undelivered: [] } : {}),
+    ...(kept ? { execution: kept } : {}),
+    ...(delivery ? { delivery } : {}),
+    channels: ticket.channels.filter(channel => !opener(channel)),
+    ...(follows.length ? { follows } : {}),
+    ...(reported.length ? { answers: reported } : {}),
+  }
 }
 /** Schema 10 recorded a PR opened by the ticket as a GitHub Channel without a comment URL (`address.url`). */
 const opener = (channel: ChannelRef): boolean => channel.source === 'github' && !channel.address.url && !!Number(channel.address.number)
@@ -490,7 +644,8 @@ export function reasonsOf(stored: unknown): Reason[] {
   if (Array.isArray(stored)) return stored as Reason[]
   const text = typeof stored === 'string' ? stored : ''
   const parts = text.split('; ').map(part => /^([^:\s]+): (.+)$/s.exec(part))
-  if (parts.every(match => match && knownReason(required(match[2])))) return parts.map(match => ({ ...required(knownReason(required(required(match)[2]))), triggerId: required(required(match)[1]) }))
+  if (parts.every(match => match && knownReason(required(match[2]))))
+    return parts.map(match => ({ ...required(knownReason(required(required(match)[2]))), triggerId: required(required(match)[1]) }))
   return [knownReason(text) ?? said(text)]
 }
 /** Convert stored decision, disposition, and assignment end reasons from free-form strings to reason codes. */
@@ -501,12 +656,18 @@ function reasonsAsCodes(store: Store): void {
   }
   for (const row of store.db.prepare("SELECT id, value FROM disposition WHERE json_type(value, '$.filtered') = 'text'").all()) {
     const disposition = JSON.parse(String(row.value)) as TriggerDisposition & { filtered: string }
-    store.triggers.saveDisposition(String(row.id), { ...disposition, filtered: { code: SENTENCES[disposition.filtered] ?? disposition.filtered } })
+    store.triggers.saveDisposition(String(row.id), {
+      ...disposition,
+      filtered: { code: SENTENCES[disposition.filtered] ?? disposition.filtered },
+    })
   }
   for (const ticket of store.tickets.list()) {
-    const ended = (reason: string) => SENTENCES[reason] === 'retried' ? 'retried' : SENTENCES[reason] === 'hostRestarted' ? 'hostRestarted' : reason
+    const ended = (reason: string) =>
+      SENTENCES[reason] === 'retried' ? 'retried' : SENTENCES[reason] === 'hostRestarted' ? 'hostRestarted' : reason
     if (!ticket.assignments.some(item => item.endedReason !== undefined && item.endedReason !== ended(item.endedReason))) continue
-    const assignments = ticket.assignments.map(item => item.endedReason === undefined ? item : { ...item, endedReason: ended(item.endedReason) })
+    const assignments = ticket.assignments.map(item =>
+      item.endedReason === undefined ? item : { ...item, endedReason: ended(item.endedReason) },
+    )
     store.tickets.save({ ...ticket, assignments })
   }
 }

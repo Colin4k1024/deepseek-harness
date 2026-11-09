@@ -37,10 +37,28 @@ import { executorLoad, ticketDetail, ticketList } from '../src/app/views/tickets
 
 let runtime: Runtime
 const viewsOf = (value: Runtime) => ({ store: value.store, sources: value.sources, links: value.links() })
-const overviewOf = (value: Runtime) => overview(viewsOf(value), value.health, policyVersion(value.store.settings()), executorLoad(value.store, value.executor.activeCount()), value.setupProblem ?? value.feishuProblem)
+const overviewOf = (value: Runtime) =>
+  overview(
+    viewsOf(value),
+    value.health,
+    policyVersion(value.store.settings()),
+    executorLoad(value.store, value.executor.activeCount()),
+    value.setupProblem ?? value.feishuProblem,
+  )
 let directory: string
-let controller: { create: ReturnType<typeof vi.fn>; selectModel: ReturnType<typeof vi.fn>; resolveAgent: ReturnType<typeof vi.fn>; rename: ReturnType<typeof vi.fn>; prompt: ReturnType<typeof vi.fn>; inspect: ReturnType<typeof vi.fn> }
-type RegisteredTool = { name: string; output: { render: (args: unknown, result: unknown) => unknown }; execute: (args: unknown, execution: { signal: AbortSignal }) => Promise<unknown> }
+let controller: {
+  create: ReturnType<typeof vi.fn>
+  selectModel: ReturnType<typeof vi.fn>
+  resolveAgent: ReturnType<typeof vi.fn>
+  rename: ReturnType<typeof vi.fn>
+  prompt: ReturnType<typeof vi.fn>
+  inspect: ReturnType<typeof vi.fn>
+}
+type RegisteredTool = {
+  name: string
+  output: { render: (args: unknown, result: unknown) => unknown }
+  execute: (args: unknown, execution: { signal: AbortSignal }) => Promise<unknown>
+}
 let tools: Map<string, Map<string, RegisteredTool>>
 type Section = { name: string; text: (context: { signal?: AbortSignal }) => string; interpolate?: boolean }
 let sections: Map<string, Section>
@@ -50,12 +68,29 @@ let restricts: Map<string, unknown[]>
 type HttpHandler = (req: unknown, res: unknown) => Promise<void>
 let http: HttpHandler
 async function api(method: string, path: string): Promise<{ status: number; body: unknown }> {
-  let status = 0, text = ''
+  let status = 0,
+    text = ''
   const req = { method, url: `/orchestrator/api/${path}`, headers: { host: '127.0.0.1:3082', 'x-orchestrator-request': '1' } }
-  await http(req, { writeHead: (code: number) => { status = code }, end: (data: string) => { text = data } })
+  await http(req, {
+    writeHead: (code: number) => {
+      status = code
+    },
+    end: (data: string) => {
+      text = data
+    },
+  })
   return { status, body: JSON.parse(text) }
 }
-let agents: Map<string, { id: string; status: string; inbox: { nextTurn: UserMessage[]; nextStep: UserMessage[] }; cancel: ReturnType<typeof vi.fn>; inject: ReturnType<typeof vi.fn> }>
+let agents: Map<
+  string,
+  {
+    id: string
+    status: string
+    inbox: { nextTurn: UserMessage[]; nextStep: UserMessage[] }
+    cancel: ReturnType<typeof vi.fn>
+    inject: ReturnType<typeof vi.fn>
+  }
+>
 const runTool = async (sessionId: string, name: string, args: unknown) => {
   const tool = tools.get(sessionId)?.get(name)
   if (!tool) throw new Error(`Tool ${name} is not registered for ${sessionId}`)
@@ -85,58 +120,121 @@ const OTHER = () => join(directory, 'other-gh')
 const BOT = () => join(directory, 'lark-bot')
 const HELPERS = 'git config -z --show-origin --get-all credential.https://github.com.helper'
 const SCOPED = 'git config -z --show-scope --get-regexp ^(credential\\..*|http\\..*extraheader)$'
-const subprocess = { spawn: vi.fn((spec: { argv: readonly string[] }) => {
-  // Strip leading `env` and `KEY=VALUE` arguments before looking up the command response.
-  const argv = [...spec.argv]
-  while (argv[0] === 'env' || /^[A-Z_]+=/.test(argv[0] ?? '')) argv.shift()
-  const answer = answers[argv.join(' ')] ?? ''
-  const reader = (text: string) => ({ readFrom: () => ({ text, nextOffset: text.length, lossy: false }) })
-  return { done: Promise.resolve({ exitCode: answer instanceof Error ? 1 : 0, signal: null }), collected: { stdout: reader(answer instanceof Error ? '' : answer), stderr: reader(answer instanceof Error ? answer.message : '') } }
-}) }
+const subprocess = {
+  spawn: vi.fn((spec: { argv: readonly string[] }) => {
+    // Strip leading `env` and `KEY=VALUE` arguments before looking up the command response.
+    const argv = [...spec.argv]
+    while (argv[0] === 'env' || /^[A-Z_]+=/.test(argv[0] ?? '')) argv.shift()
+    const answer = answers[argv.join(' ')] ?? ''
+    const reader = (text: string) => ({ readFrom: () => ({ text, nextOffset: text.length, lossy: false }) })
+    return {
+      done: Promise.resolve({ exitCode: answer instanceof Error ? 1 : 0, signal: null }),
+      collected: { stdout: reader(answer instanceof Error ? '' : answer), stderr: reader(answer instanceof Error ? answer.message : '') },
+    }
+  }),
+}
 /** Source account overrides for test setup; `feishu: null` disables the Feishu source. */
-interface Accounts { github?: Record<string, unknown>; feishu?: Record<string, unknown> | null }
+interface Accounts {
+  github?: Record<string, unknown>
+  feishu?: Record<string, unknown> | null
+}
 function seed(store: Store, accounts: Accounts = {}): void {
   const settings = store.settings()
   const { feishu: _feishu, ...others } = settings.sources
   const feishu = accounts.feishu === null ? undefined : { ...settings.sources.feishu?.config, cli: BOT(), ...accounts.feishu }
-  store.saveSettings(SettingsSchema.parse({ ...settings, sources: { ...others, github: { enabled: true, config: { repository: 'acme/widgets', cli: AGENT(), ...accounts.github } }, ...feishu ? { feishu: { enabled: true, config: feishu } } : {} } }))
+  store.saveSettings(
+    SettingsSchema.parse({
+      ...settings,
+      sources: {
+        ...others,
+        github: { enabled: true, config: { repository: 'acme/widgets', cli: AGENT(), ...accounts.github } },
+        ...(feishu ? { feishu: { enabled: true, config: feishu } } : {}),
+      },
+    }),
+  )
 }
 let restarts: ReturnType<typeof vi.fn<() => void>>
 async function restart(machine: Partial<Machine> = {}, accounts: Accounts = {}): Promise<Runtime> {
   await runtime.stop()
-  const store = new Store(join(directory, 'orchestrator.sqlite')); seed(store, accounts); store.close()
+  const store = new Store(join(directory, 'orchestrator.sqlite'))
+  seed(store, accounts)
+  store.close()
   const ctx = new Context()
   for (const [name, service] of Object.entries(services)) ctx.reflect.provide(name, service)
   runtime = new Runtime(ctx, testMachine({ stateDir: directory, ...machine }), restarts)
   return runtime
 }
 let deliveries: ReturnType<typeof vi.fn<(request: { sessionId: string; mode: 'queue' | 'steer'; id: string; text: string }) => void>>
-const relays = (sessionId: string) => deliveries.mock.calls.map(([call]) => call).filter(call => call.sessionId === sessionId).map((call) => {
-  try { return JSON.parse(call.text) as Record<string, unknown> } catch { return { text: call.text } }
-})
+const relays = (sessionId: string) =>
+  deliveries.mock.calls
+    .map(([call]) => call)
+    .filter(call => call.sessionId === sessionId)
+    .map((call) => {
+      try {
+        return JSON.parse(call.text) as Record<string, unknown>
+      } catch {
+        return { text: call.text }
+      }
+    })
 const MEMBER = 'ou_alice'
 const CHAT = 'oc_team'
 function feishu(id: string, text: string, overrides: Record<string, unknown> = {}): Trigger {
-  return feishuTrigger({ message_id: `om_${id}`, chat_id: CHAT, chat_type: 'group', sender_id: MEMBER, sender_type: 'user', content: text, create_time: String(Date.parse('2026-09-09T00:00:00Z') + Number(id.replace(/\D/g, '') || 0) * 1000), mentions: [{ id: 'ou_bot' }], ...overrides }, 'ou_bot', 'cli_bot')!
+  return feishuTrigger(
+    {
+      message_id: `om_${id}`,
+      chat_id: CHAT,
+      chat_type: 'group',
+      sender_id: MEMBER,
+      sender_type: 'user',
+      content: text,
+      create_time: String(Date.parse('2026-09-09T00:00:00Z') + Number(id.replace(/\D/g, '') || 0) * 1000),
+      mentions: [{ id: 'ou_bot' }],
+      ...overrides,
+    },
+    'ou_bot',
+    'cli_bot',
+  )!
 }
 const worktreeName = 'fix-regression'
 /** Route one decision with the main Session's orchestrator_route, answering its result; a refused one throws its reason. */
 async function route(item: Record<string, unknown>): Promise<Record<string, unknown>> {
-  const { results } = await runTool(runtime.masterId, 'orchestrator_route', { decisions: [item] }) as { results: Record<string, unknown>[] }
+  const { results } = (await runTool(runtime.masterId, 'orchestrator_route', { decisions: [item] })) as {
+    results: Record<string, unknown>[]
+  }
   if (results[0]!.refused) throw new Error(typeof results[0]!.refused === 'string' ? results[0]!.refused : '')
   return results[0]!
 }
 async function acceptedTicket(trigger = feishu('1', '@bot 修一下回归')) {
   await receive(trigger)
   expect(relays(runtime.masterId).some(item => item.trigger_id === trigger.id)).toBe(true)
-  const result = await route({ kind: 'accept', trigger_id: trigger.id, title: '修复回归',
-    worktree_name: worktreeName, acknowledgement: '收到，修复回归。' })
+  const result = await route({
+    kind: 'accept',
+    trigger_id: trigger.id,
+    title: '修复回归',
+    worktree_name: worktreeName,
+    acknowledgement: '收到，修复回归。',
+  })
   const ticket = runtime.store.tickets.get((result.ticket as { ticket_id: string }).ticket_id)!
   return { trigger, ticket, sessionId: `worker-${ticket.id}` }
 }
 beforeEach(async () => {
   directory = mkdtempSync(join(tmpdir(), 'orchestrator-runtime-'))
-  vi.spyOn(Commands.prototype, 'gh').mockImplementation(async args => args[1] === 'user' ? { login: 'agent-bot' } : args[1]?.includes('/pulls/') ? { state: 'open', user: { login: 'agent-bot' }, html_url: 'https://github.com/acme/widgets/pull/' + (args[1].split('/').at(-1) ?? ''), head: { ref: `agent/${String(runtime.store.tickets.list()[0]?.execution?.name)}`, sha: 'head-1', repo: { full_name: 'acme/widgets' } } } : { default_branch: 'master', permissions: { push: true } })
+  vi.spyOn(Commands.prototype, 'gh').mockImplementation(async args =>
+    args[1] === 'user'
+      ? { login: 'agent-bot' }
+      : args[1]?.includes('/pulls/')
+        ? {
+          state: 'open',
+          user: { login: 'agent-bot' },
+          html_url: 'https://github.com/acme/widgets/pull/' + (args[1].split('/').at(-1) ?? ''),
+          head: {
+            ref: `agent/${String(runtime.store.tickets.list()[0]?.execution?.name)}`,
+            sha: 'head-1',
+            repo: { full_name: 'acme/widgets' },
+          },
+        }
+        : { default_branch: 'master', permissions: { push: true } },
+  )
   vi.spyOn(Commands.prototype, 'lark').mockResolvedValue({ users: [{ member_id: MEMBER, name: 'Alice' }], has_more: false })
   vi.spyOn(Commands.prototype, 'git').mockResolvedValue('')
   vi.spyOn(Commands.prototype, 'run').mockResolvedValue('{"ok":true,"data":{}}')
@@ -164,84 +262,222 @@ beforeEach(async () => {
       if (agents.has(sessionId)) return
       const agentCtx = new Context()
       const preset = {}
-      const inherited = ['bash', 'read', 'read_image', 'skill', 'job_output', 'job_list', 'job_kill', 'grep', 'web_search',
-        'ask_user_question', 'plugin_manager', 'schedule_create', 'create_goal', 'session_create', 'session_send_message', 'feishu_doc_edit']
+      const inherited = [
+        'bash',
+        'read',
+        'read_image',
+        'skill',
+        'job_output',
+        'job_list',
+        'job_kill',
+        'grep',
+        'web_search',
+        'ask_user_question',
+        'plugin_manager',
+        'schedule_create',
+        'create_goal',
+        'session_create',
+        'session_send_message',
+        'feishu_doc_edit',
+      ]
       const sessionTools = new Map<string, RegisteredTool>()
       tools.set(sessionId, sessionTools)
-      agentCtx.reflect.provide('tools', { register: (tool: RegisteredTool) => { sessionTools.set(tool.name,
-        tool); return () => sessionTools.delete(tool.name) },
-      // Preset tools are inherited; subagent is registered on the agent itself and cannot be named by restrict.
-      get: (name: string, scope?: object) => {
-        const own = scope === agents.get(sessionId)
-        return (scope === preset || own) && inherited.includes(name) || own && name === 'subagent' ? { name } : undefined
-      },
-      restrict: vi.fn((rule: { allow: string[] }) => {
-        if (rule.allow.some(name => !inherited.includes(name))) throw new Error('Restriction names a non-inherited tool')
-        restricts.set(sessionId, [...restricts.get(sessionId) ?? [], rule]); return () => {}
-      }),
-      guard: vi.fn((check: Guard) => { guards.set(sessionId, check); return () => {} }) })
-      agentCtx.reflect.provide('skills', { register: () => () => {} })
-      agentCtx.reflect.provide('systemPrompt', { section: (spec: Section) => { sections.set(sessionId, spec); return () => {} } })
-      const inbox = { nextTurn: [] as UserMessage[], nextStep: [] as UserMessage[],
-        // A pending message taken out, as DSH's inbox does by its id.
-        remove: (id: string) => [inbox.nextTurn, inbox.nextStep].some((list) => {
-          const at = list.findIndex(message => message.id === id)
-          if (at >= 0) list.splice(at, 1)
-          return at >= 0
-        }) }
-      const modelEvents: { type: string; data: unknown }[] = []
-      const deliver = (mode: 'queue' | 'steer') => vi.fn((message: UserMessage) => {
-        inbox[mode === 'queue' ? 'nextTurn' : 'nextStep'].push(message)
-        deliveries({ sessionId, mode, id: message.id, text: message.content.map(block => block.type === 'text' ? block.text : '').join('') })
-        agents.get(sessionId)!.status = 'running'
+      agentCtx.reflect.provide('tools', {
+        register: (tool: RegisteredTool) => {
+          sessionTools.set(tool.name, tool)
+          return () => sessionTools.delete(tool.name)
+        },
+        // Preset tools are inherited; subagent is registered on the agent itself and cannot be named by restrict.
+        get: (name: string, scope?: object) => {
+          const own = scope === agents.get(sessionId)
+          return ((scope === preset || own) && inherited.includes(name)) || (own && name === 'subagent') ? { name } : undefined
+        },
+        restrict: vi.fn((rule: { allow: string[] }) => {
+          if (rule.allow.some(name => !inherited.includes(name))) throw new Error('Restriction names a non-inherited tool')
+          restricts.set(sessionId, [...(restricts.get(sessionId) ?? []), rule])
+          return () => {}
+        }),
+        guard: vi.fn((check: Guard) => {
+          guards.set(sessionId, check)
+          return () => {}
+        }),
       })
-      agents.set(sessionId, { id: sessionId, ctx: agentCtx, inbox, followup: deliver('queue'), steer: deliver('steer'), status: 'idle', inject: vi.fn(), session: { id: sessionId, header: { agentPreset }, snapshotEvents: () => modelEvents, requestHeader: () => undefined, append: vi.fn((type: string, data: unknown) => { modelEvents.push({ type, data }) }) }, cancel: vi.fn(), whenIdle: async () => {} } as never)
+      agentCtx.reflect.provide('skills', { register: () => () => {} })
+      agentCtx.reflect.provide('systemPrompt', {
+        section: (spec: Section) => {
+          sections.set(sessionId, spec)
+          return () => {}
+        },
+      })
+      const inbox = {
+        nextTurn: [] as UserMessage[],
+        nextStep: [] as UserMessage[],
+        // A pending message taken out, as DSH's inbox does by its id.
+        remove: (id: string) =>
+          [inbox.nextTurn, inbox.nextStep].some((list) => {
+            const at = list.findIndex(message => message.id === id)
+            if (at >= 0) list.splice(at, 1)
+            return at >= 0
+          }),
+      }
+      const modelEvents: { type: string; data: unknown }[] = []
+      const deliver = (mode: 'queue' | 'steer') =>
+        vi.fn((message: UserMessage) => {
+          inbox[mode === 'queue' ? 'nextTurn' : 'nextStep'].push(message)
+          deliveries({
+            sessionId,
+            mode,
+            id: message.id,
+            text: message.content.map(block => (block.type === 'text' ? block.text : '')).join(''),
+          })
+          agents.get(sessionId)!.status = 'running'
+        })
+      agents.set(sessionId, {
+        id: sessionId,
+        ctx: agentCtx,
+        inbox,
+        followup: deliver('queue'),
+        steer: deliver('steer'),
+        status: 'idle',
+        inject: vi.fn(),
+        session: {
+          id: sessionId,
+          header: { agentPreset },
+          snapshotEvents: () => modelEvents,
+          requestHeader: () => undefined,
+          append: vi.fn((type: string, data: unknown) => {
+            modelEvents.push({ type, data })
+          }),
+        },
+        cancel: vi.fn(),
+        whenIdle: async () => {},
+      } as never)
       bindScopeParent(agents.get(sessionId)!, preset)
     }),
-    selectModel: vi.fn(async () => {}), resolveAgent: vi.fn(async (id: string) => agents.has(id) ? { agent: agents.get(id) } : { error: { code: 'session/not-found' } }), rename: vi.fn(async () => {}),
-    prompt: vi.fn(() => { throw new Error('Plugin delivery must not use user RPC') }),
+    selectModel: vi.fn(async () => {}),
+    resolveAgent: vi.fn(async (id: string) => (agents.has(id) ? { agent: agents.get(id) } : { error: { code: 'session/not-found' } })),
+    rename: vi.fn(async () => {}),
+    prompt: vi.fn(() => {
+      throw new Error('Plugin delivery must not use user RPC')
+    }),
     inspect: vi.fn(async () => ({ events: [] })),
   }
   jobs = jobRegistry()
-  services = { agents, llm: { resolveCallConfig: vi.fn(async (value: unknown): Promise<unknown> => value) }, sessionController: controller, sessionPersistence: { flush: vi.fn(async () => {}), open: vi.fn(async () => ({ read: async () => ({ events: [] }), [Symbol.asyncDispose]: async () => {} })) }, workspaceRegistry: { create: async (cwd: string) => ({ id: cwd }) }, permissionPresets: { set: () => {} }, subprocess, webServer: { host: '127.0.0.1', port: 3082, register: (route: { handler: HttpHandler }) => { http = route.handler; return () => {} } }, jobs: jobs.service }
+  services = {
+    agents,
+    llm: { resolveCallConfig: vi.fn(async (value: unknown): Promise<unknown> => value) },
+    sessionController: controller,
+    sessionPersistence: {
+      flush: vi.fn(async () => {}),
+      open: vi.fn(async () => ({ read: async () => ({ events: [] }), [Symbol.asyncDispose]: async () => {} })),
+    },
+    workspaceRegistry: { create: async (cwd: string) => ({ id: cwd }) },
+    permissionPresets: { set: () => {} },
+    subprocess,
+    webServer: {
+      host: '127.0.0.1',
+      port: 3082,
+      register: (route: { handler: HttpHandler }) => {
+        http = route.handler
+        return () => {}
+      },
+    },
+    jobs: jobs.service,
+  }
   for (const [name, service] of Object.entries(services)) ctx.reflect.provide(name, service)
   for (const cli of [AGENT(), OTHER(), BOT()]) writeFileSync(cli, '#!/bin/sh\n', { mode: 0o755 })
-  const store = new Store(join(directory, 'orchestrator.sqlite')); seed(store); store.close()
+  const store = new Store(join(directory, 'orchestrator.sqlite'))
+  seed(store)
+  store.close()
   runtime = new Runtime(ctx, testMachine({ stateDir: directory }), restarts)
   await runtime.ready
   // Source kinds are normally registered by plugins that are not loaded in unit tests.
-  runtime.sources.register(feishuKind); runtime.sources.register(githubKind)
-  runtime.store.saveSettings({ ...runtime.store.settings(), policy: { ...runtime.store.settings().policy, sources: { feishu: { allowed: [{ id: MEMBER, name: 'Alice' }], syncChat: CHAT }, github: { allowed: [{ id: 'alice' }] } } }, eval: { ...runtime.store.settings().eval, mode: 'auto' }, sources: { github: { enabled: true, config: { repository: 'acme/widgets', cli: AGENT() } }, feishu: { enabled: true, config: { cli: BOT(), chats: [{ chatId: CHAT, listen: 'all' }], directMessages: true } } } })
+  runtime.sources.register(feishuKind)
+  runtime.sources.register(githubKind)
+  runtime.store.saveSettings({
+    ...runtime.store.settings(),
+    policy: {
+      ...runtime.store.settings().policy,
+      sources: { feishu: { allowed: [{ id: MEMBER, name: 'Alice' }], syncChat: CHAT }, github: { allowed: [{ id: 'alice' }] } },
+    },
+    eval: { ...runtime.store.settings().eval, mode: 'auto' },
+    sources: {
+      github: { enabled: true, config: { repository: 'acme/widgets', cli: AGENT() } },
+      feishu: { enabled: true, config: { cli: BOT(), chats: [{ chatId: CHAT, listen: 'all' }], directMessages: true } },
+    },
+  })
   deliveries.mockClear()
 })
-afterEach(async () => { expect(controller.prompt).not.toHaveBeenCalled(); await runtime?.stop(); vi.restoreAllMocks(); rmSync(directory, { recursive: true, force: true }) })
+afterEach(async () => {
+  expect(controller.prompt).not.toHaveBeenCalled()
+  await runtime?.stop()
+  vi.restoreAllMocks()
+  rmSync(directory, { recursive: true, force: true })
+})
 
 it('relays an explicit member mention as a candidate and creates the ticket, acknowledgement, subscription and worker on accept', async () => {
   const { trigger, ticket, sessionId } = await acceptedTicket()
   const candidate = relays(runtime.masterId).find(item => item.kind === 'candidate')!
-  expect(candidate).toMatchObject({ strength: 'explicit', trigger_id: trigger.id, next_action: 'Route it with orchestrator_route as dispatch says: accept, attach, stop or ignore.' })
-  expect(ticket).toMatchObject({ title: '修复回归', mandate: { strength: 'explicit', basis: expect.objectContaining({ via: 'addressed', source: 'feishu', sender: 'Alice', addressed: 'mention', scope: expect.objectContaining({ chatId: CHAT }) as unknown }) as unknown },
-    execution: expect.objectContaining({ name: expect.stringMatching(/^fix-regression-/) as unknown }) as unknown, origin: expect.objectContaining({ triggerId: trigger.id }) as unknown })
+  expect(candidate).toMatchObject({
+    strength: 'explicit',
+    trigger_id: trigger.id,
+    next_action: 'Route it with orchestrator_route as dispatch says: accept, attach, stop or ignore.',
+  })
+  expect(ticket).toMatchObject({
+    title: '修复回归',
+    mandate: {
+      strength: 'explicit',
+      basis: expect.objectContaining({
+        via: 'addressed',
+        source: 'feishu',
+        sender: 'Alice',
+        addressed: 'mention',
+        scope: expect.objectContaining({ chatId: CHAT }) as unknown,
+      }) as unknown,
+    },
+    execution: expect.objectContaining({ name: expect.stringMatching(/^fix-regression-/) as unknown }) as unknown,
+    origin: expect.objectContaining({ triggerId: trigger.id }) as unknown,
+  })
   expect(ticket).not.toHaveProperty('ended')
   // The ticket's execution environment is fixed at accept time: its directory under the execution root, and the Sources' values from its
   // Trigger.
   expect(ticket.execution!.directory).toBe(join(directory, 'work', ticket.execution!.name))
-  expect(Object.fromEntries(runtime.ticketEnvironment(ticket).map(variable => [variable.key, variable.value]))).toMatchObject({ DSH_SUPERAGENT_DIR: ticket.execution!.directory, DSH_SUPERAGENT_NAME: ticket.execution!.name, DSH_SUPERAGENT_TICKET: ticket.id, DSH_SUPERAGENT_FEISHU_CHAT: CHAT, DSH_SUPERAGENT_GITHUB_REPOSITORY: 'acme/widgets', DSH_SUPERAGENT_GITHUB_ACCOUNT: 'agent-bot', DSH_SUPERAGENT_GITHUB_NUMBER: '' })
+  expect(Object.fromEntries(runtime.ticketEnvironment(ticket).map(variable => [variable.key, variable.value]))).toMatchObject({
+    DSH_SUPERAGENT_DIR: ticket.execution!.directory,
+    DSH_SUPERAGENT_NAME: ticket.execution!.name,
+    DSH_SUPERAGENT_TICKET: ticket.id,
+    DSH_SUPERAGENT_FEISHU_CHAT: CHAT,
+    DSH_SUPERAGENT_GITHUB_REPOSITORY: 'acme/widgets',
+    DSH_SUPERAGENT_GITHUB_ACCOUNT: 'agent-bot',
+    DSH_SUPERAGENT_GITHUB_NUMBER: '',
+  })
   expect(ticket.assignments).toEqual([expect.objectContaining({ state: 'running', startedAt: expect.any(String) as unknown })])
   expect(sessionId).toBe(`worker-${ticket.id}`)
   expect(runtime.store.threads.get(`feishu:${CHAT}:om_1`)?.subscriptions).toEqual([ticket.id])
   expect(runtime.store.replyStatus(key('ack', trigger.id))).toBe('sent')
   const larkCalls = vi.spyOn(Commands.prototype, 'lark').mock.calls.map(([args]) => args)
-  expect(larkCalls.find(args => args[1] === '+messages-reply')).toEqual(expect.arrayContaining(['--message-id', 'om_1', '--markdown', '收到，修复回归。']))
+  expect(larkCalls.find(args => args[1] === '+messages-reply')).toEqual(
+    expect.arrayContaining(['--message-id', 'om_1', '--markdown', '收到，修复回归。']),
+  )
   // The first message holds the request itself: an explicit ticket has no assignment text beyond it, and nothing to read first.
   const first = relays(sessionId)[0]!
-  expect(first).toEqual({ ticket_id: ticket.id, title: '修复回归', trigger: expect.objectContaining({ trigger_id: trigger.id, from: MEMBER,
-    thread: `feishu:${CHAT}:om_1`, text: trigger.text }) as unknown })
+  expect(first).toEqual({
+    ticket_id: ticket.id,
+    title: '修复回归',
+    trigger: expect.objectContaining({
+      trigger_id: trigger.id,
+      from: MEMBER,
+      thread: `feishu:${CHAT}:om_1`,
+      text: trigger.text,
+    }) as unknown,
+  })
   expect(first.trigger).not.toHaveProperty('read')
-  expect(await route({ kind: 'accept', trigger_id: trigger.id, title: 'again', worktree_name: worktreeName, acknowledgement: 'x' })).toMatchObject({ ticket: { ticket_id: ticket.id } })
+  expect(
+    await route({ kind: 'accept', trigger_id: trigger.id, title: 'again', worktree_name: worktreeName, acknowledgement: 'x' }),
+  ).toMatchObject({ ticket: { ticket_id: ticket.id } })
 })
 
-it('fans a person\'s later thread message out to the live worker as context and tells the orchestrator, without an Eval', async () => {
+it("fans a person's later thread message out to the live worker as context and tells the orchestrator, without an Eval", async () => {
   const { ticket, sessionId } = await acceptedTicket()
   deliveries.mockClear()
   const followup = feishu('2', '顺便看看日志', { mentions: [], root_id: 'om_1', sender_id: 'ou_guest' })
@@ -533,61 +769,115 @@ it('relaunches running assignments after a restart with a recovery note', async 
   expect(runtime.store.tickets.get(ticket.id)!.assignments[1]).toMatchObject({ state: 'running' })
   // The new Assignment's message says only what is new, as the Session holds the first; the launch's own pass delivers the
   // recovery note as it reads.
-  expect(relays(`worker-${ticket.id}`)).toEqual([{ ticket_id: ticket.id, assignment: 2 }, { text: expect.stringContaining('host restarted') as unknown }])
+  expect(relays(`worker-${ticket.id}`)).toEqual([
+    { ticket_id: ticket.id, assignment: 2 },
+    { text: expect.stringContaining('host restarted') as unknown },
+  ])
 })
 
 it('projects read models for the management page and removes thread subscriptions from the Web surface', async () => {
   const { ticket, trigger } = await acceptedTicket()
   const threadKeyValue = `feishu:${CHAT}:om_1`
-  expect(overviewOf(runtime)).toMatchObject({ person: [], executor: { queued: 0, maxWorkers: 3, idle: 0 }, flow: { received: 0, accepted: 0, judged: 0 } })
+  expect(overviewOf(runtime)).toMatchObject({
+    person: [],
+    executor: { queued: 0, maxWorkers: 3, idle: 0 },
+    flow: { received: 0, accepted: 0, judged: 0 },
+  })
   expect(ticketList(viewsOf(runtime), 'working', 0, 20).items).toEqual([expect.objectContaining({ id: ticket.id, stage: 'working' })])
-  expect(ticketList(viewsOf(runtime), 'open', 0, 20).items).toEqual([expect.objectContaining({ id: ticket.id, stage: 'working', sessionId: `worker-${ticket.id}`, strength: 'explicit' })])
-  expect(ticketDetail(viewsOf(runtime), ticket.id)).toMatchObject({ mandate: { strength: 'explicit' }, decision: { kind: 'accept' }, threads: [expect.objectContaining({ key: threadKeyValue, title: '@bot 修一下回归' })], channels: [expect.objectContaining({ source: 'feishu' })] })
+  expect(ticketList(viewsOf(runtime), 'open', 0, 20).items).toEqual([
+    expect.objectContaining({ id: ticket.id, stage: 'working', sessionId: `worker-${ticket.id}`, strength: 'explicit' }),
+  ])
+  expect(ticketDetail(viewsOf(runtime), ticket.id)).toMatchObject({
+    mandate: { strength: 'explicit' },
+    decision: { kind: 'accept' },
+    threads: [expect.objectContaining({ key: threadKeyValue, title: '@bot 修一下回归' })],
+    channels: [expect.objectContaining({ source: 'feishu' })],
+  })
   const follow = feishu('20', '补充：日志在这里', { mentions: [], root_id: 'om_1', sender_id: 'ou_guest' })
   await receive(follow)
-  expect(threadList(viewsOf(runtime), 'subscribed', 0, 20).items).toEqual([expect.objectContaining({ key: threadKeyValue, lastAt: follow.at, tickets: [{ id: ticket.id, title: '修复回归', state: 'open' }] })])
+  expect(threadList(viewsOf(runtime), 'subscribed', 0, 20).items).toEqual([
+    expect.objectContaining({ key: threadKeyValue, lastAt: follow.at, tickets: [{ id: ticket.id, title: '修复回归', state: 'open' }] }),
+  ])
   const detail = threadDetail(viewsOf(runtime), threadKeyValue, undefined, 50)!
   expect(detail.timeline.map(item => item.id)).toEqual([trigger.id, follow.id])
   expect(detail.timeline[0]!.disposition).toMatchObject({ decision: { outcome: 'accept', ticketId: ticket.id } })
   expect(detail.timeline[1]!.disposition).toMatchObject({ fanout: [ticket.id] })
-  expect(search(viewsOf(runtime), '日志在这里', new TextCache(0)).items).toEqual([expect.objectContaining({ id: follow.id, threads: [threadKeyValue], threadTitle: '@bot 修一下回归' })])
-  expect(decisionList(viewsOf(runtime), ['accept'], 0, 10)).toEqual({ items: [expect.objectContaining({ kind: 'accept', ticketId: ticket.id, threadTitle: '@bot 修一下回归' })], next_offset: null })
+  expect(search(viewsOf(runtime), '日志在这里', new TextCache(0)).items).toEqual([
+    expect.objectContaining({ id: follow.id, threads: [threadKeyValue], threadTitle: '@bot 修一下回归' }),
+  ])
+  expect(decisionList(viewsOf(runtime), ['accept'], 0, 10)).toEqual({
+    items: [expect.objectContaining({ kind: 'accept', ticketId: ticket.id, threadTitle: '@bot 修一下回归' })],
+    next_offset: null,
+  })
   const thread = runtime.store.threads.get(threadKeyValue)!
   runtime.store.threads.describe(thread.key, { label: 'Named by its source' })
   expect(threadList(viewsOf(runtime), 'all', 0, 20).items[0]).toMatchObject({ title: 'Named by its source' })
   expect((await api('GET', 'state')).body).not.toHaveProperty('tickets')
   // scripts/dsh-superagent and agents read health from GET state (docs/006, Management API); settings and their revisions have their own
   // route.
-  expect((await api('GET', 'state')).body).toMatchObject({ health: { runtime: { state: expect.any(String) as unknown } }, paused: false, load: { maxWorkers: 3 } })
-  expect((await api('GET', 'settings')).body).toMatchObject({ sources: expect.arrayContaining([expect.objectContaining({ id: 'github',
-    revision: expect.any(Number) as unknown, value: expect.objectContaining({ enabled: true }) as unknown })]) as unknown, blocks: { policy: { revision: expect.any(Number) as unknown } } })
+  expect((await api('GET', 'state')).body).toMatchObject({
+    health: { runtime: { state: expect.any(String) as unknown } },
+    paused: false,
+    load: { maxWorkers: 3 },
+  })
+  expect((await api('GET', 'settings')).body).toMatchObject({
+    sources: expect.arrayContaining([
+      expect.objectContaining({
+        id: 'github',
+        revision: expect.any(Number) as unknown,
+        value: expect.objectContaining({ enabled: true }) as unknown,
+      }),
+    ]) as unknown,
+    blocks: { policy: { revision: expect.any(Number) as unknown } },
+  })
   expect((await api('POST', `threads/${encodeURIComponent(threadKeyValue)}/unsubscribe`)).body).toMatchObject({ removed: true })
   expect(threadList(viewsOf(runtime), 'subscribed', 0, 20).items).toEqual([])
   expect(agents.get(runtime.masterId)!.inject).toHaveBeenCalled()
 })
 
-it('lets an Executor drop only its own ticket from a thread it finds unrelated, but not the thread it started on or its pull request\'s', async () => {
+it("lets an Executor drop only its own ticket from a thread it finds unrelated, but not the thread it started on or its pull request's", async () => {
   const { ticket, trigger, sessionId } = await acceptedTicket()
   const other = await acceptedTicket(feishu('5', '@bot 另一件事'))
   // An attached thread that turns out to be about something else, which another ticket also follows.
   const attached = { source: 'feishu', id: 'oc_side:om_side' }
-  subscribe(ticket.id, attached); subscribe(other.ticket.id, attached)
+  subscribe(ticket.id, attached)
+  subscribe(other.ticket.id, attached)
   const inject = agents.get(runtime.masterId)!.inject
   vi.mocked(inject).mockClear()
-  expect(await runTool(sessionId, 'orchestrator_thread_unrelated', { thread: 'feishu:oc_side:om_side', reason: 'It discusses the login page, not this regression.' })).toEqual({ removed: true, thread: 'feishu:oc_side:om_side' })
+  expect(
+    await runTool(sessionId, 'orchestrator_thread_unrelated', {
+      thread: 'feishu:oc_side:om_side',
+      reason: 'It discusses the login page, not this regression.',
+    }),
+  ).toEqual({ removed: true, thread: 'feishu:oc_side:om_side' })
   expect(runtime.store.threads.get('feishu:oc_side:om_side')!.subscriptions).toEqual([other.ticket.id])
-  await vi.waitFor(() =>{  expect(JSON.stringify(vi.mocked(inject).mock.calls)).toContain('thread_unrelated') })
-  await expect(runTool(sessionId, 'orchestrator_thread_unrelated', { thread: 'feishu:oc_side:om_side', reason: 'again' })).rejects.toThrow('does not follow that thread')
-  await expect(runTool(sessionId, 'orchestrator_thread_unrelated', { thread: threadKey(trigger.threads[0]!), reason: 'no' })).rejects.toThrow('the ticket started on')
+  await vi.waitFor(() => {
+    expect(JSON.stringify(vi.mocked(inject).mock.calls)).toContain('thread_unrelated')
+  })
+  await expect(runTool(sessionId, 'orchestrator_thread_unrelated', { thread: 'feishu:oc_side:om_side', reason: 'again' })).rejects.toThrow(
+    'does not follow that thread',
+  )
+  await expect(
+    runTool(sessionId, 'orchestrator_thread_unrelated', { thread: threadKey(trigger.threads[0]!), reason: 'no' }),
+  ).rejects.toThrow('the ticket started on')
   runtime.engine.bindThread(ticket.id, { source: 'github', id: '7' }, true)
   await expect(runTool(sessionId, 'orchestrator_thread_unrelated', { thread: 'github:7', reason: 'no' })).rejects.toThrow('pull request')
   // A worker drops only its own ticket: the other ticket's thread is not one this ticket follows.
-  await expect(runTool(sessionId, 'orchestrator_thread_unrelated', { thread: threadKey(other.trigger.threads[0]!), reason: 'no' })).rejects.toThrow('does not follow that thread')
+  await expect(
+    runTool(sessionId, 'orchestrator_thread_unrelated', { thread: threadKey(other.trigger.threads[0]!), reason: 'no' }),
+  ).rejects.toThrow('does not follow that thread')
 })
 
 it('reports a Source that was switched on as starting until its next pass reports its health', async () => {
-  const save = (enabled: boolean) => runtime.settings.save('source:github', { enabled, config: runtime.store.settings().sources.github!.config }, runtime.store.blockRevision('source:github'), 'panel')
-  const github = async () => ((await api('GET', 'sources')).body as { id: string; health: unknown[] }[]).find(source => source.id === 'github')!.health
+  const save = (enabled: boolean) =>
+    runtime.settings.save(
+      'source:github',
+      { enabled, config: runtime.store.settings().sources.github!.config },
+      runtime.store.blockRevision('source:github'),
+      'panel',
+    )
+  const github = async () =>
+    ((await api('GET', 'sources')).body as { id: string; health: unknown[] }[]).find(source => source.id === 'github')!.health
   await save(false)
   runtime.context(githubKind).report('github', { state: 'paused', detail: 'Off', code: 'sourceOff' })
   await save(true)
@@ -1051,8 +1341,11 @@ it('lets a worker read the prompt version it works under and the ones it worked 
   expect(runtime.sessions.status().sessions).toContainEqual({ sessionId, revision: third })
   const next = await restart()
   await next.ready
-  expect([next.sessions.promptVersion(sessionId).revision, next.sessions.mayRead(sessionId, second), next.sessions.mayRead(sessionId, first)])
-    .toEqual([third, true, false])
+  expect([
+    next.sessions.promptVersion(sessionId).revision,
+    next.sessions.mayRead(sessionId, second),
+    next.sessions.mayRead(sessionId, first),
+  ]).toEqual([third, true, false])
 })
 
 it('passes team text with template braces to every Session literally, without reading them as prompt variables', async () => {
@@ -1062,12 +1355,17 @@ it('passes team text with template braces to every Session literally, without re
   const { sessionId } = await acceptedTicket()
   for (const id of [runtime.masterId, sessionId]) {
     const section = sections.get(id)!
-    const text = renderPrompt({ sections: [{ name: section.name, text: section.text({}), interpolate: section.interpolate ?? true }], contexts: [], tools: [], variables: {} })
+    const text = renderPrompt({
+      sections: [{ name: section.name, text: section.text({}), interpolate: section.interpolate ?? true }],
+      contexts: [],
+      tools: [],
+      variables: {},
+    })
     expect(text).toContain(delivery)
   }
 })
 
-it('leaves auto-merge to the delivery requirements, with the agent\'s own gh and the line threshold', async () => {
+it("leaves auto-merge to the delivery requirements, with the agent's own gh and the line threshold", async () => {
   const { ticket } = await acceptedTicket()
   expect(runtime.ticketEnvironment(ticket).map(variable => variable.key)).not.toContain('DSH_SUPERAGENT_GITHUB_MERGE_ACCOUNT')
   expect(ticket.mandate).not.toHaveProperty('autoMergeLineLimit')
@@ -1079,13 +1377,27 @@ it('leaves auto-merge to the delivery requirements, with the agent\'s own gh and
   expect(runtime.prompts.preview(runtime.prompts.current().config).worker).not.toContain('gh-merge')
 })
 
-it('runs the prepare command once for a new ticket, under the execution root with the ticket\'s environment, and fails the ticket with its output', async () => {
-  const prepare = (command: string) => runtime.store.saveSettings({ ...runtime.store.settings(), executor: { ...runtime.store.settings().executor, prepare: command } })
-  const runs = () => subprocess.spawn.mock.calls.map(([spec]) => spec as { argv: string[]; cwd: string; env?: Record<string, string> }).filter(spec => spec.argv[0] === 'sh')
+it("runs the prepare command once for a new ticket, under the execution root with the ticket's environment, and fails the ticket with its output", async () => {
+  const prepare = (command: string) =>
+    runtime.store.saveSettings({ ...runtime.store.settings(), executor: { ...runtime.store.settings().executor, prepare: command } })
+  const runs = () =>
+    subprocess.spawn.mock.calls
+      .map(([spec]) => spec as { argv: string[]; cwd: string; env?: Record<string, string> })
+      .filter(spec => spec.argv[0] === 'sh')
   prepare('git -C /srv/widgets worktree add "$DSH_SUPERAGENT_DIR" -b "agent/$DSH_SUPERAGENT_NAME"')
   const { ticket } = await acceptedTicket()
-  expect(runs()).toEqual([expect.objectContaining({ argv: ['sh', '-c', 'git -C /srv/widgets worktree add "$DSH_SUPERAGENT_DIR" -b "agent/$DSH_SUPERAGENT_NAME"'], cwd: join(directory, 'work'),
-    env: expect.objectContaining({ DSH_SUPERAGENT_DIR: ticket.execution!.directory, DSH_SUPERAGENT_NAME: ticket.execution!.name, DSH_SUPERAGENT_GITHUB_REPOSITORY: 'acme/widgets', DSH_SUPERAGENT_FEISHU_CHAT: CHAT }) as unknown })])
+  expect(runs()).toEqual([
+    expect.objectContaining({
+      argv: ['sh', '-c', 'git -C /srv/widgets worktree add "$DSH_SUPERAGENT_DIR" -b "agent/$DSH_SUPERAGENT_NAME"'],
+      cwd: join(directory, 'work'),
+      env: expect.objectContaining({
+        DSH_SUPERAGENT_DIR: ticket.execution!.directory,
+        DSH_SUPERAGENT_NAME: ticket.execution!.name,
+        DSH_SUPERAGENT_GITHUB_REPOSITORY: 'acme/widgets',
+        DSH_SUPERAGENT_FEISHU_CHAT: CHAT,
+      }) as unknown,
+    }),
+  ])
   // A retry reuses the prepared directory.
   await runTool(`worker-${ticket.id}`, 'orchestrator_report', { state: 'failed', summary: 'offline' })
   runtime.engine.retryTicket(ticket.id)
@@ -1229,10 +1541,24 @@ it('resumes several ended tickets on one thread from one message without the lau
   await receive(another)
   await runTool(first.sessionId, 'orchestrator_trigger_handback', { trigger_id: another.id, reason: 'Another change.' })
   const second = await acceptedTicket(another)
-  for (const ticket of [first, second]) await runTool(ticket.sessionId, 'orchestrator_report', { state: 'dropped', summary: 'nothing to do' })
+  for (const ticket of [first, second])
+    await runTool(ticket.sessionId, 'orchestrator_report', { state: 'dropped', summary: 'nothing to do' })
   await receive(feishu('32', '还有问题', { mentions: [], root_id: 'om_1', sender_id: 'ou_guest' }))
-  await vi.waitFor(() =>{  expect([first, second].map(ticket => runtime.store.tickets.get(ticket.ticket.id)!.ended)).toEqual([undefined, undefined]) }, { timeout: 3000 })
-  await vi.waitFor(() =>{  expect([first, second].map(ticket => runtime.store.tickets.get(ticket.ticket.id)!.assignments.at(-1)!.state)).toEqual(['running', 'running']) }, { timeout: 3000 })
+  await vi.waitFor(
+    () => {
+      expect([first, second].map(ticket => runtime.store.tickets.get(ticket.ticket.id)!.ended)).toEqual([undefined, undefined])
+    },
+    { timeout: 3000 },
+  )
+  await vi.waitFor(
+    () => {
+      expect([first, second].map(ticket => runtime.store.tickets.get(ticket.ticket.id)!.assignments.at(-1)!.state)).toEqual([
+        'running',
+        'running',
+      ])
+    },
+    { timeout: 3000 },
+  )
 })
 
 it('attaches a message to an ended ticket and so resumes it', async () => {
@@ -1409,8 +1735,14 @@ it('releases the database and the state directory lock when it fails to start, s
   const db = new DatabaseSync(join(directory, 'orchestrator.sqlite'))
   db.prepare("UPDATE kv SET value='99' WHERE key='schema'").run()
   db.close()
-  const context = () => { const ctx = new Context(); for (const [name, service] of Object.entries(services)) ctx.reflect.provide(name, service); return ctx }
-  expect(() => new Runtime(context(), testMachine({ stateDir: directory }), vi.fn())).toThrow('Unsupported orchestrator database version 99')
+  const context = () => {
+    const ctx = new Context()
+    for (const [name, service] of Object.entries(services)) ctx.reflect.provide(name, service)
+    return ctx
+  }
+  expect(() => new Runtime(context(), testMachine({ stateDir: directory }), vi.fn())).toThrow(
+    'Unsupported orchestrator database version 99',
+  )
   const fixed = new DatabaseSync(join(directory, 'orchestrator.sqlite'))
   fixed.prepare('UPDATE kv SET value=? WHERE key=?').run(String(SCHEMA_VERSION), 'schema')
   fixed.close()
@@ -1635,25 +1967,39 @@ it('launches a queued Assignment once when the host resumes, and gives a failed 
   const queued = await acceptedTicket(feishu('52', '@bot 修 三', { root_id: undefined }))
   await runtime.idle()
   expect(runtime.store.tickets.get(queued.ticket.id)!.assignments.at(-1)).toMatchObject({ state: 'pending' })
-  runtime.executor.resume(); runtime.executor.resume()
+  runtime.executor.resume()
+  runtime.executor.resume()
   const launches = () => deliveries.mock.calls.filter(([call]) => call.sessionId === queued.sessionId).length
   ;(agents.get(next.sessionId)! as { status: string }).status = 'idle'
-  await runtime.pump(); await runtime.idle()
-  await vi.waitFor(() =>{  expect(runtime.store.tickets.get(queued.ticket.id)!.assignments.at(-1)).toMatchObject({ state: 'running' }) })
+  await runtime.pump()
+  await runtime.idle()
+  await vi.waitFor(() => {
+    expect(runtime.store.tickets.get(queued.ticket.id)!.assignments.at(-1)).toMatchObject({ state: 'running' })
+  })
   expect(launches()).toBe(1)
 })
 
-it('shows the settings history when one revision holds values its Source kind no longer accepts, without that revision\'s changes', async () => {
+it("shows the settings history when one revision holds values its Source kind no longer accepts, without that revision's changes", async () => {
   const settings = runtime.store.settings()
   await runtime.settings.save('executor', { ...settings.executor, maxWorkers: 4 }, runtime.store.blockRevision('executor'), 'panel')
-  await runtime.settings.save('executor', { ...runtime.store.settings().executor, maxWorkers: 5 }, runtime.store.blockRevision('executor'), 'panel')
+  await runtime.settings.save(
+    'executor',
+    { ...runtime.store.settings().executor, maxWorkers: 5 },
+    runtime.store.blockRevision('executor'),
+    'panel',
+  )
   // A revision the migration left as an earlier version wrote it, which the Feishu kind's schema rejects.
   const revision = runtime.store.get(KV.settings.revision)!
   const stored = runtime.store.get(KV.settings.version(revision - 1))!
-  runtime.store.set(KV.settings.version(revision - 1), { ...stored, settings: { ...stored.settings,
-    sources: { ...stored.settings.sources, feishu: { enabled: true, config: { readPageSize: 'many' } } } } })
+  runtime.store.set(KV.settings.version(revision - 1), {
+    ...stored,
+    settings: { ...stored.settings, sources: { ...stored.settings.sources, feishu: { enabled: true, config: { readPageSize: 'many' } } } },
+  })
   const history = policyHistory(runtime.store, runtime.sources, policyVersion(runtime.store.settings()))
-  expect(history.items.slice(0, 2)).toEqual([expect.objectContaining({ revision, changes: null }), expect.objectContaining({ revision: revision - 1, changes: null })])
+  expect(history.items.slice(0, 2)).toEqual([
+    expect.objectContaining({ revision, changes: null }),
+    expect.objectContaining({ revision: revision - 1, changes: null }),
+  ])
   expect(history.items[2]).toMatchObject({ revision: revision - 2 })
 })
 

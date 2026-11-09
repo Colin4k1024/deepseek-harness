@@ -37,11 +37,17 @@ export function merge3(base: unknown, mine: unknown, theirs: unknown, conflicts:
 }
 function mergeList([base, mine, theirs]: unknown[][], field: string, conflicts: string[][], path: string[]): unknown[] {
   const name = (item: unknown) => String((item as Record<string, unknown>)[field])
-  const [before, ours, others] = [required(base), required(mine), required(theirs)].map(list => new Map(list.map(item => [name(item), item])))
+  const [before, ours, others] = [required(base), required(mine), required(theirs)].map(
+    list => new Map(list.map(item => [name(item), item])),
+  )
   const order = required(theirs).map(name)
   required(mine).forEach((item, index) => {
     if (order.includes(name(item))) return
-    const previous = required(mine).slice(0, index).map(name).reverse().find(key => order.includes(key))
+    const previous = required(mine)
+      .slice(0, index)
+      .map(name)
+      .reverse()
+      .find(key => order.includes(key))
     order.splice(previous === undefined ? 0 : order.indexOf(previous) + 1, 0, name(item))
   })
   return order.flatMap((key) => {
@@ -161,22 +167,47 @@ export function useDraft<V, M = undefined>({ key, saved, revision, save, reload 
     } catch (failure) {
       const fields = failure instanceof ApiError ? failure.issues.map(issue => issue.path) : []
       if (failure instanceof ApiError && failure.status === 409) {
-        await reload().then(() => { dispatch({ type: 'refused', notice: { kind: 'rebasing' } }) }, failed)
-      } else dispatch({ type: 'refused', notice: fields.length ? { kind: 'invalid', fields } : { kind: 'failed',
-        error: errorText(failure) } })
+        await reload().then(() => {
+          dispatch({ type: 'refused', notice: { kind: 'rebasing' } })
+        }, failed)
+      } else
+        dispatch({ type: 'refused', notice: fields.length ? { kind: 'invalid', fields } : { kind: 'failed', error: errorText(failure) } })
       return
     }
     dispatch({ type: 'saved', revision: result.revision, restarting: !!result.restarting })
-    if (result.restarting) restart(); else await reload().catch(failed)
+    if (result.restarting) restart()
+    else await reload().catch(failed)
   }
-  return { state, value: state.sent?.value ?? state.draft?.value ?? saved, meta: state.draft?.meta,
-    revision: state.draft?.revision ?? revision ?? 0, dirty: state.draft !== undefined,
-    busy: state.phase === 'saving' || state.phase === 'awaitingRevision', submit,
-    edit: (value: V, meta?: M) => { dispatch({ type: 'edit', value, meta, saved, revision }) }, discard: () => { dispatch({ type: 'discard' }) } }
+  return {
+    state,
+    value: state.sent?.value ?? state.draft?.value ?? saved,
+    meta: state.draft?.meta,
+    revision: state.draft?.revision ?? revision ?? 0,
+    dirty: state.draft !== undefined,
+    busy: state.phase === 'saving' || state.phase === 'awaitingRevision',
+    submit,
+    edit: (value: V, meta?: M) => {
+      dispatch({ type: 'edit', value, meta, saved, revision })
+    },
+    discard: () => {
+      dispatch({ type: 'discard' })
+    },
+  }
 }
 
-/** Sticky save/discard bar for a settings block; transfers focus back to its parent block when hidden so keyboard navigation does not reset. */
-export function SaveBar({ state, dirty, busy, words, status, onDiscard, onSave }: {
+/**
+ * Sticky save/discard bar for a settings block; transfers focus back to its parent block when hidden so keyboard navigation does not
+ * reset.
+ */
+export function SaveBar({
+  state,
+  dirty,
+  busy,
+  words,
+  status,
+  onDiscard,
+  onSave,
+}: {
   state: DraftState<unknown, unknown>
   dirty: boolean
   busy: boolean

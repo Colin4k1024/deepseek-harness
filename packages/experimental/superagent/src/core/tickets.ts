@@ -193,7 +193,8 @@ export class Tickets extends EnginePart {
     this.dropSubscriptions(thread, 'executor', ticketId, reason)
     // Its worker found the Thread is not its ticket's: it hands back, with its reason, the person's messages there it decides.
     for (const trigger of this.triggersOf(ticket)) {
-      if (trigger.threads.some(ref => threadKey(ref) === thread) && this.owners(trigger).includes(ticketId)) this.handBack(ticketId, trigger, reason)
+      if (trigger.threads.some(ref => threadKey(ref) === thread) && this.owners(trigger).includes(ticketId))
+        this.handBack(ticketId, trigger, reason)
     }
   }
   /**

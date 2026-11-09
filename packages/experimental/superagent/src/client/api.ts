@@ -14,13 +14,25 @@ export interface UserFailure { code: UserErrorCode; values: Record<string, strin
  * in which case a 404 does not mean a record is missing).
  */
 export class ApiError extends Error {
-  constructor(message: string, readonly status: number,
-    readonly details: { issues?: { path: string; message: string }[]; setup?: SetupProblem; user?: UserFailure; unreachable?: boolean } = {}) {
+  constructor(
+    message: string,
+    readonly status: number,
+    readonly details: {
+      issues?: { path: string; message: string }[]
+      setup?: SetupProblem
+      user?: UserFailure
+      unreachable?: boolean
+    } = {},
+  ) {
     super(message)
   }
-  get issues() { return this.details.issues ?? [] }
+  get issues() {
+    return this.details.issues ?? []
+  }
   /** True when the host confirmed the record does not exist, rather than being unreachable. */
-  get missing() { return this.status === 404 && !this.details.unreachable }
+  get missing() {
+    return this.status === 404 && !this.details.unreachable
+  }
 }
 export interface ApiMessages {
   offline: string
@@ -85,39 +97,63 @@ export function usePoll<T>(load: () => Promise<T>, deps: readonly unknown[], int
       clearTimeout(timer)
       try {
         const value = await loader.current()
-        if (active) setState(previous => same(previous.data, value) ? previous.error ? { data: previous.data as T } : previous : { data: value })
+        if (active)
+          setState(previous =>
+            same(previous.data, value) ? (previous.error ? { data: previous.data as T } : previous) : { data: value },
+          )
       } catch (failure) {
         if (active) setState(previous => ({ ...previous, error: failure instanceof Error ? failure : new Error(String(failure)) }))
       } finally {
-        if (active) timer = setTimeout(() => { void run() }, document.hidden ? intervalMs * HIDDEN_FACTOR : intervalMs)
+        if (active)
+          timer = setTimeout(
+            () => {
+              void run()
+            },
+            document.hidden ? intervalMs * HIDDEN_FACTOR : intervalMs,
+          )
       }
     }
     const run = () => (queue = queue.then(once))
-    const shown = () => { if (!document.hidden) void run() }
+    const shown = () => {
+      if (!document.hidden) void run()
+    }
     refresh.current = run
     void run()
     document.addEventListener('visibilitychange', shown)
-    return () => { active = false; clearTimeout(timer); document.removeEventListener('visibilitychange', shown) }
+    return () => {
+      active = false
+      clearTimeout(timer)
+      document.removeEventListener('visibilitychange', shown)
+    }
   }, [...deps, intervalMs])
   const reload = useCallback(() => refresh.current(), [])
   return { data: state.data, error: state.error, reload }
 }
 
 export const DECISION_FILTERS = ['work', 'stop', 'ignore', 'unavailable', 'all'] as const
-export type DecisionFilter = typeof DECISION_FILTERS[number]
-export const DECISION_KINDS: Readonly<Record<DecisionFilter, string>> = { work: 'accept,reopen', stop: 'stop', ignore: 'ignore',
-  unavailable: 'unavailable', all: '' }
+export type DecisionFilter = (typeof DECISION_FILTERS)[number]
+export const DECISION_KINDS: Readonly<Record<DecisionFilter, string>> = {
+  work: 'accept,reopen',
+  stop: 'stop',
+  ignore: 'ignore',
+  unavailable: 'unavailable',
+  all: '',
+}
 
-export type Call = <K extends keyof Api>(route: K, ...request: {} extends ApiRequest<K> ? [request?: ApiRequest<K>] : [request: ApiRequest<K>])
-=> Promise<ApiResponse<K>>
+export type Call = <K extends keyof Api>(
+  route: K,
+  ...request: {} extends ApiRequest<K> ? [request?: ApiRequest<K>] : [request: ApiRequest<K>]
+) => Promise<ApiResponse<K>>
 /** Build a typed route caller that resolves localized error messages on each request. */
 export function caller(messages: () => ApiMessages): Call {
   return (route, ...[request]) => {
     const [method, pattern] = route.split(' ') as [string, string]
     const values = (request ?? {}) as Record<string, unknown> & { query?: Record<string, unknown>; body?: unknown }
     const path = pattern.replace(/:(\w+)/g, (_match, name: string) => encodeURIComponent(String(values[name])))
-    const query = Object.entries(values.query ?? {}).filter(([, value]) => value !== undefined && value !== '')
-      .map(([name, value]) => `${name}=${encodeURIComponent(String(value))}`).join('&')
+    const query = Object.entries(values.query ?? {})
+      .filter(([, value]) => value !== undefined && value !== '')
+      .map(([name, value]) => `${name}=${encodeURIComponent(String(value))}`)
+      .join('&')
     return api(messages(), query ? `${path}?${query}` : path, method, values.body)
   }
 }

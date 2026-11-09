@@ -6,40 +6,68 @@ import { escapeRegExp, sameName } from '../infra/text.ts'
 
 export const SOURCE = 'github'
 /** GitHub reply address: issue/PR conversation, or a review thread when `url` points at a discussion comment. */
-export const githubChannel = (number: number, url?: string): ChannelRef =>
-  ({ source: SOURCE, thread: `github:${number}`, address: { number: String(number), ...(url ? { url } : {}) } })
+export const githubChannel = (number: number, url?: string): ChannelRef => ({
+  source: SOURCE,
+  thread: `github:${number}`,
+  address: { number: String(number), ...(url ? { url } : {}) },
+})
 export const githubPage = (repository: string, number: number, pr = false): string =>
   `https://github.com/${repository}/${pr ? 'pull' : 'issues'}/${number}`
 /** Parses a web or API URL for an Issue, PR, or review comment in `repository`; returns undefined for other URLs or repositories. */
 export function githubAddress(url: string, repository: string): { number: number; pr: boolean; discussion?: number } | undefined {
-  const address = /^https:\/\/(?:api\.github\.com\/repos|github\.com)\/([^/]+\/[^/]+)\/(issues|pulls?)\/(\d+)\/?(?:#discussion_r(\d+)|#[\w-]*)?$/i
+  const address =
+    /^https:\/\/(?:api\.github\.com\/repos|github\.com)\/([^/]+\/[^/]+)\/(issues|pulls?)\/(\d+)\/?(?:#discussion_r(\d+)|#[\w-]*)?$/i
   const match = address.exec(url)
   if (!match || !sameName(required(match[1]), repository)) return undefined
-  return { number: Number(match[3]), pr: required(match[2]).toLowerCase() !== 'issues', ...match[4] ? { discussion: Number(match[4]) } : {} }
+  return {
+    number: Number(match[3]),
+    pr: required(match[2]).toLowerCase() !== 'issues',
+    ...(match[4] ? { discussion: Number(match[4]) } : {}),
+  }
 }
 /** GitHub returns a deleted account as `null` and displays it as `ghost`. */
-export const UserSchema = z.looseObject({ login: z.string(), type: z.string().optional() }).nullable()
+export const UserSchema = z
+  .looseObject({ login: z.string(), type: z.string().optional() })
+  .nullable()
   .transform(user => user ?? { login: 'ghost', type: 'User' })
 /**
  * A GitHub comment or review; a review carries `state` and `commit_id`, and an inline review comment carries its file,
  * line, diff hunk, and `in_reply_to_id` (the root comment ID of its review thread).
  */
 export const CommentSchema = z.looseObject({
-  id: z.number(), body: z.string().nullish(), user: UserSchema, html_url: z.string().nullish(),
-  created_at: z.string().nullish(), updated_at: z.string().nullish(), submitted_at: z.string().nullish(),
-  state: z.string().nullish(), commit_id: z.string().nullish(),
-  path: z.string().nullish(), line: z.number().nullish(), original_line: z.number().nullish(), diff_hunk: z.string().nullish(),
+  id: z.number(),
+  body: z.string().nullish(),
+  user: UserSchema,
+  html_url: z.string().nullish(),
+  created_at: z.string().nullish(),
+  updated_at: z.string().nullish(),
+  submitted_at: z.string().nullish(),
+  state: z.string().nullish(),
+  commit_id: z.string().nullish(),
+  path: z.string().nullish(),
+  line: z.number().nullish(),
+  original_line: z.number().nullish(),
+  diff_hunk: z.string().nullish(),
   in_reply_to_id: z.number().nullish(),
 })
 export type GithubComment = z.infer<typeof CommentSchema>
 /** An Issue as `issues/<number>` returns it; GitHub sets `pull_request` when the number is a pull request. */
 export const IssueSchema = CommentSchema.extend({
-  number: z.number(), title: z.string(), state: z.string(), created_at: z.string(), html_url: z.string(),
+  number: z.number(),
+  title: z.string(),
+  state: z.string(),
+  created_at: z.string(),
+  html_url: z.string(),
   pull_request: z.looseObject({ url: z.string() }).nullish(),
 })
 export type GithubIssue = z.infer<typeof IssueSchema>
 type Opened = Pick<GithubIssue, 'number' | 'title' | 'body' | 'user' | 'created_at' | 'html_url'>
-export interface PullRef { number: number; isPr: boolean; url?: string; prAuthor?: string }
+export interface PullRef {
+  number: number
+  isPr: boolean
+  url?: string
+  prAuthor?: string
+}
 /**
  * True when GitHub reports the account as a regular user rather than a bot or GitHub App.
  * Review bots running under ordinary user accounts count as human here; the prompts identify which accounts are automated.

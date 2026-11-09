@@ -190,33 +190,49 @@ it('refuses alone an item that lacks a field its kind needs or breaks a field\'s
   expect(h.runtime.store.tickets.list()).toEqual([])
 })
 
-it('decides a candidate\'s batch with its card\'s trigger: a second accept keeps the first, and no other decision contradicts it', async () => {
+it("decides a candidate's batch with its card's trigger: a second accept keeps the first, and no other decision contradicts it", async () => {
   await h.runtime.settings.pause(true, 'panel')
-  const first = feishu('1', '@bot 首页的标题'), second = feishu('2', '@bot 改成“浏览网页”', { root_id: 'om_1' })
-  h.runtime.receive(first); h.runtime.receive(second)
+  const first = feishu('1', '@bot 首页的标题'),
+    second = feishu('2', '@bot 改成“浏览网页”', { root_id: 'om_1' })
+  h.runtime.receive(first)
+  h.runtime.receive(second)
   await h.runtime.settings.pause(false, 'panel')
-  await h.runtime.pump(); await h.runtime.idle()
+  await h.runtime.pump()
+  await h.runtime.idle()
   const accept = { kind: 'accept', worktree_name: 'retitle', acknowledgement: '收到。' }
-  const { results } = await h.runTool(h.runtime.masterId, 'orchestrator_route', { decisions: [
-    { ...accept, trigger_id: first.id, title: 'Retitle' },
-    { ...accept, trigger_id: second.id, title: 'Another title' },
-    { kind: 'ignore', trigger_id: second.id, reason: 'chat' },
-  ] }) as { results: { ticket?: { ticket_id: string } }[] }
+  const { results } = (await h.runTool(h.runtime.masterId, 'orchestrator_route', {
+    decisions: [
+      { ...accept, trigger_id: first.id, title: 'Retitle' },
+      { ...accept, trigger_id: second.id, title: 'Another title' },
+      { kind: 'ignore', trigger_id: second.id, reason: 'chat' },
+    ],
+  })) as { results: { ticket?: { ticket_id: string } }[] }
   const ticketId = results[0]!.ticket!.ticket_id
   expect(results).toEqual([
     expect.objectContaining({ trigger_id: first.id, decision: 'accept' }),
-    expect.objectContaining({ trigger_id: second.id, decision: 'accept', reason: `Already accepted as ${ticketId}; title and acknowledgement unchanged` }),
+    expect.objectContaining({
+      trigger_id: second.id,
+      decision: 'accept',
+      reason: `Already accepted as ${ticketId}; title and acknowledgement unchanged`,
+    }),
     { trigger_id: second.id, kind: 'ignore', refused: `Decided in this call with ${first.id}, whose Decision took its batch` },
   ])
   expect(h.runtime.store.tickets.get(ticketId)!.title).toBe('Retitle')
 })
 
-it('states each routing field\'s limit in its description, which the schema leaves to the item\'s check', () => {
+it("states each routing field's limit in its description, which the schema leaves to the item's check", () => {
   type Schema = { parameters: { properties: { decisions: { items: { properties: Record<string, { description?: string }> } } } } }
-  const fields = (h.tools.get(h.runtime.masterId)!.get('orchestrator_route') as unknown as Schema).parameters.properties.decisions.items.properties
-  const limits: Record<string, string[]> = { title: ['200 characters'], worktree_name: ['kebab-case', '32 characters'],
-    acknowledgement: [`${IM_WORDS} words`], note: [`${NOTE_WORDS} words`, 'Never add implementation instructions'], reason: ['500 characters'] }
-  for (const [field, phrases] of Object.entries(limits)) for (const phrase of phrases) expect(fields[field]!.description, field).toContain(phrase)
+  const fields = (h.tools.get(h.runtime.masterId)!.get('orchestrator_route') as unknown as Schema).parameters.properties.decisions.items
+    .properties
+  const limits: Record<string, string[]> = {
+    title: ['200 characters'],
+    worktree_name: ['kebab-case', '32 characters'],
+    acknowledgement: [`${IM_WORDS} words`],
+    note: [`${NOTE_WORDS} words`, 'Never add implementation instructions'],
+    reason: ['500 characters'],
+  }
+  for (const [field, phrases] of Object.entries(limits))
+    for (const phrase of phrases) expect(fields[field]!.description, field).toContain(phrase)
 })
 
 it('stops one follow-up for each ticket it reached, in one call', async () => {

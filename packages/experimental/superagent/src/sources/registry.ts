@@ -27,36 +27,60 @@ export class SourceRegistry implements SourceScope {
     const synced = kind.health.find(name => name.startsWith('sync:'))
     if (synced) throw refused(synced)
     const entries = new Map<string, HealthEntry>()
-    const release = () => { for (const [name, entry] of entries) { entry.release(); this.health.delete(name) } }
+    const release = () => {
+      for (const [name, entry] of entries) {
+        entry.release()
+        this.health.delete(name)
+      }
+    }
     for (const name of kind.health) {
-      try { entries.set(name, this.board.claim(name, { state: 'starting', detail: '' })) }
-      catch { release(); throw refused(name) }
+      try {
+        entries.set(name, this.board.claim(name, { state: 'starting', detail: '' }))
+      } catch {
+        release()
+        throw refused(name)
+      }
     }
     for (const [name, entry] of entries) this.health.set(name, entry)
     this.kinds.set(kind.kind, kind)
     const unregistered = this.registered(kind)
-    return () => { this.kinds.delete(kind.kind); release(); unregistered() }
+    return () => {
+      this.kinds.delete(kind.kind)
+      release()
+      unregistered()
+    }
   }
   /**
    * Returns the active health entries for `names`. A Source context writes through the entries it received when built,
    * so reports sent after that registration ended do nothing even if the kind registers again.
    */
   healthEntries(names: readonly string[]): Map<string, HealthEntry> {
-    return new Map(names.flatMap((name) => { const entry = this.health.get(name); return entry ? [[name, entry] as const] : [] }))
+    return new Map(
+      names.flatMap((name) => {
+        const entry = this.health.get(name)
+        return entry ? [[name, entry] as const] : []
+      }),
+    )
   }
-  kind(id: string): SourceKind | undefined { return this.kinds.get(id) }
+  kind(id: string): SourceKind | undefined {
+    return this.kinds.get(id)
+  }
   /**
    * Every registered kind's instance ordered by ID, followed by stored instances whose kind is not installed (with their config kept as
    * stored).
    */
   instances(settings = this.settings()): (SourceInstance & { installed: boolean })[] {
-    const installed = [...this.kinds.values()].sort((a, b) => a.kind.localeCompare(b.kind)).map(kind => ({ ...this.resolve(kind, settings.sources[kind.kind]), installed: true }))
-    const orphaned = Object.entries(settings.sources).filter(([id]) => !this.kinds.has(id)).map(([id, stored]) => ({ id, kind: id, enabled: stored.enabled, config: stored.config, installed: false }))
+    const installed = [...this.kinds.values()]
+      .sort((a, b) => a.kind.localeCompare(b.kind))
+      .map(kind => ({ ...this.resolve(kind, settings.sources[kind.kind]), installed: true }))
+    const orphaned = Object.entries(settings.sources)
+      .filter(([id]) => !this.kinds.has(id))
+      .map(([id, stored]) => ({ id, kind: id, enabled: stored.enabled, config: stored.config, installed: false }))
     return [...installed, ...orphaned]
   }
   instance<C extends Record<string, unknown>>(id: string, settings = this.settings()): SourceInstance<C> | undefined {
     const kind = this.kinds.get(id)
-    return kind ? this.resolve(kind, settings.sources[id]) as SourceInstance<C> : undefined
+    return kind ? (this.resolve(kind, settings.sources[id]) as SourceInstance<C>) : undefined
   }
   validate(id: string, value: { enabled: boolean; config: unknown }): { enabled: boolean; config: Record<string, unknown> } {
     const kind = this.kinds.get(id)
@@ -64,20 +88,32 @@ export class SourceRegistry implements SourceScope {
     return { enabled: value.enabled, config: kind.schema.parse(value.config) }
   }
   /** Validates each Source's part of a submitted Policy against its kind; policy parts for uninstalled Source kinds are kept as stored. */
-  validatePolicy(parts: Record<string, Record<string, unknown>>): Record<string, Record<string, unknown> & { allowed: { id: string; name?: string | undefined }[] }> {
-    return Object.fromEntries(Object.entries(parts).map(([id, part]) => {
-      const policy = this.kinds.get(id)?.policy
-      // `admission` is validated by the Policy's own schema (shared across all kinds), while the kind validates the rest of its part.
-      const { admission, ...rest } = part
-      return [id, policy ? { ...policy.schema.parse(rest), admission: AdmissionTableSchema.parse(admission ?? {}) } : part as Record<string, unknown> & { allowed: { id: string; name?: string | undefined }[] }]
-    }))
+  validatePolicy(
+    parts: Record<string, Record<string, unknown>>,
+  ): Record<string, Record<string, unknown> & { allowed: { id: string; name?: string | undefined }[] }> {
+    return Object.fromEntries(
+      Object.entries(parts).map(([id, part]) => {
+        const policy = this.kinds.get(id)?.policy
+        // `admission` is validated by the Policy's own schema (shared across all kinds), while the kind validates the rest of its part.
+        const { admission, ...rest } = part
+        return [
+          id,
+          policy
+            ? { ...policy.schema.parse(rest), admission: AdmissionTableSchema.parse(admission ?? {}) }
+            : (part as Record<string, unknown> & { allowed: { id: string; name?: string | undefined }[] }),
+        ]
+      }),
+    )
   }
   policyPart(id: string, settings = this.settings()) {
     const policy = this.kinds.get(id)?.policy
     if (!policy) return undefined
     const { admission, ...rest } = settings.policy.sources[id] ?? {}
     const parsed = policy.schema.safeParse(rest)
-    return { ...parsed.success ? parsed.data : policy.schema.parse({}), admission: AdmissionTableSchema.safeParse(admission ?? {}).data ?? {} }
+    return {
+      ...(parsed.success ? parsed.data : policy.schema.parse({})),
+      admission: AdmissionTableSchema.safeParse(admission ?? {}).data ?? {},
+    }
   }
   channelAllowed(channel: { source: string; address: Record<string, string> }, settings = this.settings()): boolean {
     const kind = this.kinds.get(channel.source)
@@ -87,13 +123,17 @@ export class SourceRegistry implements SourceScope {
   }
   /** Environment variable declarations for every installed kind, whether enabled or disabled. */
   declarations(): { kind: string; variables: readonly VariableSpec[] }[] {
-    return [...this.kinds.values()].sort((a, b) => a.kind.localeCompare(b.kind)).flatMap(kind => kind.environment ? [{ kind: kind.kind, variables: kind.environment.variables }] : [])
+    return [...this.kinds.values()]
+      .sort((a, b) => a.kind.localeCompare(b.kind))
+      .flatMap(kind => (kind.environment ? [{ kind: kind.kind, variables: kind.environment.variables }] : []))
   }
   environments(settings = this.settings()) {
-    return [...this.kinds.values()].sort((a, b) => a.kind.localeCompare(b.kind)).flatMap((kind) => {
-      const instance = this.resolve(kind, settings.sources[kind.kind])
-      return kind.environment && instance.enabled ? [{ kind, environment: kind.environment, config: instance.config }] : []
-    })
+    return [...this.kinds.values()]
+      .sort((a, b) => a.kind.localeCompare(b.kind))
+      .flatMap((kind) => {
+        const instance = this.resolve(kind, settings.sources[kind.kind])
+        return kind.environment && instance.enabled ? [{ kind, environment: kind.environment, config: instance.config }] : []
+      })
   }
   /**
    * Sends a message idempotently through its Channel's kind; returns `'waiting'` while the kind is not installed, or
@@ -140,6 +180,11 @@ export class SourceRegistry implements SourceScope {
   /** Falls back to schema defaults and disables the instance when stored configuration fails validation. */
   private resolve(kind: SourceKind, stored: { enabled: boolean; config: Record<string, unknown> } | undefined): SourceInstance {
     const parsed = kind.schema.safeParse(stored?.config ?? {})
-    return { id: kind.kind, kind: kind.kind, enabled: parsed.success && (stored?.enabled ?? true), config: parsed.success ? parsed.data : kind.schema.parse({}) }
+    return {
+      id: kind.kind,
+      kind: kind.kind,
+      enabled: parsed.success && (stored?.enabled ?? true),
+      config: parsed.success ? parsed.data : kind.schema.parse({}),
+    }
   }
 }

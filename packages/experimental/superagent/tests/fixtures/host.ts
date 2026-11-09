@@ -56,12 +56,15 @@ export function jobRegistry(owner: (sessionId: string) => FakeAgent | undefined 
   const listeners = new Set<{ owner: string; listener: (event: { type: string }) => void }>()
   const waits = new Map<string, ((job: Job) => void)[]>()
   let released = 0
-  const emit = (job: Job, type: string) => { for (const listener of [...listeners]) if (listener.owner === job.owner) listener.listener({ type }) }
+  const emit = (job: Job, type: string) => {
+    for (const listener of [...listeners]) if (listener.owner === job.owner) listener.listener({ type })
+  }
   const end = (id: string, status = 'completed') => {
     const job = jobs.get(id)!
     job.status = status
     const waiting = waits.get(id) ?? []
-    waits.delete(id); released += waiting.length
+    waits.delete(id)
+    released += waiting.length
     for (const wake of waiting) wake({ ...job })
     emit(job, 'settled')
     const agent = waiting.length ? undefined : owner(job.owner)
@@ -116,15 +119,21 @@ export function subagentRuntime(agents: Map<string, FakeAgent>) {
       await Promise.all(live.map(child => child.settled.promise))
       return live.length > 0
     }),
-    listChildren: vi.fn(async (id: string) => [...children].filter(([, child]) => child.parent === id).map(([childId]) => ({ id: childId }))),
-    drainChildren: vi.fn(async (_parent: { id: string }, ids: readonly string[]) => { for (const id of ids) settle(id) }),
+    listChildren: vi.fn(async (id: string) =>
+      [...children].filter(([, child]) => child.parent === id).map(([childId]) => ({ id: childId })),
+    ),
+    drainChildren: vi.fn(async (_parent: { id: string }, ids: readonly string[]) => {
+      for (const id of ids) settle(id)
+    }),
     drainDescendants: vi.fn(async (parents: readonly { id: string }[]) => {
       for (const parent of parents) {
         closed.add(parent.id)
         for (const [id, child] of children) if (child.parent === parent.id) settle(id, false)
       }
     }),
-    interrupt: vi.fn((id: string) => { settle(id) }),
+    interrupt: vi.fn((id: string) => {
+      settle(id)
+    }),
   }
   const spawn = (parent: string) => {
     if (closed.has(parent)) throw new Error('DRAINING: the Session admits no new subagents')
@@ -229,77 +238,187 @@ export async function startRuntime(seed?: (store: Store) => void) {
           ctx.emit('agent/status', { agent, status: 'idle' } as never)
         })
       })
-      agents.set(sessionId, { id: sessionId, ctx: agentCtx, inbox, followup: deliver('queue'), steer: deliver('steer'), inject: vi.fn(), session, cancel,
-        get status() { return status }, set status(next: string) { status = next; if (next === 'idle') for (const wake of idle.splice(0)) wake() },
+      agents.set(sessionId, {
+        id: sessionId,
+        ctx: agentCtx,
+        inbox,
+        followup: deliver('queue'),
+        steer: deliver('steer'),
+        inject: vi.fn(),
+        session,
+        cancel,
+        get status() {
+          return status
+        },
+        set status(next: string) {
+          status = next
+          if (next === 'idle') for (const wake of idle.splice(0)) wake()
+        },
         // Once its turn ended, as DSH's does.
-        whenIdle: () => status === 'idle' ? Promise.resolve() : new Promise<void>((resolve) => { idle.push(resolve) }) } as never)
+        whenIdle: () =>
+          status === 'idle'
+            ? Promise.resolve()
+            : new Promise<void>((resolve) => {
+              idle.push(resolve)
+            }),
+      } as never)
     }),
-    selectModel: vi.fn(async () => {}), resolveAgent: vi.fn<(id: string) => ReturnType<typeof resolveDefault>>(resolveDefault),
+    selectModel: vi.fn(async () => {}),
+    resolveAgent: vi.fn<(id: string) => ReturnType<typeof resolveDefault>>(resolveDefault),
     rename: vi.fn(async () => {}),
-    prompt: vi.fn(() => { throw new Error('Plugin delivery must not use user RPC') }),
+    prompt: vi.fn(() => {
+      throw new Error('Plugin delivery must not use user RPC')
+    }),
     inspect: vi.fn(async () => ({ events: [] })),
   }
   const reader = { read: async () => ({ events: [] }), [Symbol.asyncDispose]: async () => {} }
   const persistence = { flush: vi.fn(async () => {}), open: vi.fn(async () => reader) }
-  const webServer = { host: '127.0.0.1', port: 3082, register: (route: { handler: HttpHandler }) => { http = route.handler; return () => {} } }
+  const webServer = {
+    host: '127.0.0.1',
+    port: 3082,
+    register: (route: { handler: HttpHandler }) => {
+      http = route.handler
+      return () => {}
+    },
+  }
   const jobs = jobRegistry(id => agents.get(id))
   const subagents = subagentRuntime(agents)
-  const services = { agents, llm: { resolveCallConfig: vi.fn(async (value: unknown) => value) }, sessionController: controller,
-    sessionPersistence: persistence, workspaceRegistry: { create: async (cwd: string) => ({ id: cwd }) }, permissionPresets: { set: () => {} }, subprocess, webServer,
-    jobs: jobs.service, subagents: subagents.service }
+  const services = {
+    agents,
+    llm: { resolveCallConfig: vi.fn(async (value: unknown) => value) },
+    sessionController: controller,
+    sessionPersistence: persistence,
+    workspaceRegistry: { create: async (cwd: string) => ({ id: cwd }) },
+    permissionPresets: { set: () => {} },
+    subprocess,
+    webServer,
+    jobs: jobs.service,
+    subagents: subagents.service,
+  }
   const ctx = new Context()
   for (const [name, service] of Object.entries(services)) ctx.reflect.provide(name, service)
   for (const cli of [AGENT, BOT]) writeFileSync(cli, '#!/bin/sh\n', { mode: 0o755 })
   const seeded = new Store(join(directory, 'orchestrator.sqlite'))
-  const sources = { github: { enabled: true, config: { repository: 'acme/widgets', cli: AGENT } }, feishu: { enabled: true, config: { cli: BOT } } }
+  const sources = {
+    github: { enabled: true, config: { repository: 'acme/widgets', cli: AGENT } },
+    feishu: { enabled: true, config: { cli: BOT } },
+  }
   seeded.saveSettings(SettingsSchema.parse({ ...seeded.settings(), sources }))
   seed?.(seeded)
   seeded.close()
   const runtime = new Runtime(ctx, testMachine({ stateDir: directory }), vi.fn())
   await runtime.ready
-  runtime.sources.register(feishuKind); runtime.sources.register(githubKind)
+  runtime.sources.register(feishuKind)
+  runtime.sources.register(githubKind)
   const settings = runtime.store.settings()
-  runtime.store.saveSettings({ ...settings, eval: { ...settings.eval, mode: 'auto' },
-    policy: { ...settings.policy, sources: { feishu: { allowed: [{ id: MEMBER, name: 'Alice' }], syncChat: CHAT }, github: { allowed: [{ id: 'alice' }] } } },
-    sources: { ...sources, feishu: { enabled: true, config: { cli: BOT, chats: [{ chatId: CHAT, listen: 'all' }], directMessages: true } } } })
+  runtime.store.saveSettings({
+    ...settings,
+    eval: { ...settings.eval, mode: 'auto' },
+    policy: {
+      ...settings.policy,
+      sources: { feishu: { allowed: [{ id: MEMBER, name: 'Alice' }], syncChat: CHAT }, github: { allowed: [{ id: 'alice' }] } },
+    },
+    sources: {
+      ...sources,
+      feishu: { enabled: true, config: { cli: BOT, chats: [{ chatId: CHAT, listen: 'all' }], directMessages: true } },
+    },
+  })
   deliveries.mockClear()
 
   /** Parsed JSON payloads delivered to `sessionId`. */
-  const relays = (sessionId: string) => deliveries.mock.calls.map(([call]) => call).filter(call => call.sessionId === sessionId)
-    .map(call => JSON.parse(call.text) as Record<string, unknown>)
-  const candidates = () => relays(runtime.masterId).filter(item => item.kind === 'candidate').map(item => item.trigger_id)
+  const relays = (sessionId: string) =>
+    deliveries.mock.calls
+      .map(([call]) => call)
+      .filter(call => call.sessionId === sessionId)
+      .map(call => JSON.parse(call.text) as Record<string, unknown>)
+  const candidates = () =>
+    relays(runtime.masterId)
+      .filter(item => item.kind === 'candidate')
+      .map(item => item.trigger_id)
   const runTool = async (sessionId: string, name: string, args: unknown) => {
     const tool = tools.get(sessionId)?.get(name)
     if (!tool) throw new Error(`Tool ${name} is not registered for ${sessionId}`)
-    return await tool.execute(args, { signal: new AbortController().signal }) as Record<string, unknown>
+    return (await tool.execute(args, { signal: new AbortController().signal })) as Record<string, unknown>
   }
   /** Route one decision with the main Session's orchestrator_route, answering its result; a refused one throws its reason. */
   async function route(item: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const { results } = await runTool(runtime.masterId, 'orchestrator_route', { decisions: [item] }) as { results: Record<string, unknown>[] }
+    const { results } = (await runTool(runtime.masterId, 'orchestrator_route', { decisions: [item] })) as {
+      results: Record<string, unknown>[]
+    }
     if (results[0]!.refused) throw new Error(typeof results[0]!.refused === 'string' ? results[0]!.refused : '')
     return results[0]!
   }
   async function acceptedTicket(trigger: Trigger) {
     runtime.receive(trigger)
     await runtime.idle()
-    const result = await route({ kind: 'accept', trigger_id: trigger.id, title: `Fix ${trigger.id}`, worktree_name: 'fix-regression', acknowledgement: '收到，修复回归。' })
+    const result = await route({
+      kind: 'accept',
+      trigger_id: trigger.id,
+      title: `Fix ${trigger.id}`,
+      worktree_name: 'fix-regression',
+      acknowledgement: '收到，修复回归。',
+    })
     await runtime.idle()
     const ticket = runtime.store.tickets.get((result.ticket as { ticket_id: string }).ticket_id)!
     return { trigger, ticket, sessionId: `worker-${ticket.id}` }
   }
   async function api(method: string, path: string, json?: unknown) {
-    let status = 0, text = ''
+    let status = 0,
+      text = ''
     const chunks = json === undefined ? [] : [Buffer.from(JSON.stringify(json))]
-    const req = { method, url: `/orchestrator/api/${path}`, headers: { host: '127.0.0.1:3082', 'x-orchestrator-request': '1' }, async *[Symbol.asyncIterator]() { yield* chunks } }
-    await http(req, { writeHead: (code: number) => { status = code }, end: (data: string) => { text = data } })
+    const req = {
+      method,
+      url: `/orchestrator/api/${path}`,
+      headers: { host: '127.0.0.1:3082', 'x-orchestrator-request': '1' },
+      async *[Symbol.asyncIterator]() {
+        yield* chunks
+      },
+    }
+    await http(req, {
+      writeHead: (code: number) => {
+        status = code
+      },
+      end: (data: string) => {
+        text = data
+      },
+    })
     return { status, body: JSON.parse(text) as Record<string, unknown> }
   }
-  async function stop() { await runtime.stop(); vi.restoreAllMocks(); rmSync(directory, { recursive: true, force: true }) }
+  async function stop() {
+    await runtime.stop()
+    vi.restoreAllMocks()
+    rmSync(directory, { recursive: true, force: true })
+  }
   /** The Session's model takes its next step, which takes the messages steered in since its last. */
-  const step = (sessionId: string) => { steps.get(sessionId)!() }
+  const step = (sessionId: string) => {
+    steps.get(sessionId)!()
+  }
   /** A step of the worker claims what waits for it, and is cut off before the Session took it. */
-  const claim = (sessionId: string) => { claims.get(sessionId)!() }
-  return { runtime, ctx, directory, agents, tools, deliveries, relays, candidates, runTool, route, acceptedTicket, api, controller, subprocess, hooks, resolveDefault, stop,
-    jobs, subagents, step, claim }
+  const claim = (sessionId: string) => {
+    claims.get(sessionId)!()
+  }
+  return {
+    runtime,
+    ctx,
+    directory,
+    agents,
+    tools,
+    deliveries,
+    relays,
+    candidates,
+    runTool,
+    route,
+    acceptedTicket,
+    api,
+    controller,
+    subprocess,
+    hooks,
+    resolveDefault,
+    stop,
+    jobs,
+    subagents,
+    step,
+    claim,
+  }
 }
 export type Host = Awaited<ReturnType<typeof startRuntime>>

@@ -6,8 +6,20 @@ import { LIMITS } from './limits.ts'
 import { required } from './core/required.ts'
 import { z } from 'zod'
 import { ADMISSION_DEFAULTS, type Admission, type AdmissionCell, type AdmissionRow } from './admission.ts'
-import { key, type AssessmentOutcome, type Mandate, type Policy, type PolicyEffect, type SourceScope, type Strength, type Thread, type Ticket,
-  type Trigger, type ActorRef, type GateResult } from './core/index.ts'
+import {
+  key,
+  type AssessmentOutcome,
+  type Mandate,
+  type Policy,
+  type PolicyEffect,
+  type SourceScope,
+  type Strength,
+  type Thread,
+  type Ticket,
+  type Trigger,
+  type ActorRef,
+  type GateResult,
+} from './core/index.ts'
 import { sameName } from './infra/text.ts'
 import { WORKER_COMMANDS } from './infra/environment.ts'
 
@@ -62,58 +74,118 @@ export function assessmentOutcome(assessment: Assessment, settings: Pick<Setting
   const { title, scope, worktree_name: name } = assessment
   if (strength === 'inferred' && settings.eval.mode !== 'auto') {
     const proposal = { title, scope, worktree_name: name }
-    return { kind: 'ignore', audit: { ...audit, would_accept: true, proposal }, reason: { code: 'observed', values: { text: assessment.reason } } }
+    return {
+      kind: 'ignore',
+      audit: { ...audit, would_accept: true, proposal },
+      reason: { code: 'observed', values: { text: assessment.reason } },
+    }
   }
-  return { kind: 'accept', title, scope, reason: assessment.reason, ...(assessment.acknowledgement ? { acknowledgement: assessment.acknowledgement } : {}),
-    rules: matches.map(match => match.rule_id), audit, ...(name ? { name } : {}) }
+  return {
+    kind: 'accept',
+    title,
+    scope,
+    reason: assessment.reason,
+    ...(assessment.acknowledgement ? { acknowledgement: assessment.acknowledgement } : {}),
+    rules: matches.map(match => match.rule_id),
+    audit,
+    ...(name ? { name } : {}),
+  }
 }
 const DEFAULT_RULES = [
-  { id: 'copy', name: 'Copy fixes', enabled: true, instruction: 'Explicit requests to correct a typo, wording, punctuation or existing translation. Preserve product promises and business meaning.' },
-  { id: 'visual', name: 'Visual fixes', enabled: true, instruction: 'Explicit implementation requests for local spacing, alignment, overflow or styling, with a specified target or an objectively established existing standard/correct state to restore. Locating an element or calling it inconsistent, unattractive or hard to understand does not establish a target. Do not invent visual style, information hierarchy, rendering or interaction decisions. No redesign, new interaction or behavior. A known spacing defect does not authorize adjacent undefined restyling; assess only a clearly separable authorized scope. If direction or scope is unsettled, observe only: no acknowledgement, worker or unsolicited question.' },
+  {
+    id: 'copy',
+    name: 'Copy fixes',
+    enabled: true,
+    instruction:
+      'Explicit requests to correct a typo, wording, punctuation or existing translation. Preserve product promises and business meaning.',
+  },
+  {
+    id: 'visual',
+    name: 'Visual fixes',
+    enabled: true,
+    instruction:
+      'Explicit implementation requests for local spacing, alignment, overflow or styling, with a specified target or an objectively established existing standard/correct state to restore. Locating an element or calling it inconsistent, unattractive or hard to understand does not establish a target. Do not invent visual style, information hierarchy, rendering or interaction decisions. No redesign, new interaction or behavior. A known spacing defect does not authorize adjacent undefined restyling; assess only a clearly separable authorized scope. If direction or scope is unsettled, observe only: no acknowledgement, worker or unsolicited question.',
+  },
 ]
 /** An assessment rule; its instruction may also specify PR reviewers and whether to wait for their approval. */
-export const RuleSchema = z.object({ id: RuleIdSchema, name: z.string().trim().min(1).max(LIMITS.ruleName), enabled: z.boolean(),
-  instruction: z.string().trim().min(1).max(LIMITS.ruleInstruction) }).strict()
+export const RuleSchema = z
+  .object({
+    id: RuleIdSchema,
+    name: z.string().trim().min(1).max(LIMITS.ruleName),
+    enabled: z.boolean(),
+    instruction: z.string().trim().min(1).max(LIMITS.ruleInstruction),
+  })
+  .strict()
 export type Rule = z.infer<typeof RuleSchema>
-export const RoleModelSchema = z.object({ provider: z.string().trim().min(1), model: z.string().trim().min(1), reasoningEffort: z.string().trim().min(1).optional() }).strict()
+export const RoleModelSchema = z
+  .object({ provider: z.string().trim().min(1), model: z.string().trim().min(1), reasoningEffort: z.string().trim().min(1).optional() })
+  .strict()
 export type RoleModel = z.infer<typeof RoleModelSchema>
 
 export const AllowedSchema = z.object({ id: z.string().trim().min(1).max(200), name: z.string().trim().max(100).optional() }).strict()
 const Weak = z.enum(['inferred', 'ignore'])
-export const AdmissionRowSchema: z.ZodType<AdmissionRow> = z.object({ listedUnaddressed: Weak.optional(), unlistedAddressed: z.enum(['explicit', 'inferred', 'ignore']).optional(), unlistedUnaddressed: Weak.optional() }).strict()
+export const AdmissionRowSchema: z.ZodType<AdmissionRow> = z
+  .object({
+    listedUnaddressed: Weak.optional(),
+    unlistedAddressed: z.enum(['explicit', 'inferred', 'ignore']).optional(),
+    unlistedUnaddressed: Weak.optional(),
+  })
+  .strict()
 export const AdmissionTableSchema = z.record(z.string(), AdmissionRowSchema)
-export const SourcePolicySchema = z.object({ allowed: z.array(AllowedSchema).default([]), admission: AdmissionTableSchema.default({}) }).catchall(z.unknown())
+export const SourcePolicySchema = z
+  .object({ allowed: z.array(AllowedSchema).default([]), admission: AdmissionTableSchema.default({}) })
+  .catchall(z.unknown())
 export type SourcePolicy = z.infer<typeof SourcePolicySchema>
-export const PolicyConfigSchema = z.object({
-  rules: z.array(RuleSchema).refine(rules => new Set(rules.map(rule => rule.id)).size === rules.length, 'Duplicate rule IDs').default(DEFAULT_RULES),
-  sources: z.record(z.string().regex(/^[a-z][a-z0-9-]*$/), SourcePolicySchema).default({}),
-}).strict()
-export const EvalConfigSchema = z.object({
-  mode: z.enum(['off', 'observe', 'auto']).default('observe'),
-  timeoutSeconds: z.number().int().min(LIMITS.evalTimeoutSeconds.min).max(LIMITS.evalTimeoutSeconds.max).default(120),
-  model: RoleModelSchema.nullable().default(null),
-}).strict()
-const CommandNameSchema = z.string().regex(/^[A-Za-z0-9._-]+$/).refine(name => name !== '.' && name !== '..', 'Not a command name')
+export const PolicyConfigSchema = z
+  .object({
+    rules: z
+      .array(RuleSchema)
+      .refine(rules => new Set(rules.map(rule => rule.id)).size === rules.length, 'Duplicate rule IDs')
+      .default(DEFAULT_RULES),
+    sources: z.record(z.string().regex(/^[a-z][a-z0-9-]*$/), SourcePolicySchema).default({}),
+  })
+  .strict()
+export const EvalConfigSchema = z
+  .object({
+    mode: z.enum(['off', 'observe', 'auto']).default('observe'),
+    timeoutSeconds: z.number().int().min(LIMITS.evalTimeoutSeconds.min).max(LIMITS.evalTimeoutSeconds.max).default(120),
+    model: RoleModelSchema.nullable().default(null),
+  })
+  .strict()
+const CommandNameSchema = z
+  .string()
+  .regex(/^[A-Za-z0-9._-]+$/)
+  .refine(name => name !== '.' && name !== '..', 'Not a command name')
   .refine(name => !WORKER_COMMANDS.includes(name), `${WORKER_COMMANDS.join(', ')} cannot be blocked`)
 /**
  * Executor settings: worker model, concurrency, ticket directory root (empty defaults to `<stateDir>/work`), `prepare` command, and blocked
  * commands.
  */
-export const ExecutorConfigSchema = z.object({
-  model: RoleModelSchema.nullable().default(null),
-  maxWorkers: z.number().int().min(LIMITS.maxWorkers.min).max(LIMITS.maxWorkers.max).default(3),
-  directory: z.string().trim().refine(path => path === '' || path.startsWith('/'), 'An absolute path, or empty for <stateDir>/work').default(''),
-  prepare: z.string().max(LIMITS.prepareCommand).default(''),
-  blockedCommands: z.array(CommandNameSchema).default([]),
-}).strict()
-export const SourceInstanceSchema = z.object({ enabled: z.boolean().default(true), config: z.record(z.string(), z.unknown()).default({}) }).strict()
-export const SettingsSchema = z.object({
-  paused: z.boolean().default(false),
-  sources: z.record(z.string().regex(/^[a-z][a-z0-9-]*$/), SourceInstanceSchema).default({}),
-  policy: PolicyConfigSchema.default(() => PolicyConfigSchema.parse({})),
-  eval: EvalConfigSchema.default(() => EvalConfigSchema.parse({})),
-  executor: ExecutorConfigSchema.default(() => ExecutorConfigSchema.parse({})),
-}).strict()
+export const ExecutorConfigSchema = z
+  .object({
+    model: RoleModelSchema.nullable().default(null),
+    maxWorkers: z.number().int().min(LIMITS.maxWorkers.min).max(LIMITS.maxWorkers.max).default(3),
+    directory: z
+      .string()
+      .trim()
+      .refine(path => path === '' || path.startsWith('/'), 'An absolute path, or empty for <stateDir>/work')
+      .default(''),
+    prepare: z.string().max(LIMITS.prepareCommand).default(''),
+    blockedCommands: z.array(CommandNameSchema).default([]),
+  })
+  .strict()
+export const SourceInstanceSchema = z
+  .object({ enabled: z.boolean().default(true), config: z.record(z.string(), z.unknown()).default({}) })
+  .strict()
+export const SettingsSchema = z
+  .object({
+    paused: z.boolean().default(false),
+    sources: z.record(z.string().regex(/^[a-z][a-z0-9-]*$/), SourceInstanceSchema).default({}),
+    policy: PolicyConfigSchema.default(() => PolicyConfigSchema.parse({})),
+    eval: EvalConfigSchema.default(() => EvalConfigSchema.parse({})),
+    executor: ExecutorConfigSchema.default(() => ExecutorConfigSchema.parse({})),
+  })
+  .strict()
 export type Settings = z.infer<typeof SettingsSchema>
 export type SettingsBlock = 'policy' | 'eval' | 'executor' | `source:${string}`
 export type SettingsSave = SettingsBlock | 'pause'
@@ -181,13 +253,16 @@ Map<string, PolicyEffect> {
 export function settingsPolicy(settings: Settings, sources: SourceScope): Policy {
   const version = policyVersion(settings)
   const mode = settings.eval.mode
-  /** Gate non-human triggers: only listed bots (as inferred candidates) and senderless system/CI events may pass; other bots are rejected. */
+  /**
+   * Gate non-human triggers: only listed bots (as inferred candidates) and senderless system/CI events may pass; other bots are
+   * rejected.
+   */
   const machineGate = (trigger: Trigger): GateResult => {
     const bot = trigger.actor.id ? listedBot(settings, trigger.actor) : undefined
     if (trigger.actor.id && !bot) return { admissible: false, reason: 'not_human' }
     const scope = listened(sources, trigger.source, trigger.meta)
     if (!scope.listened || !(trigger.addressed || scope.observed)) return { admissible: false, reason: 'not_human' }
-    const recorded = { source: trigger.source, scope: trigger.meta, ...scope.row === undefined ? {} : { row: scope.row } }
+    const recorded = { source: trigger.source, scope: trigger.meta, ...(scope.row === undefined ? {} : { row: scope.row }) }
     const addressed = trigger.addressed ? { addressed: trigger.addressed } : {}
     if (bot) {
       if (mode === 'off') return { admissible: false, reason: 'admission_ignored' }
@@ -201,19 +276,27 @@ export function settingsPolicy(settings: Settings, sources: SourceScope): Policy
     return { admissible: true, strength: 'inferred', basis: { ...recorded, via: 'admission', cell, observation: { mode } } }
   }
   return {
-    version, paused: settings.paused, evalTimeoutMs: settings.eval.timeoutSeconds * 1000,
+    version,
+    paused: settings.paused,
+    evalTimeoutMs: settings.eval.timeoutSeconds * 1000,
     gate(trigger: Trigger, thread, tickets) {
       if (!trigger.human) return machineGate(trigger)
       const allowed = allowedSender(settings, trigger.actor)
       const scope = listened(sources, trigger.source, trigger.meta)
       const row = scope.listened ? scope.row : undefined
-      const recorded = { source: trigger.source, scope: trigger.meta, ...row === undefined ? {} : { row }, ...allowed ? { sender: senderName(allowed) } : {} }
-      if (allowed && trigger.addressed) return { admissible: true, strength: 'explicit', basis: { ...recorded, via: 'addressed', addressed: trigger.addressed } }
+      const recorded = {
+        source: trigger.source,
+        scope: trigger.meta,
+        ...(row === undefined ? {} : { row }),
+        ...(allowed ? { sender: senderName(allowed) } : {}),
+      }
+      if (allowed && trigger.addressed)
+        return { admissible: true, strength: 'explicit', basis: { ...recorded, via: 'addressed', addressed: trigger.addressed } }
       const cell = required(admissionCell(!!allowed, !!trigger.addressed))
       // Unaddressed messages only use the admission table when the Source observes all messages in that scope.
       const receivable = !!trigger.addressed || (scope.listened && scope.observed)
       const admission = receivable ? admissionOf(settings, trigger.source, row, cell) : 'ignore'
-      const basis = { ...recorded, via: 'admission' as const, cell, ...trigger.addressed ? { addressed: trigger.addressed } : {} }
+      const basis = { ...recorded, via: 'admission' as const, cell, ...(trigger.addressed ? { addressed: trigger.addressed } : {}) }
       // Check explicit admission cells before thread follow-ups so a thread's tickets never weaken an explicit request to a follow-up.
       if (admission === 'explicit') return { admissible: true, strength: 'explicit', basis }
       // Direct-message threads belong to one sender (no follow-up for others), and inferred follow-ups require an accept mode other than
@@ -221,17 +304,23 @@ export function settingsPolicy(settings: Settings, sources: SourceScope): Policy
       if (!(trigger.addressed === 'direct' && !allowed) && (allowed || mode !== 'off') && participating(thread, tickets)) {
         return { admissible: true, strength: allowed ? 'explicit' : 'inferred', basis: { ...recorded, via: 'followup' } }
       }
-      if (admission === 'inferred' && mode !== 'off') return { admissible: true, strength: 'inferred', basis: { ...basis, observation: { mode } } }
-      return { admissible: false, reason: !allowed ? 'not_a_member' : receivable && admission === 'ignore' ? 'admission_ignored' : 'no_mention' }
+      if (admission === 'inferred' && mode !== 'off')
+        return { admissible: true, strength: 'inferred', basis: { ...basis, observation: { mode } } }
+      return {
+        admissible: false,
+        reason: !allowed ? 'not_a_member' : receivable && admission === 'ignore' ? 'admission_ignored' : 'no_mention',
+      }
     },
-    admitsInferred: rules => mode === 'auto' && rules.length > 0 && rules.every(id => settings.policy.rules.some(rule => rule.enabled && rule.id === id)),
+    admitsInferred: rules =>
+      mode === 'auto' && rules.length > 0 && rules.every(id => settings.policy.rules.some(rule => rule.enabled && rule.id === id)),
     revalidate(mandate: Mandate) {
       // Revalidation rules follow docs/002 (Eval path; Resume revalidates).
       const { basis } = mandate
       const { source } = basis
       const current = source && basis.scope ? listened(sources, source, basis.scope) : undefined
       if (current && !current.listened) return false
-      const rulesOn = (rules: string[] | undefined) => (rules ?? []).every(id => settings.policy.rules.some(rule => rule.enabled && rule.id === id))
+      const rulesOn = (rules: string[] | undefined) =>
+        (rules ?? []).every(id => settings.policy.rules.some(rule => rule.enabled && rule.id === id))
       // Explicit follow-ups remain valid; inferred follow-ups require auto mode and enabled matched rules.
       if (basis.via === 'followup') return mandate.strength === 'explicit' || (mode === 'auto' && rulesOn(basis.rules))
       // A bot's candidate holds only while the bot remains on its Source's bot list and passes the observation checks below.

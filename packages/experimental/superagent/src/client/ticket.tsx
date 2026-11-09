@@ -7,63 +7,135 @@ import { usePanel } from './provider.tsx'
 import { settingsRoute } from './route.ts'
 import { Earlier, ThreadLine, automatedRuns } from './rows.tsx'
 import { actorName, localized, readableMarkers, reasonLabel, valueLabel, when } from './text.ts'
-import { ActionLink, ConfirmButton, ExternalLink, Hint, KeyValues, LabelValue, LoadState, MarkdownLite, PageHead, Section, SessionButton,
-  StageMark, When } from './widgets.tsx'
+import {
+  ActionLink,
+  ConfirmButton,
+  ExternalLink,
+  Hint,
+  KeyValues,
+  LabelValue,
+  LoadState,
+  MarkdownLite,
+  PageHead,
+  Section,
+  SessionButton,
+  StageMark,
+  When,
+} from './widgets.tsx'
 
 type Input = TicketPageView['inputs'][number]
 function InputLine({ input, earlier = [] }: { input: Input; earlier?: { id: string; at: string; preview: string }[] }) {
   const { t, navigate } = usePanel()
   const trigger = input.kind === 'trigger' ? input.trigger : undefined
-  return <li className="dt-row">
-    <Dot state={input.delivered ? 'idle' : 'warning'} label={input.delivered ? t('inputDelivered') : t('inputUndelivered')} />
-    <div className="dt-row-main">
-      {trigger ? <div className="dt-row-title"><button type="button" className="dt-open" onClick={() => { navigate({ page: 'trigger',
-        id: trigger.thread, query: { trigger: trigger.id } }) }}>
-        {actorName(t, trigger.actor)}{t('labelSeparator')}{readableMarkers(t, trigger.preview) || t('empty')}
-      </button></div> : <div className="dt-row-title">{valueLabel(t, 'input', input.kind)}</div>}
-      <div className="dt-row-meta">{input.kind === 'trigger' && <span>{valueLabel(t, 'input', input.kind)}</span>}<When
-        at={input.at} /></div>
-      {(input.kind === 'text' || input.kind === 'note') && input.text && <div className="dt-row-quote"><MarkdownLite text={input.text} /></div>}
-      {trigger?.handback && <Hint>{t('inputHandedBack', { reason: trigger.handback.reason })}</Hint>}
-      <Earlier items={earlier} />
-    </div>
-  </li>
+  return (
+    <li className="dt-row">
+      <Dot state={input.delivered ? 'idle' : 'warning'} label={input.delivered ? t('inputDelivered') : t('inputUndelivered')} />
+      <div className="dt-row-main">
+        {trigger ? (
+          <div className="dt-row-title">
+            <button
+              type="button"
+              className="dt-open"
+              onClick={() => {
+                navigate({ page: 'trigger', id: trigger.thread, query: { trigger: trigger.id } })
+              }}
+            >
+              {actorName(t, trigger.actor)}
+              {t('labelSeparator')}
+              {readableMarkers(t, trigger.preview) || t('empty')}
+            </button>
+          </div>
+        ) : (
+          <div className="dt-row-title">{valueLabel(t, 'input', input.kind)}</div>
+        )}
+        <div className="dt-row-meta">
+          {input.kind === 'trigger' && <span>{valueLabel(t, 'input', input.kind)}</span>}
+          <When at={input.at} />
+        </div>
+        {(input.kind === 'text' || input.kind === 'note') && input.text && (
+          <div className="dt-row-quote">
+            <MarkdownLite text={input.text} />
+          </div>
+        )}
+        {trigger?.handback && <Hint>{t('inputHandedBack', { reason: trigger.handback.reason })}</Hint>}
+        <Earlier items={earlier} />
+      </div>
+    </li>
+  )
 }
 function InputList({ inputs }: { inputs: Input[] }) {
-  const sender = (input: Input) => input.kind === 'trigger' && input.trigger && !input.trigger.human
-    ? `${input.trigger.actor.source}:${input.trigger.actor.id}` : undefined
-  const shown = (input: Input) => ({ id: input.id, at: input.at, preview: input.kind === 'trigger' ? input.trigger?.preview ?? '' : '' })
-  return <ul className="dt-list">{automatedRuns(inputs, sender).map(run => <InputLine key={run.item.id} input={run.item}
-    earlier={run.earlier.map(shown)} />)}</ul>
+  const sender = (input: Input) =>
+    input.kind === 'trigger' && input.trigger && !input.trigger.human
+      ? `${input.trigger.actor.source}:${input.trigger.actor.id}`
+      : undefined
+  const shown = (input: Input) => ({ id: input.id, at: input.at, preview: input.kind === 'trigger' ? (input.trigger?.preview ?? '') : '' })
+  return (
+    <ul className="dt-list">
+      {automatedRuns(inputs, sender).map(run => (
+        <InputLine key={run.item.id} input={run.item} earlier={run.earlier.map(shown)} />
+      ))}
+    </ul>
+  )
 }
 
 function Details({ icon, title, open = false, children }: { icon: IconName; title: ReactNode; open?: boolean; children: ReactNode }) {
   const [shown, setShown] = useState(open)
-  return <DisclosureRow icon={<Icon name={icon} />} title={title} open={shown} onToggle={() => { setShown(!shown) }}>
-    <div className="dt-disclosure-body">{children}</div>
-  </DisclosureRow>
+  return (
+    <DisclosureRow
+      icon={<Icon name={icon} />}
+      title={title}
+      open={shown}
+      onToggle={() => {
+        setShown(!shown)
+      }}
+    >
+      <div className="dt-disclosure-body">{children}</div>
+    </DisclosureRow>
+  )
 }
 function Assignments({ ticket }: { ticket: TicketPageView }) {
   const { t } = usePanel()
   const report = (state: string) => t('assignmentReportShort', { state: valueLabel(t, 'report', state) })
-  return <ul className="dt-list">{ticket.assignments.slice().reverse().map((item, index) => <li key={item.id} className="dt-row">
-    <Dot state={item.state === 'running' ? reportDot(item.report?.state) : 'idle'} label={valueLabel(t, 'assignment', item.state)} />
-    <div className="dt-row-main">
-      <div className="dt-row-title">{t('assignmentNumber', { number: ticket.assignments.length - index })}</div>
-      <div className="dt-row-meta">
-        {/* A running Assignment whose worker reported a non-progress state has ended its turn; show that report as its tag and end its span there. */}
-        {item.turnEndedAt && item.report ? <Tag tone="neutral">{report(item.report.state)}</Tag> : <Tag tone={item.state === 'running'
-          ? 'info'
-          : 'neutral'}>{valueLabel(t, 'assignment', item.state)}</Tag>}
-        {item.state !== 'running' && item.report && <span>{report(item.report.state)}</span>}
-        <span>{t('assignmentSpan', { from: when(item.startedAt ?? item.createdAt, t('lang')), to: when(item.endedAt ?? item.turnEndedAt,
-          t('lang')) || t('now') })}</span>
-        {item.endedReason && <span>{reasonLabel(t, item.endedReason)}</span>}
-      </div>
-    </div>
-    {item.ref && item.ref !== ticket.sessionId && <div className="dt-row-actions"><SessionButton variant="outline"
-      sessionId={item.ref} /></div>}
-  </li>)}</ul>
+  return (
+    <ul className="dt-list">
+      {ticket.assignments
+        .slice()
+        .reverse()
+        .map((item, index) => (
+          <li key={item.id} className="dt-row">
+            <Dot
+              state={item.state === 'running' ? reportDot(item.report?.state) : 'idle'}
+              label={valueLabel(t, 'assignment', item.state)}
+            />
+            <div className="dt-row-main">
+              <div className="dt-row-title">{t('assignmentNumber', { number: ticket.assignments.length - index })}</div>
+              <div className="dt-row-meta">
+                {/* A running Assignment whose worker reported a non-progress state has ended its turn; show that report as its tag
+                  and end its span there. */}
+                {item.turnEndedAt && item.report ? (
+                  <Tag tone="neutral">{report(item.report.state)}</Tag>
+                ) : (
+                  <Tag tone={item.state === 'running' ? 'info' : 'neutral'}>{valueLabel(t, 'assignment', item.state)}</Tag>
+                )}
+                {item.state !== 'running' && item.report && <span>{report(item.report.state)}</span>}
+                <span>
+                  {t('assignmentSpan', {
+                    from: when(item.startedAt ?? item.createdAt, t('lang')),
+                    to: when(item.endedAt ?? item.turnEndedAt, t('lang')) || t('now'),
+                  })}
+                </span>
+                {item.endedReason && <span>{reasonLabel(t, item.endedReason)}</span>}
+              </div>
+            </div>
+            {item.ref && item.ref !== ticket.sessionId && (
+              <div className="dt-row-actions">
+                <SessionButton variant="outline" sessionId={item.ref} />
+              </div>
+            )}
+          </li>
+        ))}
+    </ul>
+  )
 }
 function MandateDetails({ ticket, actor }: { ticket: TicketPageView; actor: string }) {
   const { t, navigate } = usePanel()

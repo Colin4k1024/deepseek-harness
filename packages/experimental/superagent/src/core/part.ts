@@ -67,16 +67,35 @@ export abstract class EnginePart {
   protected emit<K extends keyof DomainEvents>(type: K, data: DomainEvents[K]): void {
     this.options.emit?.({ type, at: this.now(), data } as DomainEvent)
   }
-  protected require(ticketId: string): Ticket { const ticket = this.repo.tickets.get(ticketId); if (!ticket) throw new UserError('unknownTicket'); return ticket }
+  protected require(ticketId: string): Ticket {
+    const ticket = this.repo.tickets.get(ticketId)
+    if (!ticket) throw new UserError('unknownTicket')
+    return ticket
+  }
   /** Returns the stored Thread or an unsaved empty Thread aggregate. */
   protected thread(ref: ThreadRef): Thread {
     const k = threadKey(ref)
-    return this.repo.threads.get(k) ?? { key: k, ref: { source: ref.source, id: ref.id }, createdAt: this.now(), subscriptions: [], correlated: [], pending: [], meta: {} }
+    return (
+      this.repo.threads.get(k) ?? {
+        key: k,
+        ref: { source: ref.source, id: ref.id },
+        createdAt: this.now(),
+        subscriptions: [],
+        correlated: [],
+        pending: [],
+        meta: {},
+      }
+    )
   }
   protected ticketsOnThread(thread: Thread): Ticket[] {
-    return thread.subscriptions.flatMap((id) => { const ticket = this.repo.tickets.get(id); return ticket ? [ticket] : [] })
+    return thread.subscriptions.flatMap((id) => {
+      const ticket = this.repo.tickets.get(id)
+      return ticket ? [ticket] : []
+    })
   }
-  protected source(ticket: Ticket): Trigger | undefined { return this.repo.triggers.get(ticket.origin.triggerId) }
+  protected source(ticket: Ticket): Trigger | undefined {
+    return this.repo.triggers.get(ticket.origin.triggerId)
+  }
   protected reaches(ticket: Ticket, trigger: Trigger, context = true): boolean {
     return reached(ticket, trigger, k => this.repo.threads.get(k), context)
   }

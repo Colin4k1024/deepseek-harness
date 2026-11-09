@@ -4,25 +4,41 @@ import { apply } from '../src/index.ts'
 
 // Stub Runtime to capture the resolved Machine settings and restart callback.
 const runtimes = vi.hoisted(() => [] as { machine: Machine; restart: () => void }[])
-vi.mock('../src/app/runtime.ts', () => ({ Runtime: class {
-  ready = Promise.resolve()
-  constructor(_ctx: unknown, readonly machine: Machine, readonly restart: () => void) { runtimes.push(this) }
-  configured() { return true }
-  async stop() {}
-} }))
+vi.mock('../src/app/runtime.ts', () => ({
+  Runtime: class {
+    ready = Promise.resolve()
+    constructor(
+      _ctx: unknown,
+      readonly machine: Machine,
+      readonly restart: () => void,
+    ) {
+      runtimes.push(this)
+    }
+    configured() {
+      return true
+    }
+    async stop() {}
+  },
+}))
 /** Simulate the Cordis loader updating a volatile configuration reference in place. */
-const commit = (reference: unknown, value: unknown) => { (reference as Record<symbol, (value: unknown) => void>)[Symbol.for('cosmokit.volatile.write')]!(value) }
+const commit = (reference: unknown, value: unknown) => {
+  ;(reference as Record<symbol, (value: unknown) => void>)[Symbol.for('cosmokit.volatile.write')]!(value)
+}
 
 function context() {
   const handlers = new Map<string, () => void>()
   const configure = vi.fn(() => () => {})
   const describe = vi.fn(() => [])
   const ctx = {
-    on: vi.fn((name: string, handler: () => void) => { handlers.set(name, handler) }),
-    inject: vi.fn((_services: string[], callback: (child: unknown) => void) => { callback({ effect: (effect: () => unknown) => effect(), settings: { configure } }) }),
+    on: vi.fn((name: string, handler: () => void) => {
+      handlers.set(name, handler)
+    }),
+    inject: vi.fn((_services: string[], callback: (child: unknown) => void) => {
+      callback({ effect: (effect: () => unknown) => effect(), settings: { configure } })
+    }),
     effect: vi.fn(),
     fiber: { restart: vi.fn(async () => {}) },
-    get: vi.fn((name: string) => name === 'settings' ? { describe } : undefined),
+    get: vi.fn((name: string) => (name === 'settings' ? { describe } : undefined)),
     logger: { info: vi.fn(), error: vi.fn() },
   }
   return { ctx, handlers, configure, describe }

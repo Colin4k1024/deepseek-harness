@@ -32,41 +32,73 @@ export interface Machine {
   admissionContextTimeoutMs: Volatile<number>
 }
 const MOVED: Record<string, string> = {
-  repository: 'on the GitHub Source', branchPrefix: 'in the prepare command of the Execution settings', github: 'on the GitHub Source',
-  feishu: 'on the Feishu Source', author: 'prompt text', repositoryPath: 'in the prepare command of the Execution settings',
-  worktreeRoot: 'the ticket directory of the Execution settings', blockedCommands: 'in the Execution settings',
+  repository: 'on the GitHub Source',
+  branchPrefix: 'in the prepare command of the Execution settings',
+  github: 'on the GitHub Source',
+  feishu: 'on the Feishu Source',
+  author: 'prompt text',
+  repositoryPath: 'in the prepare command of the Execution settings',
+  worktreeRoot: 'the ticket directory of the Execution settings',
+  blockedCommands: 'in the Execution settings',
 }
 
 /** Read machine settings and reject unknown configuration keys (naming where deprecated keys moved). */
 export function machineOf(config: DeploymentConfig): Machine {
   const unknown = Object.keys(config).filter(key => !(key in (Config.dict ?? {})))
-  if (unknown.length) throw new Error(`dsh-superagent configuration has keys it does not use: ${unknown.map(key => MOVED[key] ? `${key} (now ${MOVED[key]})` : key).join(', ')}; docs/006-deployment.md lists the keys`)
+  if (unknown.length)
+    throw new Error(
+      `dsh-superagent configuration has keys it does not use: ${unknown.map(key => (MOVED[key] ? `${key} (now ${MOVED[key]})` : key)).join(', ')}; docs/006-deployment.md lists the keys`,
+    )
   const { stateDir, promptMaxChars, admissionContextMaxPages, admissionContextTimeoutMs } = config
   return { stateDir, promptMaxChars, admissionContextMaxPages, admissionContextTimeoutMs }
 }
 
 export const GithubAccountsSchema = z.object({
-  repository: z.string().trim().regex(/^([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+)?$/, 'owner/name').default(''),
+  repository: z
+    .string()
+    .trim()
+    .regex(/^([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+)?$/, 'owner/name')
+    .default(''),
   cli: z.string().trim().default(''),
 })
 export const FeishuBotSchema = z.object({ cli: z.string().trim().default('') })
 /** Source configuration keys that affect deployment setup and trigger a restart when changed. */
-export const SETUP_FIELDS: Readonly<Record<string, readonly string[]>> = { github: Object.keys(GithubAccountsSchema.shape), feishu: Object.keys(FeishuBotSchema.shape) }
+export const SETUP_FIELDS: Readonly<Record<string, readonly string[]>> = {
+  github: Object.keys(GithubAccountsSchema.shape),
+  feishu: Object.keys(FeishuBotSchema.shape),
+}
 
 export interface Deployment extends Machine {
   repository: string
   github: { cli: string; login: string; noreply: string }
   feishu?: FeishuBot
 }
-export interface FeishuBot { cli: string; appId: string; brand: 'feishu' | 'lark'; botId: string; name: string }
+export interface FeishuBot {
+  cli: string
+  appId: string
+  brand: 'feishu' | 'lark'
+  botId: string
+  name: string
+}
 
 /** Resolve a command name or absolute path to an executable file, ignoring the worker shim directory. */
 export function executable(name: string, path: string, exclude?: string): string {
   if (name.includes('/') && !isAbsolute(name)) throw new Error(`${name} must be a command name or an absolute path`)
-  const candidates = isAbsolute(name) ? [name] : path.split(delimiter).filter(dir => isAbsolute(dir) && !(exclude && sameDirectory(dir, exclude))).map(dir => join(dir, name))
+  const candidates = isAbsolute(name)
+    ? [name]
+    : path
+      .split(delimiter)
+      .filter(dir => isAbsolute(dir) && !(exclude && sameDirectory(dir, exclude)))
+      .map(dir => join(dir, name))
   for (const candidate of candidates) {
-    try { if (statSync(candidate).isFile()) { accessSync(candidate, constants.X_OK); return candidate } }
-    catch { /* Not an executable file here; try the next PATH directory. */ }
+    try {
+      if (statSync(candidate).isFile()) {
+        accessSync(candidate, constants.X_OK)
+        return candidate
+      }
+    } catch {
+      /* Not an executable file here; try the next PATH directory. */
+    }
   }
   throw new Error(`${name} is not an executable file${isAbsolute(name) ? '' : ' on PATH'}`)
 }

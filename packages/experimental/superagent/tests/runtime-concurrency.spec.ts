@@ -10,15 +10,25 @@ import { deferred, waitUntil } from './fixtures/async.ts'
 import { CHAT, MEMBER, feishu, startRuntime, type Host } from './fixtures/host.ts'
 
 let h: Host
-beforeEach(async () => { h = await startRuntime() })
-afterEach(async () => { await h.stop() })
+beforeEach(async () => {
+  h = await startRuntime()
+})
+afterEach(async () => {
+  await h.stop()
+})
 const lark = { users: [{ member_id: MEMBER, name: 'Alice' }], has_more: false }
 const linkLookedUp = (messageId: string) =>
   vi.spyOn(Commands.prototype, 'lark').mock.calls.some(([args]) => args.includes('+messages-mget') && args.includes(messageId))
 /** Hold the first resolution of a Session until `gate` resolves; `held()` says whether it began. */
 function holdSession(sessionId: string, gate: Promise<void>) {
   let held = false
-  h.controller.resolveAgent.mockImplementation(async (id: string) => { if (id === sessionId && !held) { held = true; await gate } return h.resolveDefault(id) })
+  h.controller.resolveAgent.mockImplementation(async (id: string) => {
+    if (id === sessionId && !held) {
+      held = true
+      await gate
+    }
+    return h.resolveDefault(id)
+  })
   return () => held
 }
 /** The turn of a Session's agent ends, and DSH says so. */
@@ -276,30 +286,42 @@ describe('a worker whose work runs in the background', () => {
     h.jobs.end(job)
     expect(h.agents.get(one.sessionId)!.status).toBe('running')
     idle(one.sessionId)
-    await vi.waitFor(() =>{  expect(latestAssignment(ticket())?.report?.state).toBe('waiting') })
+    await vi.waitFor(() => {
+      expect(latestAssignment(ticket())?.report?.state).toBe('waiting')
+    })
   })
   it('stays busy while a subagent of it works, and reports waiting once the turn its end woke it for ends', async () => {
     const one = await h.acceptedTicket(feishu('1', '@bot 修一'))
     const ticket = () => h.runtime.store.tickets.get(one.ticket.id)!
     const child = h.subagents.spawn(one.sessionId)
-    idle(one.sessionId); await h.runtime.idle()
+    idle(one.sessionId)
+    await h.runtime.idle()
     expect(latestAssignment(ticket())?.report).toBeUndefined()
     h.subagents.settle(child)
     expect(h.agents.get(one.sessionId)!.status).toBe('running')
     idle(one.sessionId)
-    await vi.waitFor(() =>{  expect(latestAssignment(ticket())?.report?.state).toBe('waiting') })
+    await vi.waitFor(() => {
+      expect(latestAssignment(ticket())?.report?.state).toBe('waiting')
+    })
   })
   it('kills its shell jobs and releases its subagents when its ticket stops, whose ends wake no one, and lets it start new ones', async () => {
     const one = await h.acceptedTicket(feishu('1', '@bot 修一'))
     const agent = h.agents.get(one.sessionId)!
-    const job = h.jobs.run(one.sessionId), child = h.subagents.spawn(one.sessionId)
+    const job = h.jobs.run(one.sessionId),
+      child = h.subagents.spawn(one.sessionId)
     h.runtime.engine.stopTicket(one.ticket.id)
-    await vi.waitFor(() =>{  expect(h.jobs.service.kill).toHaveBeenCalledWith(job, one.sessionId, expect.any(String)) })
-    await vi.waitFor(() =>{  expect(h.subagents.service.drainChildren).toHaveBeenCalledWith(agent, [child]) })
+    await vi.waitFor(() => {
+      expect(h.jobs.service.kill).toHaveBeenCalledWith(job, one.sessionId, expect.any(String))
+    })
+    await vi.waitFor(() => {
+      expect(h.subagents.service.drainChildren).toHaveBeenCalledWith(agent, [child])
+    })
     // The kill's end released the stop's own wait, which is how DSH tells the worker's job tools it was collected; the
     // released subagent's end, which DSH delivers before the release returns, is dropped with the turn it woke.
     expect(h.jobs.released).toBe(1)
-    await vi.waitFor(() =>{  expect(agent.cancel.mock.invocationCallOrder.at(-1)).toBeGreaterThan(h.subagents.service.drainChildren.mock.invocationCallOrder[0]!) })
+    await vi.waitFor(() => {
+      expect(agent.cancel.mock.invocationCallOrder.at(-1)).toBeGreaterThan(h.subagents.service.drainChildren.mock.invocationCallOrder[0]!)
+    })
     expect(agent.cancel).toHaveBeenLastCalledWith({ kind: 'user' }, { keepInbox: false })
     // Its Session still admits subagents, as when the ticket resumes.
     expect(() => h.subagents.spawn(one.sessionId)).not.toThrow()
@@ -356,57 +378,84 @@ describe('a worker whose work runs in the background', () => {
     await handsOff({ state: 'failed', summary: 'The build broke.' })
   })
   it('frees the slot of a worker that reports ready on a ticket that follows its pull request', async () => {
-    await handsOff({ state: 'ready', summary: 'PR ready' }, (ticketId) => { h.runtime.engine.bindThread(ticketId, { source: 'github', id: '7' }, true) })
+    await handsOff({ state: 'ready', summary: 'PR ready' }, (ticketId) => {
+      h.runtime.engine.bindThread(ticketId, { source: 'github', id: '7' }, true)
+    })
   })
   it('frees the slot of a worker that asks a person a question with a progress report', async () => {
     await handsOff({ state: 'progress', summary: 'The server runs.', human_action: 'Does the button look right?' })
   })
-  it('leaves the background work of a turn a person started in the worker\'s Session after a hand-off to that turn', async () => {
+  it("leaves the background work of a turn a person started in the worker's Session after a hand-off to that turn", async () => {
     const one = await h.acceptedTicket(feishu('1', '@bot 修一'))
     const agent = h.agents.get(one.sessionId)!
-    await h.runTool(one.sessionId, 'orchestrator_report', { state: 'blocked', summary: 'Which color?' }); await h.runtime.idle()
+    await h.runTool(one.sessionId, 'orchestrator_report', { state: 'blocked', summary: 'Which color?' })
+    await h.runtime.idle()
     // A person answers in the worker's Session, which the ticket does not record; the turn starts a subagent and a job.
     await new Promise(resolve => setTimeout(resolve, 5))
-    h.ctx.emit('agent/inbox/claimed', { agent, message: { id: 'typed', role: 'user', content: [], source: { kind: 'user' } }, turn: 2 } as never)
-    const child = h.subagents.spawn(one.sessionId), job = h.jobs.run(one.sessionId)
-    idle(one.sessionId); await h.runtime.idle()
+    h.ctx.emit('agent/inbox/claimed', {
+      agent,
+      message: { id: 'typed', role: 'user', content: [], source: { kind: 'user' } },
+      turn: 2,
+    } as never)
+    const child = h.subagents.spawn(one.sessionId),
+      job = h.jobs.run(one.sessionId)
+    idle(one.sessionId)
+    await h.runtime.idle()
     await new Promise(resolve => setTimeout(resolve, 10))
     // They keep the worker busy, as any turn's background work does.
     expect(h.subagents.live(child)).toBe(true)
     expect(h.jobs.service.wait).not.toHaveBeenCalled()
     expect(h.runtime.executor.activeCount()).toBe(1)
-    h.subagents.settle(child); h.jobs.end(job)
+    h.subagents.settle(child)
+    h.jobs.end(job)
     expect(agent.status).toBe('running')
   })
-  it('leaves the jobs a worker left to a person out of a later turn\'s background work, and does not kill them at the limit', async () => {
-    const one = await handsOff({ state: 'ready', summary: 'PR ready' }, (ticketId) => { h.runtime.engine.bindThread(ticketId, { source: 'github', id: '7' }, true) })
+  it("leaves the jobs a worker left to a person out of a later turn's background work, and does not kill them at the limit", async () => {
+    const one = await handsOff({ state: 'ready', summary: 'PR ready' }, (ticketId) => {
+      h.runtime.engine.bindThread(ticketId, { source: 'github', id: '7' }, true)
+    })
     const ticket = () => h.runtime.store.tickets.get(one.ticket.id)!
     // A second server, left too; then a note from the orchestrator wakes the worker, whose turn ends without a report.
     const server = h.jobs.run(one.sessionId, 'pnpm preview')
-    await h.runTool(one.sessionId, 'orchestrator_report', { state: 'ready', summary: 'Preview up' }); await h.runtime.idle()
-    idle(one.sessionId); await h.runtime.idle()
-    await vi.waitFor(() =>{  expect(h.jobs.service.wait).toHaveBeenCalledWith(server, expect.any(Number), one.sessionId, expect.anything()) })
-    await new Promise(resolve => setTimeout(resolve, 5))
-    h.runtime.engine.note(one.ticket.id, 'CI passed on the pull request.'); await h.runtime.idle()
-    await vi.waitFor(() =>{  expect(h.agents.get(one.sessionId)!.status).toBe('running') })
+    await h.runTool(one.sessionId, 'orchestrator_report', { state: 'ready', summary: 'Preview up' })
+    await h.runtime.idle()
     idle(one.sessionId)
-    await vi.waitFor(() =>{  expect(latestAssignment(ticket())?.report?.state).toBe('waiting') })
+    await h.runtime.idle()
+    await vi.waitFor(() => {
+      expect(h.jobs.service.wait).toHaveBeenCalledWith(server, expect.any(Number), one.sessionId, expect.anything())
+    })
+    await new Promise(resolve => setTimeout(resolve, 5))
+    h.runtime.engine.note(one.ticket.id, 'CI passed on the pull request.')
+    await h.runtime.idle()
+    await vi.waitFor(() => {
+      expect(h.agents.get(one.sessionId)!.status).toBe('running')
+    })
+    idle(one.sessionId)
+    await vi.waitFor(() => {
+      expect(latestAssignment(ticket())?.report?.state).toBe('waiting')
+    })
     expect(h.jobs.service.kill).not.toHaveBeenCalled()
     expect(h.runtime.executor.activeCount()).toBe(0)
   })
-  it('records each end of a worker\'s turn on its Assignment, also after its ready report', async () => {
+  it("records each end of a worker's turn on its Assignment, also after its ready report", async () => {
     const one = await h.acceptedTicket(feishu('1', '@bot 修一'))
     h.runtime.engine.bindThread(one.ticket.id, { source: 'github', id: '7' }, true)
-    await h.runTool(one.sessionId, 'orchestrator_report', { state: 'ready', summary: 'PR ready' }); await h.runtime.idle()
+    await h.runTool(one.sessionId, 'orchestrator_report', { state: 'ready', summary: 'PR ready' })
+    await h.runtime.idle()
     const report = latestAssignment(h.runtime.store.tickets.get(one.ticket.id)!)!.report!
     await new Promise(resolve => setTimeout(resolve, 5))
-    idle(one.sessionId); await h.runtime.idle()
-    await vi.waitFor(() =>{  expect(latestAssignment(h.runtime.store.tickets.get(one.ticket.id)!)!.idleAt! > report.at).toBe(true) })
+    idle(one.sessionId)
+    await h.runtime.idle()
+    await vi.waitFor(() => {
+      expect(latestAssignment(h.runtime.store.tickets.get(one.ticket.id)!)!.idleAt! > report.at).toBe(true)
+    })
   })
   it('shows no turn end on a running Assignment whose worker works again, whatever turn ends were recorded', async () => {
     const one = await h.acceptedTicket(feishu('1', '@bot 修一'))
     idle(one.sessionId)
-    await vi.waitFor(() =>{  expect(latestAssignment(h.runtime.store.tickets.get(one.ticket.id)!)?.report?.state).toBe('waiting') })
+    await vi.waitFor(() => {
+      expect(latestAssignment(h.runtime.store.tickets.get(one.ticket.id)!)?.report?.state).toBe('waiting')
+    })
     await h.runTool(one.sessionId, 'orchestrator_report', { state: 'progress', summary: 'On it again' })
     const page = await h.api('GET', `tickets/${one.ticket.id}`)
     expect((page.body as { assignments: Record<string, unknown>[] }).assignments[0]).not.toHaveProperty('turnEndedAt')
@@ -563,20 +612,27 @@ describe('a worker whose work runs in the background', () => {
     const one = await handsOff({ state: 'blocked', summary: 'Which color?' })
     const agent = h.agents.get(one.sessionId)!
     const server = h.jobs.run(one.sessionId, 'pnpm dev')
-    await h.runTool(one.sessionId, 'orchestrator_report', { state: 'blocked', summary: 'Which size?' }); await h.runtime.idle()
+    await h.runTool(one.sessionId, 'orchestrator_report', { state: 'blocked', summary: 'Which size?' })
+    await h.runtime.idle()
     idle(one.sessionId)
-    await vi.waitFor(() =>{  expect(h.jobs.service.wait).toHaveBeenCalledWith(server, expect.any(Number), one.sessionId, expect.anything()) })
+    await vi.waitFor(() => {
+      expect(h.jobs.service.wait).toHaveBeenCalledWith(server, expect.any(Number), one.sessionId, expect.anything())
+    })
     // The server ends while the host stops, after it cancelled the workers.
     const cancel = agent.cancel.getMockImplementation()!
-    agent.cancel.mockImplementationOnce((...args: unknown[]) => { h.jobs.end(server); return cancel(...args as [unknown, { keepInbox?: boolean }]) as Promise<void> })
+    agent.cancel.mockImplementationOnce((...args: unknown[]) => {
+      h.jobs.end(server)
+      return cancel(...(args as [unknown, { keepInbox?: boolean }])) as Promise<void>
+    })
     const woken = agent.followup.mock.calls.length
     await h.stop()
     expect(agent.followup.mock.calls.length).toBe(woken)
     expect(agent.status).toBe('idle')
   })
-  it('stops every worker\'s jobs and subagents when dsh-superagent stops, before it releases their tool limits', async () => {
+  it("stops every worker's jobs and subagents when dsh-superagent stops, before it releases their tool limits", async () => {
     const one = await h.acceptedTicket(feishu('1', '@bot 修一'))
-    const job = h.jobs.run(one.sessionId), child = h.subagents.spawn(one.sessionId)
+    const job = h.jobs.run(one.sessionId),
+      child = h.subagents.spawn(one.sessionId)
     await h.stop()
     expect(h.jobs.service.kill).toHaveBeenCalledWith(job, one.sessionId, expect.any(String))
     expect(h.subagents.live(child)).toBe(false)
@@ -587,24 +643,38 @@ describe('a worker whose work runs in the background', () => {
     h.subagents.settle(h.subagents.spawn(one.sessionId))
     // Its ready report ends the ticket, and it ends its own turn.
     await h.runTool(one.sessionId, 'orchestrator_report', { state: 'ready', summary: 'Done' })
-    await h.runtime.idle(); await new Promise(resolve => setTimeout(resolve, 10))
+    await h.runtime.idle()
+    await new Promise(resolve => setTimeout(resolve, 10))
     expect(agent.cancel).not.toHaveBeenCalled()
     // A release that fails after the ends woke the worker still cancels that turn.
     const two = await h.acceptedTicket(feishu('5', '@bot 修二'))
     const other = h.agents.get(two.sessionId)!
     const child = h.subagents.spawn(two.sessionId)
-    h.subagents.service.drainChildren.mockImplementationOnce(async () => { h.subagents.settle(child); throw new Error('ACTIVATION_TEARDOWN_FAILED') })
+    h.subagents.service.drainChildren.mockImplementationOnce(async () => {
+      h.subagents.settle(child)
+      throw new Error('ACTIVATION_TEARDOWN_FAILED')
+    })
     h.runtime.engine.stopTicket(two.ticket.id)
-    await vi.waitFor(() =>{  expect(h.subagents.service.drainChildren).toHaveBeenCalled() })
-    await vi.waitFor(() =>{  expect(other.cancel.mock.invocationCallOrder.at(-1)).toBeGreaterThan(h.subagents.service.drainChildren.mock.invocationCallOrder.at(-1)!) })
+    await vi.waitFor(() => {
+      expect(h.subagents.service.drainChildren).toHaveBeenCalled()
+    })
+    await vi.waitFor(() => {
+      expect(other.cancel.mock.invocationCallOrder.at(-1)).toBeGreaterThan(
+        h.subagents.service.drainChildren.mock.invocationCallOrder.at(-1)!,
+      )
+    })
   })
   it('stops the jobs and the turn of a worker a restart in this process left running, before its Assignment starts again', async () => {
     const one = await h.acceptedTicket(feishu('1', '@bot 修一'))
     const job = h.jobs.run(one.sessionId)
     h.runtime.executor.resume()
     expect(h.agents.get(one.sessionId)!.cancel).toHaveBeenCalledWith({ kind: 'user' }, { keepInbox: true })
-    await vi.waitFor(() =>{  expect(h.jobs.service.kill).toHaveBeenCalledWith(job, one.sessionId, expect.any(String)) })
-    expect(h.runtime.store.tickets.get(one.ticket.id)!.inputs).toEqual([expect.objectContaining({ kind: 'text', text: expect.stringContaining('host restarted') as unknown })])
+    await vi.waitFor(() => {
+      expect(h.jobs.service.kill).toHaveBeenCalledWith(job, one.sessionId, expect.any(String))
+    })
+    expect(h.runtime.store.tickets.get(one.ticket.id)!.inputs).toEqual([
+      expect.objectContaining({ kind: 'text', text: expect.stringContaining('host restarted') as unknown }),
+    ])
   })
   it('stops a ticket whose worker Session was never created without a health error, and goes on past a failing kill', async () => {
     const settings = h.runtime.store.settings()
@@ -674,71 +744,110 @@ describe('what a worker read', () => {
   it('counts a delivered message as read only once its step took it into the Session, not when a cut-off step claimed it', async () => {
     const one = await h.acceptedTicket(feishu('1', '@bot 修一'))
     const more = feishu('2', '再改一下', { mentions: [], root_id: 'om_1' })
-    h.runtime.receive(more); await h.runtime.idle()
-    const input = () => h.runtime.store.tickets.get(one.ticket.id)!.inputs.find(item => item.kind === 'trigger' && item.triggerId === more.id) as
-      { readAt?: string | null }
-    await vi.waitFor(() =>{  expect(input().readAt).toBe(null) })
+    h.runtime.receive(more)
+    await h.runtime.idle()
+    const input = () =>
+      h.runtime.store.tickets.get(one.ticket.id)!.inputs.find(item => item.kind === 'trigger' && item.triggerId === more.id) as {
+        readAt?: string | null
+      }
+    await vi.waitFor(() => {
+      expect(input().readAt).toBe(null)
+    })
     // A step claims it and is cut off before the Session took it, as a cancel in its pre-step does, which drops the message.
-    h.claim(one.sessionId); await h.runtime.idle(); await later()
+    h.claim(one.sessionId)
+    await h.runtime.idle()
+    await later()
     expect(input().readAt).toBe(null)
   })
-  it('keeps a note waiting in a worker\'s Session across an in-process restart, for the next Assignment\'s first step', async () => {
+  it("keeps a note waiting in a worker's Session across an in-process restart, for the next Assignment's first step", async () => {
     const one = await h.acceptedTicket(feishu('1', '@bot 修一'))
-    h.runtime.engine.note(one.ticket.id, 'Ticket B changes the same page.'); await h.runtime.idle()
-    const copies = () => h.deliveries.mock.calls.filter(([call]) => call.sessionId === one.sessionId && call.text.includes('Ticket B changes the same page.'))
-    await vi.waitFor(() =>{  expect(copies()).toHaveLength(1) })
+    h.runtime.engine.note(one.ticket.id, 'Ticket B changes the same page.')
+    await h.runtime.idle()
+    const copies = () =>
+      h.deliveries.mock.calls.filter(([call]) => call.sessionId === one.sessionId && call.text.includes('Ticket B changes the same page.'))
+    await vi.waitFor(() => {
+      expect(copies()).toHaveLength(1)
+    })
     const claimed: string[] = []
-    h.ctx.on('agent/inbox/claimed', ({ message }) => { claimed.push(message.id) })
+    h.ctx.on('agent/inbox/claimed', ({ message }) => {
+      claimed.push(message.id)
+    })
     // The restart cancels the worker's turn and keeps its inbox, where the note waits.
     h.runtime.executor.resume()
-    await vi.waitFor(() =>{  expect(claimed).toContain(copies()[0]![0].id) })
+    await vi.waitFor(() => {
+      expect(claimed).toContain(copies()[0]![0].id)
+    })
     expect(copies()).toHaveLength(1)
   })
-  it('delivers once a message a crash left waiting in a worker\'s Session, which the restart puts back for the next Assignment', async () => {
+  it("delivers once a message a crash left waiting in a worker's Session, which the restart puts back for the next Assignment", async () => {
     const one = await h.acceptedTicket(feishu('1', '@bot 修一'))
-    h.runtime.receive(feishu('2', '再改一下', { mentions: [], root_id: 'om_1' })); await h.runtime.idle()
+    h.runtime.receive(feishu('2', '再改一下', { mentions: [], root_id: 'om_1' }))
+    await h.runtime.idle()
     const copies = () => h.deliveries.mock.calls.filter(([call]) => call.sessionId === one.sessionId && call.text.includes('再改一下'))
-    await vi.waitFor(() =>{  expect(copies()).toHaveLength(1) })
+    await vi.waitFor(() => {
+      expect(copies()).toHaveLength(1)
+    })
     // The process dies: the worker's agent is not loaded when the restart runs, and its inbox, which holds the message,
     // persists for the launch that loads it.
     const agent = h.agents.get(one.sessionId)!
-    h.agents.delete(one.sessionId); agent.status = 'idle'
-    h.controller.resolveAgent.mockImplementation(async (id: string) => { if (id === one.sessionId) h.agents.set(id, agent); return h.resolveDefault(id) })
-    const waiting: string[][] = [], launch = agent.followup.getMockImplementation()!
-    agent.followup.mockImplementation((message) => { waiting.push([...agent.inbox.nextTurn, ...agent.inbox.nextStep].map(item => item.id)); launch(message) })
+    h.agents.delete(one.sessionId)
+    agent.status = 'idle'
+    h.controller.resolveAgent.mockImplementation(async (id: string) => {
+      if (id === one.sessionId) h.agents.set(id, agent)
+      return h.resolveDefault(id)
+    })
+    const waiting: string[][] = [],
+      launch = agent.followup.getMockImplementation()!
+    agent.followup.mockImplementation((message) => {
+      waiting.push([...agent.inbox.nextTurn, ...agent.inbox.nextStep].map(item => item.id))
+      launch(message)
+    })
     h.runtime.executor.resume()
-    await vi.waitFor(() =>{  expect(copies()).toHaveLength(2) })
+    await vi.waitFor(() => {
+      expect(copies()).toHaveLength(2)
+    })
     // The launch's message found no copy of it waiting, which its step would take beside the copy delivered after.
     expect(waiting[0]).not.toContain(copies()[0]![0].id)
   })
   it('gives the Assignment an in-process restart starts a message a cut-off step had claimed, once', async () => {
     const one = await h.acceptedTicket(feishu('1', '@bot 修一'))
-    h.runtime.receive(feishu('2', '再改一下', { mentions: [], root_id: 'om_1' })); await h.runtime.idle()
+    h.runtime.receive(feishu('2', '再改一下', { mentions: [], root_id: 'om_1' }))
+    await h.runtime.idle()
     const sent = () => h.deliveries.mock.calls.filter(([call]) => call.sessionId === one.sessionId && call.text.includes('再改一下')).length
-    await vi.waitFor(() =>{  expect(sent()).toBe(1) })
+    await vi.waitFor(() => {
+      expect(sent()).toBe(1)
+    })
     // A step claims it and the restart cuts the step off before the Session took it, which drops it.
     h.claim(one.sessionId)
     h.runtime.executor.resume()
-    await vi.waitFor(() =>{  expect(sent()).toBe(2) })
-    await h.runtime.idle(); await later()
+    await vi.waitFor(() => {
+      expect(sent()).toBe(2)
+    })
+    await h.runtime.idle()
+    await later()
     expect(sent()).toBe(2)
   })
   it('counts a message that woke a ticket as read by a later dropped report once a step of its worker took it', async () => {
     const { one, thanks } = await completed()
     // The resumed Assignment's message wakes the worker; its next step takes the note that it resumed and the message.
-    h.runtime.receive(thanks); await h.runtime.idle()
+    h.runtime.receive(thanks)
+    await h.runtime.idle()
     h.step(one.sessionId)
     await later()
     await h.runTool(one.sessionId, 'orchestrator_report', { state: 'dropped', summary: 'Nothing to do' })
-    await h.runtime.pump(); await h.runtime.idle()
+    await h.runtime.pump()
+    await h.runtime.idle()
     expect(h.candidates()).not.toContain(thanks.id)
   })
   it('counts a message a retry delivered to its idle worker as read by the report of the turn it woke', async () => {
     const { one, thanks, ticket } = await completed()
     const pass = failing(one.sessionId, '谢谢')
-    h.runtime.receive(thanks); await h.runtime.idle()
+    h.runtime.receive(thanks)
+    await h.runtime.idle()
     idle(one.sessionId)
-    await vi.waitFor(() =>{  expect(latestAssignment(ticket())?.report?.state).toBe('waiting') })
+    await vi.waitFor(() => {
+      expect(latestAssignment(ticket())?.report?.state).toBe('waiting')
+    })
     pass()
     // The retry wakes the worker, whose first step takes the message.
     await retried(async () => {
@@ -806,122 +915,224 @@ it('reports a worker waiting when its turn ends after a person answered its bloc
   await h.runTool(one.sessionId, 'orchestrator_report', { state: 'blocked', summary: 'Which color?' })
   // The person answers later than the report.
   await new Promise(resolve => setTimeout(resolve, 5))
-  h.runtime.receive(feishu('2', '蓝色', { mentions: [], root_id: 'om_1' })); await h.runtime.idle()
+  h.runtime.receive(feishu('2', '蓝色', { mentions: [], root_id: 'om_1' }))
+  await h.runtime.idle()
   const ticket = () => h.runtime.store.tickets.get(one.ticket.id)!
   expect(waitsForPerson(ticket())).toBe(false)
   h.agents.get(one.sessionId)!.status = 'idle'
   h.ctx.emit('agent/status', { agent: h.agents.get(one.sessionId), status: 'idle' } as never)
-  await vi.waitFor(() =>{  expect(latestAssignment(ticket())?.report?.state).toBe('waiting') })
+  await vi.waitFor(() => {
+    expect(latestAssignment(ticket())?.report?.state).toBe('waiting')
+  })
 })
 
 it('resumes an ended ticket a person wrote to during a pause once it lifts, under the Policy then', async () => {
   const pass = async () => {
     vi.useFakeTimers({ toFake: ['Date'], now: Date.now() + 6000 })
-    try { await h.runtime.pump(); await h.runtime.idle() } finally { vi.useRealTimers() }
+    try {
+      await h.runtime.pump()
+      await h.runtime.idle()
+    } finally {
+      vi.useRealTimers()
+    }
   }
   const ended = async (id: string) => {
     const { ticket, sessionId } = await h.acceptedTicket(feishu(id, `@bot 修${id}`, { root_id: `om_${id}` }))
     await h.runTool(sessionId, 'orchestrator_report', { state: 'ready', summary: 'Done.' })
     return ticket.id
   }
-  const first = await ended('1'), second = await ended('3')
+  const first = await ended('1'),
+    second = await ended('3')
   const followUp = async (id: string, root: string) => {
     await h.runtime.settings.pause(true, 'panel')
-    h.runtime.receive(feishu(id, '再改一下', { mentions: [], root_id: root })); await h.runtime.idle()
+    h.runtime.receive(feishu(id, '再改一下', { mentions: [], root_id: root }))
+    await h.runtime.idle()
   }
   // While processing is paused, the message waits on the ended ticket; the first pass after the pause resumes it.
   await followUp('2', 'om_1')
-  expect(h.runtime.store.tickets.get(first)).toMatchObject({ ended: expect.anything() as unknown, undelivered: [expect.any(String) as unknown] })
-  await h.runtime.settings.pause(false, 'panel'); await pass()
-  expect(h.runtime.store.tickets.get(first)).toMatchObject({ assignments: [expect.anything(), expect.objectContaining({ state: 'running' })] })
+  expect(h.runtime.store.tickets.get(first)).toMatchObject({
+    ended: expect.anything() as unknown,
+    undelivered: [expect.any(String) as unknown],
+  })
+  await h.runtime.settings.pause(false, 'panel')
+  await pass()
+  expect(h.runtime.store.tickets.get(first)).toMatchObject({
+    assignments: [expect.anything(), expect.objectContaining({ state: 'running' })],
+  })
   expect(h.runtime.store.tickets.get(first)).not.toHaveProperty('ended')
   // A Mandate the Policy no longer holds when the pause lifts does not resume: its sender left the list meanwhile.
   await followUp('4', 'om_3')
   const settings = h.runtime.store.settings()
-  h.runtime.store.saveSettings({ ...settings, policy: { ...settings.policy, sources: { ...settings.policy.sources, feishu: { ...settings.policy.sources.feishu!, allowed: [] } } } })
-  await h.runtime.settings.pause(false, 'panel'); await pass()
+  h.runtime.store.saveSettings({
+    ...settings,
+    policy: { ...settings.policy, sources: { ...settings.policy.sources, feishu: { ...settings.policy.sources.feishu!, allowed: [] } } },
+  })
+  await h.runtime.settings.pause(false, 'panel')
+  await pass()
   expect(h.runtime.store.tickets.get(second)).toMatchObject({ ended: expect.anything() as unknown, undelivered: [] })
 })
 
-it('ends a worker\'s turn only when the stop that ended its Assignment commits', async () => {
+it("ends a worker's turn only when the stop that ended its Assignment commits", async () => {
   const one = await h.acceptedTicket(feishu('1', '@bot 修一'))
   const worker = h.agents.get(one.sessionId)! as unknown as { cancel: ReturnType<typeof vi.fn> }
-  expect(() => h.runtime.store.atomic(() => { h.runtime.engine.stopTicket(one.ticket.id); throw new Error('rolled back') })).toThrow('rolled back')
+  expect(() =>
+    h.runtime.store.atomic(() => {
+      h.runtime.engine.stopTicket(one.ticket.id)
+      throw new Error('rolled back')
+    }),
+  ).toThrow('rolled back')
   expect(worker.cancel).not.toHaveBeenCalled()
   expect(h.runtime.store.tickets.get(one.ticket.id)!.ended).toBeUndefined()
   h.runtime.engine.stopTicket(one.ticket.id)
   expect(worker.cancel).toHaveBeenCalledOnce()
 })
 
-describe('the Executor\'s parts', () => {
+describe("the Executor's parts", () => {
   it('holds one worker slot per ticket that runs or starts, and lets launches take the slots no worker or wake holds', () => {
     const running = ['t1']
-    const slots = new WorkerSlots(() => running, () => 3)
+    const slots = new WorkerSlots(
+      () => running,
+      () => 3,
+    )
     slots.reserve('t2', 'launch')
     slots.reserve('t3', 'wake')
     expect(slots.used()).toBe(3)
     // launches() excludes 'launch' reservations because the launch queue tracks active launches separately.
     expect(slots.launches()).toBe(1)
-    expect(() =>{  slots.reserve('t4', 'wake') }).toThrow(Later)
-    expect(() =>{  slots.reserve('t3', 'wake') }).not.toThrow()
+    expect(() => {
+      slots.reserve('t4', 'wake')
+    }).toThrow(Later)
+    expect(() => {
+      slots.reserve('t3', 'wake')
+    }).not.toThrow()
     slots.free('t3')
     expect(slots.used()).toBe(2)
     slots.reserve('t4', 'launch')
     expect(slots.used()).toBe(3)
   })
-  it('wakes a worker for a person\'s message in the one slot beyond the limit, and ahead of launches once a slot frees up', () => {
+  it("wakes a worker for a person's message in the one slot beyond the limit, and ahead of launches once a slot frees up", () => {
     const running = ['t1', 't2', 't3']
-    const slots = new WorkerSlots(() => running, () => 3)
-    expect(() =>{  slots.reserve('t4', 'launch') }).toThrow(Later)
-    expect(() =>{  slots.reserve('t4', 'wake') }).toThrow(Later)
+    const slots = new WorkerSlots(
+      () => running,
+      () => 3,
+    )
+    expect(() => {
+      slots.reserve('t4', 'launch')
+    }).toThrow(Later)
+    expect(() => {
+      slots.reserve('t4', 'wake')
+    }).toThrow(Later)
     slots.reserve('t5', 'person')
     expect(slots.used()).toBe(4)
     expect(slots.launches()).toBeLessThanOrEqual(0)
     // No second person's wake fits beyond the limit; once a worker ends, it does, while a launch still waits.
-    expect(() =>{  slots.reserve('t6', 'person') }).toThrow(Later)
+    expect(() => {
+      slots.reserve('t6', 'person')
+    }).toThrow(Later)
     running.splice(0, 1)
-    expect(() =>{  slots.reserve('t7', 'launch') }).toThrow(Later)
+    expect(() => {
+      slots.reserve('t7', 'launch')
+    }).toThrow(Later)
     slots.reserve('t6', 'person')
     expect(slots.used()).toBe(4)
   })
   it('words an assignment, and the limits an inferred mandate sets, from the ticket alone', () => {
-    const settings = SettingsSchema.parse({ policy: { rules: [{ id: 'copy', name: 'Copy fixes', enabled: true,
-      instruction: 'Fix typos only.' }] } })
-    const ticket = { id: 'ticket-0123456789abcdef', origin: { triggerId: 'tr1', triggerIds: [] },
-      mandate: { strength: 'inferred', policyVersion: 'v1', basis: { rules: ['copy'] }, actor: { source: 'github', id: 'alice' },
-        scope: '' } } as unknown as Ticket
-    const execution = ticketExecution(ticket, { kind: 'accept', title: 'Fix', scope: 'the typo', reason: 'r', name: 'fix-typo' } as never,
-      settings, '/state')
+    const settings = SettingsSchema.parse({
+      policy: { rules: [{ id: 'copy', name: 'Copy fixes', enabled: true, instruction: 'Fix typos only.' }] },
+    })
+    const ticket = {
+      id: 'ticket-0123456789abcdef',
+      origin: { triggerId: 'tr1', triggerIds: [] },
+      mandate: {
+        strength: 'inferred',
+        policyVersion: 'v1',
+        basis: { rules: ['copy'] },
+        actor: { source: 'github', id: 'alice' },
+        scope: '',
+      },
+    } as unknown as Ticket
+    const execution = ticketExecution(
+      ticket,
+      { kind: 'accept', title: 'Fix', scope: 'the typo', reason: 'r', name: 'fix-typo' } as never,
+      settings,
+      '/state',
+    )
     expect(execution).toEqual(expect.objectContaining({ name: 'fix-typo-ticket-01234' }))
     expect(execution).not.toHaveProperty('session')
     // The source Trigger goes with the assignment, so the text does not point at it.
     expect(execution.assignment).toContain('Scope: the typo.')
     expect(execution.assignment).not.toContain('trigger/tr1')
-    expect(ticketExecution({ ...ticket, mandate: { ...ticket.mandate, strength: 'explicit' } },
-      { kind: 'accept', title: 'Fix', scope: 'Fix', reason: 'r', name: 'fix-login', note: 'the login page' } as never, settings, '/state').assignment)
-      .toBe('Routing note (not the source request): the login page')
+    expect(
+      ticketExecution(
+        { ...ticket, mandate: { ...ticket.mandate, strength: 'explicit' } },
+        { kind: 'accept', title: 'Fix', scope: 'Fix', reason: 'r', name: 'fix-login', note: 'the login page' } as never,
+        settings,
+        '/state',
+      ).assignment,
+    ).toBe('Routing note (not the source request): the login page')
     // The worker's system prompt holds the limits an inferred Mandate sets, so the assignment does not repeat them.
     expect(execution.assignment).not.toContain(mandateInstructions(ticket.mandate))
     expect(execution.assignment).toContain('- Copy fixes (copy): Fix typos only.')
     expect(mandateInstructions({ strength: 'explicit' })).toBe('')
   })
   it('renders each kind of Input as its worker reads it, inline, and no reopen Input', () => {
-    const asked = { id: 'tr1', source: 'feishu', threads: [{ source: 'feishu', id: 'oc:om_1' }], actor: { source: 'feishu', id: 'ou_a' }, human: true,
-      at: '2026-09-01T00:00:00Z', text: 'Which page?', meta: {} } as Trigger
+    const asked = {
+      id: 'tr1',
+      source: 'feishu',
+      threads: [{ source: 'feishu', id: 'oc:om_1' }],
+      actor: { source: 'feishu', id: 'ou_a' },
+      human: true,
+      at: '2026-09-01T00:00:00Z',
+      text: 'Which page?',
+      meta: {},
+    } as Trigger
     const reply = { ...asked, id: 'tr2', text: 'The login page. '.repeat(50) }
     const card = triggerMessage(reply, { source_url: 'https://x' }, 'see the log', asked)
-    expect(card).toEqual({ trigger_id: 'tr2', from: 'ou_a', thread: 'feishu:oc:om_1', at: '2026-09-01T00:00:00Z', text: expect.stringMatching(/^The login page\./) as unknown,
-      chars: reply.text.length, read: 'trigger/tr2', source_url: 'https://x', routing_note: 'see the log', replies_to: { trigger_id: 'tr1', preview: 'Which page?' } })
+    expect(card).toEqual({
+      trigger_id: 'tr2',
+      from: 'ou_a',
+      thread: 'feishu:oc:om_1',
+      at: '2026-09-01T00:00:00Z',
+      text: expect.stringMatching(/^The login page\./) as unknown,
+      chars: reply.text.length,
+      read: 'trigger/tr2',
+      source_url: 'https://x',
+      routing_note: 'see the log',
+      replies_to: { trigger_id: 'tr1', preview: 'Which page?' },
+    })
     expect(card.text).toHaveLength(601)
-    expect(triggerMessage(asked, {})).toEqual({ trigger_id: 'tr1', from: 'ou_a', thread: 'feishu:oc:om_1', at: asked.at, text: 'Which page?' })
+    expect(triggerMessage(asked, {})).toEqual({
+      trigger_id: 'tr1',
+      from: 'ou_a',
+      thread: 'feishu:oc:om_1',
+      at: asked.at,
+      text: 'Which page?',
+    })
     expect(JSON.parse(inputMessage({ id: 'i1', kind: 'trigger', triggerId: 'tr2', at: '' }, card)!)).toEqual(card)
-    expect(JSON.parse(inputMessage({ id: 'i1', kind: 'trigger', triggerId: 'gone', at: '' })!)).toEqual({ trigger_id: 'gone', read: 'trigger/gone' })
+    expect(JSON.parse(inputMessage({ id: 'i1', kind: 'trigger', triggerId: 'gone', at: '' })!)).toEqual({
+      trigger_id: 'gone',
+      read: 'trigger/gone',
+    })
     expect(inputMessage({ id: 'i2', kind: 'text', at: '', text: 'Please also update the docs' })).toBe('Please also update the docs')
     // A Policy change says what it means for the ticket, without version hashes.
-    const changed = inputMessage({ id: 'i3', kind: 'policy-changed', at: '', from: 'v1', to: 'v2', effect: { requesterAllowed: false,
-      requester: { source: 'github', id: 'ci-bot' },
-      rules: [{ id: 'copy', name: 'Copy fixes', change: 'changed', instruction: 'Fix typos only.' }, { id: 'visual', name: 'Visual', change: 'disabled' }] } })!
-    expect(changed).toContain('Rule Copy fixes (copy), which this ticket was accepted under, changed. Keep the remaining work within it as it reads now: Fix typos only.')
+    const changed = inputMessage({
+      id: 'i3',
+      kind: 'policy-changed',
+      at: '',
+      from: 'v1',
+      to: 'v2',
+      effect: {
+        requesterAllowed: false,
+        requester: { source: 'github', id: 'ci-bot' },
+        rules: [
+          { id: 'copy', name: 'Copy fixes', change: 'changed', instruction: 'Fix typos only.' },
+          { id: 'visual', name: 'Visual', change: 'disabled' },
+        ],
+      },
+    })!
+    expect(changed).toContain(
+      'Rule Copy fixes (copy), which this ticket was accepted under, changed. Keep the remaining work within it as it reads now: Fix typos only.',
+    )
     expect(changed).toContain('Rule Visual (visual), which this ticket was accepted under, no longer applies')
     // The sender is named, a bot as a person.
     expect(changed).toContain('The sender this ticket is for, ci-bot on github, may no longer start work here')

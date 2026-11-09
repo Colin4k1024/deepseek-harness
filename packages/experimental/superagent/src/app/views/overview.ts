@@ -14,23 +14,34 @@ import { preview } from './text.ts'
 function unjudged(store: Store, since: string): { thread: Thread; decision: Decision }[] {
   const seen = new Set<string>()
   const queue = { store, owners: ownersOf(store) }
-  return store.read.decisionsOfKinds(['unavailable'], 200).filter(decision => decision.at >= since).flatMap((decision) => {
-    if (seen.has(decision.threadKey)) return []
-    seen.add(decision.threadKey)
-    const thread = store.threads.get(decision.threadKey)
-    if (!thread || thread.evaluating || awaitingEval(queue, thread).length || decision.dismissed) return []
-    if (store.decisions.byThread(thread.key).at(-1)?.id !== decision.id) return []
-    return [{ thread, decision }]
-  })
+  return store.read
+    .decisionsOfKinds(['unavailable'], 200)
+    .filter(decision => decision.at >= since)
+    .flatMap((decision) => {
+      if (seen.has(decision.threadKey)) return []
+      seen.add(decision.threadKey)
+      const thread = store.threads.get(decision.threadKey)
+      if (!thread || thread.evaluating || awaitingEval(queue, thread).length || decision.dismissed) return []
+      if (store.decisions.byThread(thread.key).at(-1)?.id !== decision.id) return []
+      return [{ thread, decision }]
+    })
 }
-/** Reports error health when any thread has an undismissed `unavailable` eval from the last hour without a newer decision or active eval. */
+/**
+ * Reports error health when any thread has an undismissed `unavailable` eval from the last hour without a newer decision or active
+ * eval.
+ */
 export function evalsHealth(store: Store, now = Date.now()): Health {
   const since = new Date(now - 3_600_000).toISOString()
   const open = unjudged(store, since)
   if (!open.length) return { state: 'ready', detail: 'No unavailable Eval in the last hour' }
   const latest = required(open[0]).decision
-  return { state: 'error', at: latest.at, detail: `${open.length} Eval(s) unavailable in the last hour without a later judgement; `
-    + `the latest on ${latest.threadKey}: ${reasonText(latest.reason)}` }
+  return {
+    state: 'error',
+    at: latest.at,
+    detail:
+      `${open.length} Eval(s) unavailable in the last hour without a later judgement; ` +
+      `the latest on ${latest.threadKey}: ${reasonText(latest.reason)}`,
+  }
 }
 /**
  * Builds the operator overview: active system problems, tickets awaiting human action, executor load, and 24-hour trigger flow.
@@ -40,10 +51,13 @@ export function overview(host: ViewHost, health: HealthMap, policyVersionValue: 
   const { store, sources } = host
   const view = snapshot(host)
   const settings = store.settings()
-  const now = new Date().toISOString(), since = dayAgo()
+  const now = new Date().toISOString(),
+    since = dayAgo()
   const evaluating = store.threads.active().filter(thread => thread.evaluating)
   const instances = sources.instances()
-  const running = instances.filter(instance => instance.enabled && instance.installed).map(instance => sourceHealth(sources, instance, health))
+  const running = instances
+    .filter(instance => instance.enabled && instance.installed)
+    .map(instance => sourceHealth(sources, instance, health))
   // Exclude source-owned and policy-sync health entries so only core runtime errors surface as `runtime-error`.
   const sourceParts = new Set(instances.flatMap(instance => sources.kind(instance.kind)?.health ?? []))
   const problems = [

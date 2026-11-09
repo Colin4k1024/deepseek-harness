@@ -14,19 +14,39 @@ import { feishuKind } from '../src/sources/feishu.ts'
 import { githubKind } from '../src/sources/github.ts'
 
 const probe: SourceKind<{ interval: number }> = {
-  kind: 'probe', title: { zh: '探针', en: 'Probe' }, description: { zh: '', en: '' }, health: [],
+  kind: 'probe',
+  title: { zh: '探针', en: 'Probe' },
+  description: { zh: '', en: '' },
+  health: [],
   schema: z.object({ interval: z.number().int().min(1).default(5) }).strict(),
   fields: [{ key: 'interval', type: 'number', min: 1, max: 60, label: { zh: '间隔', en: 'Interval' } }],
 }
 
 describe('Source registry', () => {
   it('lists every installed kind with defaults, in id order, followed by stored instances whose kind is not installed', () => {
-    const settings = SettingsSchema.parse({ sources: { probe: { enabled: false, config: { interval: 9 } }, retired: { enabled: true, config: { x: 1 } } } })
+    const settings = SettingsSchema.parse({
+      sources: { probe: { enabled: false, config: { interval: 9 } }, retired: { enabled: true, config: { x: 1 } } },
+    })
     const sources = new SourceRegistry(() => settings)
-    sources.register(probe); sources.register(githubKind)
+    sources.register(probe)
+    sources.register(githubKind)
     expect(sources.instances()).toEqual([
-      { id: 'github', kind: 'github', enabled: true, config: { repository: '', cli: '', pollSeconds: 60, failuresBeforeError: 3,
-        observeIssues: false, observePulls: false, observeComments: false, observeCi: false }, installed: true },
+      {
+        id: 'github',
+        kind: 'github',
+        enabled: true,
+        config: {
+          repository: '',
+          cli: '',
+          pollSeconds: 60,
+          failuresBeforeError: 3,
+          observeIssues: false,
+          observePulls: false,
+          observeComments: false,
+          observeCi: false,
+        },
+        installed: true,
+      },
       { id: 'probe', kind: 'probe', enabled: false, config: { interval: 9 }, installed: true },
       { id: 'retired', kind: 'retired', enabled: true, config: { x: 1 }, installed: false },
     ])
@@ -80,17 +100,23 @@ describe('Source registry', () => {
     const sources = new SourceRegistry(() => SettingsSchema.parse({}), board)
     const unregister = sources.register(githubKind)
     expect(() => sources.register({ ...probe, health: ['github'] })).toThrow('declares the health entry github')
-    for (const name of ['runtime', 'reply', 'sync:github']) expect(() => sources.register({ ...probe, health: ['probe', name] })).toThrow(name)
+    for (const name of ['runtime', 'reply', 'sync:github'])
+      expect(() => sources.register({ ...probe, health: ['probe', name] })).toThrow(name)
     expect(sources.kind('probe')).toBeUndefined()
     sources.register({ ...probe, health: ['probe'] })
-    const context = (kind: { kind: string; health: readonly string[] }) => sourceContextOf({ sources } as unknown as SourceContextDeps, kind)
+    const context = (kind: { kind: string; health: readonly string[] }) =>
+      sourceContextOf({ sources } as unknown as SourceContextDeps, kind)
     const first = context(githubKind)
     first.report('github', { state: 'ready', detail: 'ok' })
     expect(board.all.github).toEqual({ state: 'ready', detail: 'ok' })
-    expect(() =>{  first.report('probe', { state: 'ready', detail: '' }) }).toThrow('has no health entry probe')
+    expect(() => {
+      first.report('probe', { state: 'ready', detail: '' })
+    }).toThrow('has no health entry probe')
     // A report sent after its kind unregisters (such as from an exiting CLI listener) is ignored and does not affect a later registration.
     unregister()
-    expect(() =>{  first.report('github', { state: 'error', detail: 'WARN exiting' }) }).not.toThrow()
+    expect(() => {
+      first.report('github', { state: 'error', detail: 'WARN exiting' })
+    }).not.toThrow()
     expect(board.all.github).toBeUndefined()
     sources.register(githubKind)
     first.report('github', { state: 'error', detail: 'late' })

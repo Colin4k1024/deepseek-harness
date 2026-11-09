@@ -85,66 +85,151 @@ export class Runtime extends Service implements SourceHost {
   private readonly toolHost: MainToolsHost & ExecutorToolsHost
   /** Non-zero while a main-Session tool is executing an Engine command, suppressing self-triggered domain event notices. */
   private quiet = 0
-  constructor(ctx: Context, readonly machine: Machine, restart: () => void) {
+  constructor(
+    ctx: Context,
+    readonly machine: Machine,
+    restart: () => void,
+  ) {
     super(ctx, 'orchestrator')
     const engineOf = () => this.engine
     const readyOf = () => this.ready
     const githubOf = () => this.context({ kind: 'github', health: ['github'] })
     // Lock the state directory before opening the database so another process cannot migrate or write concurrently.
     mkdirSync(machine.stateDir, { recursive: true, mode: 0o700 })
-    const compromised = (error: Error) => { this.runtimeHealth.set({ state: 'error', detail: error.message }); this.stopped.abort() }
+    const compromised = (error: Error) => {
+      this.runtimeHealth.set({ state: 'error', detail: error.message })
+      this.stopped.abort()
+    }
     const release = lockSync(machine.stateDir, { stale: 30_000, onCompromised: compromised })
-    this.releaseLock = async () => { await Promise.resolve(); release() }
+    this.releaseLock = async () => {
+      await Promise.resolve()
+      release()
+    }
     let opened: Store | undefined
     try {
-      const report = (error: unknown) => { ctx.logger.warn('dsh-superagent: %s', String(error)) }
-      const store = opened = this.store = new Store(join(machine.stateDir, 'orchestrator.sqlite'), report)
-      const setup = this.setup = new Setup({ context: ctx, machine, lifetime: this.lifetime, restart })
-      const deployed = () => setup.configured()
-        ? environmentOf({ deployment: setup.deployment, sources: this.sources, settings: store.settings() }) : undefined
+      const report = (error: unknown) => {
+        ctx.logger.warn('dsh-superagent: %s', String(error))
+      }
+      const store = (opened = this.store = new Store(join(machine.stateDir, 'orchestrator.sqlite'), report))
+      const setup = (this.setup = new Setup({ context: ctx, machine, lifetime: this.lifetime, restart }))
+      const deployed = () =>
+        setup.configured() ? environmentOf({ deployment: setup.deployment, sources: this.sources, settings: store.settings() }) : undefined
       const feishu = () => setup.configured() && !!setup.deployment.feishu
-      const prompts = this.prompts = new Prompts(store, () => machine.promptMaxChars.get(), deployed, feishu)
-      const masterId = this.masterId = store.get(KV.runtime.masterId) ?? `orchestrator-${key(machine.stateDir)}`
+      const prompts = (this.prompts = new Prompts(store, () => machine.promptMaxChars.get(), deployed, feishu))
+      const masterId = (this.masterId = store.get(KV.runtime.masterId) ?? `orchestrator-${key(machine.stateDir)}`)
       store.set(KV.runtime.masterId, masterId)
-      const commands = this.commands = new Commands(() => setup.deployment, setup.commandEnvironment, this.lifetime)
+      const commands = (this.commands = new Commands(() => setup.deployment, setup.commandEnvironment, this.lifetime))
       const board = this.board
-      const effects = this.effects = new Effects(store, board)
-      const sources = this.sources = new SourceRegistry(() => store.settings(), board, (kind) => {
-        // Sync source member lists once startup completes when a source plugin loads dynamically.
-        if (kind.policy?.sync) void this.ready.then(() => this.settings.syncable().includes(kind.kind) ? this.settings.sync(kind.kind) : undefined)
-          .catch(() => { /* sync() records its failure in health. */ })
-        return () => {}
-      })
+      const effects = (this.effects = new Effects(store, board))
+      const sources = (this.sources = new SourceRegistry(
+        () => store.settings(),
+        board,
+        (kind) => {
+          // Sync source member lists once startup completes when a source plugin loads dynamically.
+          if (kind.policy?.sync)
+            void this.ready
+              .then(() => (this.settings.syncable().includes(kind.kind) ? this.settings.sync(kind.kind) : undefined))
+              .catch(() => {
+                /* sync() records its failure in health. */
+              })
+          return () => {}
+        },
+      ))
       const links: LinkHost = { store, links: this.sourceLinks, commands, sources, lifetime: this.lifetime }
       const link = (trigger: Trigger, signal?: AbortSignal) => sourceLink(links, trigger, signal)
       const environment = (ticket: Ticket) => this.ticketEnvironment(ticket)
-      const resources: ResourceHost = { store, pages: new TextCache(4_000_000), prompts, commands, masterId, context: ctx,
-        promptVersion: id => this.sessions.promptVersion(id), mayRead: (id, revision) => this.sessions.mayRead(id, revision),
-        feishuPageSize: () => feishuSettings(sources).readPageSize, sourceLink: link }
-      const sessions = this.sessions = new Sessions({ context: ctx, store, prompts, effects, health: board.claim('models'), masterId,
+      const resources: ResourceHost = {
+        store,
+        pages: new TextCache(4_000_000),
+        prompts,
+        commands,
+        masterId,
+        context: ctx,
+        promptVersion: id => this.sessions.promptVersion(id),
+        mayRead: (id, revision) => this.sessions.mayRead(id, revision),
+        feishuPageSize: () => feishuSettings(sources).readPageSize,
+        sourceLink: link,
+      }
+      const sessions = (this.sessions = new Sessions({
+        context: ctx,
+        store,
+        prompts,
+        effects,
+        health: board.claim('models'),
+        masterId,
         lifetime: this.lifetime,
-        closing: () => this.closing(), environment,
-        tools: (agent, ticket) => ticket ? executorTools(this.toolHost, ticket) : mainTools(this.toolHost, agent) })
-      const policyChanged: EngineForSettings['policyChanged'] = (from, to, effects) => { this.engine.policyChanged(from, to, effects) }
-      this.settings = new Settings({ store, sources, engine: { policyChanged }, health: board, context: ctx, lifetime: this.lifetime, sessions,
-        sourceHost: this, setup, requestPass: () => { this.passes.request() } })
-      this.executor = new DshExecutor({ context: ctx, get engine() { return engineOf() }, store, effects, health: board.claim('worker'), machine,
-        lifetime: this.lifetime, sessions, closing: () => this.closing(), paused: () => this.paused(), environment, sourceLink: link,
-        repliedTo: trigger => repliedTo({ store, sources }, trigger) })
-      this.assessor = new MasterAssessor({ get engine() { return engineOf() }, commands, get deployment() { return setup.deployment }, effects,
-        settings: () => store.settings(), paused: () => this.paused(), threadContext: trigger => sources.threadContext(trigger),
-        deliver: (id, text) => sessions.prompt(masterId, id, text, 'steer'), candidateCard: candidate => candidateCard(links, candidate) })
-      const outbox = this.outbox = new Outbox({ store, effects, sources, commands, paused: () => this.paused() })
+        closing: () => this.closing(),
+        environment,
+        tools: (agent, ticket) => (ticket ? executorTools(this.toolHost, ticket) : mainTools(this.toolHost, agent)),
+      }))
+      const policyChanged: EngineForSettings['policyChanged'] = (from, to, effects) => {
+        this.engine.policyChanged(from, to, effects)
+      }
+      this.settings = new Settings({
+        store,
+        sources,
+        engine: { policyChanged },
+        health: board,
+        context: ctx,
+        lifetime: this.lifetime,
+        sessions,
+        sourceHost: this,
+        setup,
+        requestPass: () => {
+          this.passes.request()
+        },
+      })
+      this.executor = new DshExecutor({
+        context: ctx,
+        get engine() {
+          return engineOf()
+        },
+        store,
+        effects,
+        health: board.claim('worker'),
+        machine,
+        lifetime: this.lifetime,
+        sessions,
+        closing: () => this.closing(),
+        paused: () => this.paused(),
+        environment,
+        sourceLink: link,
+        repliedTo: trigger => repliedTo({ store, sources }, trigger),
+      })
+      this.assessor = new MasterAssessor({
+        get engine() {
+          return engineOf()
+        },
+        commands,
+        get deployment() {
+          return setup.deployment
+        },
+        effects,
+        settings: () => store.settings(),
+        paused: () => this.paused(),
+        threadContext: trigger => sources.threadContext(trigger),
+        deliver: (id, text) => sessions.prompt(masterId, id, text, 'steer'),
+        candidateCard: candidate => candidateCard(links, candidate),
+      })
+      const outbox = (this.outbox = new Outbox({ store, effects, sources, commands, paused: () => this.paused() }))
       const { assessor, executor } = this
       const policy = () => settingsPolicy(store.settings(), sources)
-      const engine = this.engine = new Engine({ repo: store, scope: sources, policy, assessor, executor,
-        outbox, prepareTicket: (ticket, outcome) => executor.prepare(ticket, outcome), emit: (event) => {
+      const engine = (this.engine = new Engine({
+        repo: store,
+        scope: sources,
+        policy,
+        assessor,
+        executor,
+        outbox,
+        prepareTicket: (ticket, outcome) => executor.prepare(ticket, outcome),
+        emit: (event) => {
           // Notify the main Session only about domain events it did not initiate itself.
           const notice = this.quiet ? undefined : eventNotice(event, id => store.tickets.get(id))
           if (notice) sessions.notify(...notice)
           // A person's message that reached an open ticket is the ticket's; the main Session hears of it in the same transaction,
           // and of one for an ended ticket once it resumes, unless it routed the message there itself.
-          const followed = !this.quiet && (event.type === 'trigger.received' || event.type === 'ticket.resumed' || event.type === 'trigger.followup')
+          const followed =
+            !this.quiet && (event.type === 'trigger.received' || event.type === 'ticket.resumed' || event.type === 'trigger.followup')
           const followup = followed ? followupNotice(store, sources, event.data.triggerId) : undefined
           if (followup) sessions.relay(followup.id, followup.text)
           // Notify the ticket's conversations whenever it ends via a pull request.
@@ -153,36 +238,103 @@ export class Runtime extends Service implements SourceHost {
             const request = store.triggers.get(ended.origin.triggerId)?.text ?? ''
             for (const message of pullEndNotices(ended, request, setup.deployment.repository)) outbox.send(message)
           }
-        } })
+        },
+      }))
       // Update the `evals` health entry on every pass if an evaluation failed as unavailable within the last hour.
       const evals = board.claim('evals', { state: 'ready', detail: 'No unavailable Eval in the last hour' })
-      const evaluateDue = () => { engine.evaluateDue(); evals.set(evalsHealth(store)) }
-      const passes = this.passes = new Passes({ engine: { receive: trigger => engine.receive(trigger), evaluateDue }, effects,
-        health: this.runtimeHealth, lifetime: this.lifetime, configured: () => setup.configured(), closing: () => this.closing() })
-      this.sourceDeps = { store, engine, outbox, commands, sources, get ready() { return readyOf() },
-        get deployment() { return setup.deployment }, configured: () => setup.configured(),
-        get setupProblem() { return setup.problem }, get feishuProblem() { return setup.feishuProblem }, receive: trigger => passes.receive(trigger) }
-      this.toolHost = { context: ctx, engine, store, prompts, sessions, settings: this.settings, assessor, resources,
-        get github() { return githubOf() },
-        requestPass: () => { passes.request() }, sendReplies: () => outbox.sent(),
-        quietly: (run) => { this.quiet++; try { return run() } finally { this.quiet-- } } }
+      const evaluateDue = () => {
+        engine.evaluateDue()
+        evals.set(evalsHealth(store))
+      }
+      const passes = (this.passes = new Passes({
+        engine: { receive: trigger => engine.receive(trigger), evaluateDue },
+        effects,
+        health: this.runtimeHealth,
+        lifetime: this.lifetime,
+        configured: () => setup.configured(),
+        closing: () => this.closing(),
+      }))
+      this.sourceDeps = {
+        store,
+        engine,
+        outbox,
+        commands,
+        sources,
+        get ready() {
+          return readyOf()
+        },
+        get deployment() {
+          return setup.deployment
+        },
+        configured: () => setup.configured(),
+        get setupProblem() {
+          return setup.problem
+        },
+        get feishuProblem() {
+          return setup.feishuProblem
+        },
+        receive: trigger => passes.receive(trigger),
+      }
+      this.toolHost = {
+        context: ctx,
+        engine,
+        store,
+        prompts,
+        sessions,
+        settings: this.settings,
+        assessor,
+        resources,
+        get github() {
+          return githubOf()
+        },
+        requestPass: () => {
+          passes.request()
+        },
+        sendReplies: () => outbox.sent(),
+        quietly: (run) => {
+          this.quiet++
+          try {
+            return run()
+          } finally {
+            this.quiet--
+          }
+        },
+      }
       this.ready = this.initialize()
     } catch (error) {
       // Release the database and state lock if initialization fails so an in-process restart can reacquire them.
-      try { opened?.close() } finally { release() }
+      try {
+        opened?.close()
+      } finally {
+        release()
+      }
       throw error
     }
   }
-  get health(): Readonly<Record<string, Health>> { return this.board.all }
+  get health(): Readonly<Record<string, Health>> {
+    return this.board.all
+  }
   /** Aborted when dsh-superagent stops or loses its state directory lock, cancelling running reads and subprocesses. */
-  get lifetime(): AbortSignal { return this.stopped.signal }
-  context(kind: { kind: string; health: readonly string[] }): SourceContext { return sourceContextOf(this.sourceDeps, kind) }
+  get lifetime(): AbortSignal {
+    return this.stopped.signal
+  }
+  context(kind: { kind: string; health: readonly string[] }): SourceContext {
+    return sourceContextOf(this.sourceDeps, kind)
+  }
   /** Resolved deployment; throws while waiting for setup (`!configured()`). */
-  get deployment(): Deployment { return this.setup.deployment }
-  configured(): boolean { return this.setup.configured() }
-  get setupProblem(): SetupProblem | undefined { return this.setup.problem }
+  get deployment(): Deployment {
+    return this.setup.deployment
+  }
+  configured(): boolean {
+    return this.setup.configured()
+  }
+  get setupProblem(): SetupProblem | undefined {
+    return this.setup.problem
+  }
   /** Why the Feishu bot is unavailable even though the Feishu Source configures a CLI. */
-  get feishuProblem(): SetupProblem | undefined { return this.setup.feishuProblem }
+  get feishuProblem(): SetupProblem | undefined {
+    return this.setup.feishuProblem
+  }
   links(): LinkTarget {
     const resolved = this.setup.configured() ? this.setup.deployment : undefined
     const links = resolved ? { repository: resolved.repository, ...(resolved.feishu ? { feishu: resolved.feishu } : {}) } : {}
@@ -220,17 +372,50 @@ export class Runtime extends Service implements SourceHost {
     this.runtimeHealth.set({ state: 'ready', detail: 'Orchestrator is ready', at: now() })
   }
   private httpHost(): HttpHost {
-    const { store, sources, prompts, sessions, settings, engine, executor, health, machine, masterId, ready, sourceLinks, setup, passes } = this
-    return { store, sources, prompts, sessions, settings, engine, executor, health, machine, masterId, ready, sourceLinks,
-      get deployment() { return setup.deployment },
-      get setupProblem() { return setup.problem }, get feishuProblem() { return setup.feishuProblem },
-      configured: () => setup.configured(), links: () => this.links(), ticketEnvironment: ticket => this.ticketEnvironment(ticket),
-      checkSetup: () => { setup.check() }, requestPass: () => { passes.request() }, models: () => this.ctx.sessionController.modelCatalog() }
+    const { store, sources, prompts, sessions, settings, engine, executor, health, machine, masterId, ready, sourceLinks, setup, passes } =
+      this
+    return {
+      store,
+      sources,
+      prompts,
+      sessions,
+      settings,
+      engine,
+      executor,
+      health,
+      machine,
+      masterId,
+      ready,
+      sourceLinks,
+      get deployment() {
+        return setup.deployment
+      },
+      get setupProblem() {
+        return setup.problem
+      },
+      get feishuProblem() {
+        return setup.feishuProblem
+      },
+      configured: () => setup.configured(),
+      links: () => this.links(),
+      ticketEnvironment: ticket => this.ticketEnvironment(ticket),
+      checkSetup: () => {
+        setup.check()
+      },
+      requestPass: () => {
+        passes.request()
+      },
+      models: () => this.ctx.sessionController.modelCatalog(),
+    }
   }
   /** Idempotent stop; concurrent or repeated calls share the same shutdown promise. */
-  stop(): Promise<void> { return this.stopping ??= this.shutdown() }
+  stop(): Promise<void> {
+    return (this.stopping ??= this.shutdown())
+  }
   private async shutdown(): Promise<void> {
-    this.closingFlag = true; const passes = this.passes.stop(); this.stopped.abort()
+    this.closingFlag = true
+    const passes = this.passes.stop()
+    this.stopped.abort()
     try {
       this.assessor.stop()
       const ids = [this.masterId, ...this.store.tickets.list().map(ticket => workerSessionId(ticket.id))]

@@ -28,7 +28,10 @@ export interface SetupState {
   feishuProblem?: SetupProblem | undefined
 }
 export const problemOf = (id: string, setup: SetupState) => [setup.problem, setup.feishuProblem].find(problem => problem?.place === id)
-/** Source lifecycle state in priority order: missing kind, disabled, setup/part error, blocked on global setup, starting, paused, or ready. */
+/**
+ * Source lifecycle state in priority order: missing kind, disabled, setup/part error, blocked on global setup, starting, paused, or
+ * ready.
+ */
 export type SourceState = 'missing' | 'off' | 'error' | 'setup' | 'starting' | 'paused' | 'ready'
 function sourceState(instance: SourceInstance & { installed: boolean }, parts: { state: string }[], setup: SetupState): SourceState {
   if (!instance.installed) return 'missing'

@@ -25,7 +25,8 @@ export class Intake extends EnginePart {
     const at = this.now()
     const filter = this.options.scope.scope(trigger)
     if (!filter.listened) {
-      this.repo.triggers.save(trigger); this.repo.triggers.saveDisposition(trigger.id, { filtered: { code: filter.reason }, fanout: [], at })
+      this.repo.triggers.save(trigger)
+      this.repo.triggers.saveDisposition(trigger.id, { filtered: { code: filter.reason }, fanout: [], at })
       return 'filtered'
     }
     this.repo.triggers.save(trigger)

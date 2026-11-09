@@ -29,8 +29,15 @@ export interface SourceHost {
   context(kind: { kind: string; health: readonly string[] }): SourceContext
 }
 /** Display label, URL, and facts (`null` removes a fact) that a Source publishes on a Thread. */
-export interface ThreadDescription { label?: string; url?: string; facts?: Record<string, ThreadFact | null> }
-/** Application capabilities exposed to a Source kind for reading state, ingesting triggers, managing threads/tickets, and reporting health. */
+export interface ThreadDescription {
+  label?: string
+  url?: string
+  facts?: Record<string, ThreadFact | null>
+}
+/**
+ * Application capabilities exposed to a Source kind for reading state, ingesting triggers, managing threads/tickets, and reporting
+ * health.
+ */
 /** Source id that carries the configuration type a caller requests. */
 export type SourceConfigKey<C> = string & { readonly config?: C }
 
@@ -51,7 +58,11 @@ export interface SourceContext {
   receive(trigger: Trigger): ReceiveResult | Promise<ReceiveResult>
   atomic<T>(work: () => T): T
   /** Source-scoped KV records (such as read cursors); setting `undefined` removes an entry. */
-  state: { get<V>(key: Key<V>): V | undefined; set<V>(key: Key<V>, value: V | undefined): void; keys<V>(family: Family<V, never>): Key<V>[] }
+  state: {
+    get<V>(key: Key<V>): V | undefined
+    set<V>(key: Key<V>, value: V | undefined): void
+    keys<V>(family: Family<V, never>): Key<V>[]
+  }
   threads: {
     get(key: string): Thread | undefined
     subscribed(source: string): Thread[]

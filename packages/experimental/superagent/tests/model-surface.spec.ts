@@ -327,11 +327,16 @@ function failures(): Map<string, string> {
     for (const [rule, scope, phrase] of BANNED) if (scope.test(where) && phrase.test(text)) fail(`breaks "${rule}"`)
     for (const [name] of text.matchAll(/\bDSH_SUPERAGENT_[A-Z][A-Z_]*[A-Z]\b/g)) if (!variables.has(name)) fail(`${name} is not a variable`)
     // A ticket's or worker's state is a card state; a report state is named with the word report.
-    const states = [...text.matchAll(/\b([a-z]+(?:\/[a-z]+)*) (?:tickets?|workers?)\b/g), ...text.matchAll(/\b(?:tickets?|workers?) (?:is|are)(?: still)? ([a-z]+)\b/g)]
+    const states = [
+      ...text.matchAll(/\b([a-z]+(?:\/[a-z]+)*) (?:tickets?|workers?)\b/g),
+      ...text.matchAll(/\b(?:tickets?|workers?) (?:is|are)(?: still)? ([a-z]+)\b/g),
+    ]
     for (const [phrase, word] of states) {
-      if (word!.split('/').some(part => REPORT_WORDS.test(part)) && !(TICKET_STATES as readonly string[]).includes(word!)) fail(`"${phrase}" is not a card state`)
+      if (word!.split('/').some(part => REPORT_WORDS.test(part)) && !(TICKET_STATES as readonly string[]).includes(word!))
+        fail(`"${phrase}" is not a card state`)
     }
-    for (const [phrase] of text.matchAll(/\bwait(?:ing)? for (?:ready|waiting|blocked|failed)\b(?! report)/g)) fail(`"${phrase}" names a report state without report`)
+    for (const [phrase] of text.matchAll(/\bwait(?:ing)? for (?:ready|waiting|blocked|failed)\b(?! report)/g))
+      fail(`"${phrase}" names a report state without report`)
     for (const [found] of text.matchAll(/\b(?:ticket|trigger|decision|prompts|prompt-preview|models|feishu|github)\/[^\s"'`,;)\]]*/g)) {
       const name = found.replace(/[.:]+$/, '')
       if (!RESOURCE_NAMES.some(pattern => pattern.test(name))) fail(`${name} is not a resource orchestrator_read reads`)
@@ -384,18 +389,31 @@ it('enforces the word limits the text states', async () => {
   expect(checkedImText(words(IM_WORDS))).toBe(words(IM_WORDS))
   expect(() => checkedImText(words(IM_WORDS + 1))).toThrow(`maximum is ${IM_WORDS}`)
   const attach = (note: string) =>
-    host.run(host.runtime.masterId, 'orchestrator_route', { decisions: [{ kind: 'attach', ticket_id: 'unknown', trigger_id: 'unknown', note }] })
+    host.run(host.runtime.masterId, 'orchestrator_route', {
+      decisions: [{ kind: 'attach', ticket_id: 'unknown', trigger_id: 'unknown', note }],
+    })
   // A note over the limit refuses its item alone; one at the limit goes on to the Engine, which knows no such ticket.
-  expect(await attach(words(NOTE_WORDS + 1))).toEqual({ results: [expect.objectContaining({ refused: expect.stringContaining(`${NOTE_WORDS} words`) as unknown })] })
-  expect(await attach(words(NOTE_WORDS))).toEqual({ results: [expect.objectContaining({ refused: expect.stringMatching(/Unknown (ticket|trigger)/) as unknown })] })
+  expect(await attach(words(NOTE_WORDS + 1))).toEqual({
+    results: [expect.objectContaining({ refused: expect.stringContaining(`${NOTE_WORDS} words`) as unknown })],
+  })
+  expect(await attach(words(NOTE_WORDS))).toEqual({
+    results: [expect.objectContaining({ refused: expect.stringMatching(/Unknown (ticket|trigger)/) as unknown })],
+  })
 })
 
 /** The enabled rules' lines of the main Session's Policy section, as the settings hold them now. */
-const ruleLines = () => host.runtime.store.settings().policy.rules.filter(rule => rule.enabled).map(rule => `- ${rule.name} (${rule.id}): ${rule.instruction}`)
+const ruleLines = () =>
+  host.runtime.store
+    .settings()
+    .policy.rules.filter(rule => rule.enabled)
+    .map(rule => `- ${rule.name} (${rule.id}): ${rule.instruction}`)
 it.each(['orchestrator', 'worker'] as const)('keeps the %s within its character budget', (role) => {
   const ids = role === 'orchestrator' ? [host.runtime.masterId] : [sessions.workerA, sessions.workerB]
   // Strip machine-dependent variable values (such as directory paths), and the team's rules, before measuring prompt length.
-  const builtIn = (text: string) => ruleLines().reduce((rest, line) => rest.replace(line, ''), text).replace(/ = "[^"\n]*"/g, ' = ""')
+  const builtIn = (text: string) =>
+    ruleLines()
+      .reduce((rest, line) => rest.replace(line, ''), text)
+      .replace(/ = "[^"\n]*"/g, ' = ""')
   const prompt = Math.max(...ids.map(id => builtIn(host.sections.get(id)!({})).length))
   const definitions = [...toolsOf(role).values()].map(({ name, description, parameters }) => ({ name, description, parameters }))
   const tools = JSON.stringify(definitions).length

@@ -10,31 +10,90 @@ import type { Thread, Ticket, Trigger } from '../src/core/index.ts'
 const MEMBER = 'ou_alice'
 const CHAT = 'oc_team'
 const OBSERVED = 'oc_1111111111111111111111111111'
-const feishuSource = (config: { chats: { chatId: string; listen: 'mentions' | 'all' }[]; directMessages: boolean }, enabled = true) => ({ enabled, config })
+const feishuSource = (config: { chats: { chatId: string; listen: 'mentions' | 'all' }[]; directMessages: boolean }, enabled = true) => ({
+  enabled,
+  config,
+})
 const base = SettingsSchema.parse({
   policy: { sources: { feishu: { allowed: [{ id: MEMBER, name: 'Alice' }], syncChat: CHAT }, github: { allowed: [{ id: 'Alice' }] } } },
   eval: { mode: 'auto' },
-  sources: { feishu: feishuSource({ chats: [{ chatId: CHAT, listen: 'mentions' }, { chatId: OBSERVED, listen: 'all' }], directMessages: true }) },
+  sources: {
+    feishu: feishuSource({
+      chats: [
+        { chatId: CHAT, listen: 'mentions' },
+        { chatId: OBSERVED, listen: 'all' },
+      ],
+      directMessages: true,
+    }),
+  },
 })
 function setup(settings: Settings = base) {
   const sources = new SourceRegistry(() => settings)
-  sources.register(feishuKind); sources.register(githubKind)
+  sources.register(feishuKind)
+  sources.register(githubKind)
   return { sources, policy: settingsPolicy(settings, sources), version: policyVersion(settings) }
 }
 const { sources, policy } = setup()
-const thread = (subscriptions: string[] = []): Thread => ({ key: 'feishu:x', ref: { source: 'feishu', id: 'x' }, createdAt: '', subscriptions, correlated: [], pending: [], meta: {} })
-const feishu = (overrides: Partial<Trigger> & { meta?: Record<string, unknown> } = {}): Trigger => ({ id: 't', source: 'feishu', threads: [{ source: 'feishu', id: 'x' }], actor: { source: 'feishu', id: MEMBER }, human: true, at: '', text: 'hi', addressed: 'mention', meta: { chatId: CHAT, direct: false, mentioned: true }, ...overrides })
-const unaddressed = (overrides: Partial<Trigger> = {}): Trigger => { const { addressed: _addressed, ...rest } = feishu(overrides); return rest }
-const github = (login: string, addressed?: 'mention'): Trigger => ({ id: 'g', source: 'github', threads: [{ source: 'github', id: '1' }], actor: { source: 'github', id: login }, human: true, at: '', text: 'x', ...addressed ? { addressed } : {}, meta: { number: 1, isPr: true } })
+const thread = (subscriptions: string[] = []): Thread => ({
+  key: 'feishu:x',
+  ref: { source: 'feishu', id: 'x' },
+  createdAt: '',
+  subscriptions,
+  correlated: [],
+  pending: [],
+  meta: {},
+})
+const feishu = (overrides: Partial<Trigger> & { meta?: Record<string, unknown> } = {}): Trigger => ({
+  id: 't',
+  source: 'feishu',
+  threads: [{ source: 'feishu', id: 'x' }],
+  actor: { source: 'feishu', id: MEMBER },
+  human: true,
+  at: '',
+  text: 'hi',
+  addressed: 'mention',
+  meta: { chatId: CHAT, direct: false, mentioned: true },
+  ...overrides,
+})
+const unaddressed = (overrides: Partial<Trigger> = {}): Trigger => {
+  const { addressed: _addressed, ...rest } = feishu(overrides)
+  return rest
+}
+const github = (login: string, addressed?: 'mention'): Trigger => ({
+  id: 'g',
+  source: 'github',
+  threads: [{ source: 'github', id: '1' }],
+  actor: { source: 'github', id: login },
+  human: true,
+  at: '',
+  text: 'x',
+  ...(addressed ? { addressed } : {}),
+  meta: { number: 1, isPr: true },
+})
 const ticket = { id: 'ticket', ended: { at: '', by: 'executor', reason: 'closed', outcome: 'closed' } } as Ticket
 
 describe('source scope', () => {
   it('listens to configured chats, reads every message only where configured, and follows the direct-message switch', () => {
     expect(sources.scope(feishu())).toEqual({ listened: true, observed: false, row: CHAT })
-    expect(sources.scope(feishu({ meta: { chatId: OBSERVED, direct: false, mentioned: false } }))).toEqual({ listened: true, observed: true, row: OBSERVED })
-    expect(sources.scope(feishu({ meta: { chatId: 'oc_other', direct: false, mentioned: true } }))).toEqual({ listened: false, reason: 'chat_not_allowed' })
-    expect(sources.scope(feishu({ meta: { chatId: 'p2p', direct: true, mentioned: false } }))).toEqual({ listened: true, observed: false, row: 'direct' })
-    expect(setup({ ...base, sources: { feishu: feishuSource({ chats: [], directMessages: false }) } }).sources.scope(feishu({ meta: { chatId: 'p2p', direct: true, mentioned: false } }))).toEqual({ listened: false, reason: 'direct_messages_not_allowed' })
+    expect(sources.scope(feishu({ meta: { chatId: OBSERVED, direct: false, mentioned: false } }))).toEqual({
+      listened: true,
+      observed: true,
+      row: OBSERVED,
+    })
+    expect(sources.scope(feishu({ meta: { chatId: 'oc_other', direct: false, mentioned: true } }))).toEqual({
+      listened: false,
+      reason: 'chat_not_allowed',
+    })
+    expect(sources.scope(feishu({ meta: { chatId: 'p2p', direct: true, mentioned: false } }))).toEqual({
+      listened: true,
+      observed: false,
+      row: 'direct',
+    })
+    expect(
+      setup({ ...base, sources: { feishu: feishuSource({ chats: [], directMessages: false }) } }).sources.scope(
+        feishu({ meta: { chatId: 'p2p', direct: true, mentioned: false } }),
+      ),
+    ).toEqual({ listened: false, reason: 'direct_messages_not_allowed' })
     expect(sources.scope(github('anyone'))).toEqual({ listened: true, observed: false })
   })
   it('listens to nothing from a configured Source whose plugin is not loaded, and keeps an invalid stored configuration disabled', () => {
@@ -187,27 +246,45 @@ describe('revalidating a Mandate from the admission table', () => {
   }
   it.each(cases)('$cell ($strength), listed now $listed, mode $mode, rule on $rule, chat receives $scope, cell holds $holds', (item) => {
     // The row gives each cell the strength the Mandate was accepted with, or, when it no longer holds, ignore.
-    const grant = (cell: Cell) => !item.holds ? 'ignore' : cell === 'unlistedAddressed' ? item.strength : 'inferred'
+    const grant = (cell: Cell) => (!item.holds ? 'ignore' : cell === 'unlistedAddressed' ? item.strength : 'inferred')
     const chats = item.scope === 'none' ? [] : [{ chatId: CHAT, listen: item.scope }]
     const settings = SettingsSchema.parse({
       eval: { mode: item.mode },
       sources: { feishu: feishuSource({ chats, directMessages: true }) },
       policy: {
         rules: [{ id: 'copy', name: 'Copy', enabled: item.rule, instruction: 'x' }],
-        sources: { feishu: { allowed: item.listed ? [{ id: SENDER }] : [], admission: { [CHAT]: Object.fromEntries(cells.map(cell => [cell, grant(cell)])) } } },
+        sources: {
+          feishu: {
+            allowed: item.listed ? [{ id: SENDER }] : [],
+            admission: { [CHAT]: Object.fromEntries(cells.map(cell => [cell, grant(cell)])) },
+          },
+        },
       },
     })
     const addressed = item.cell === 'unlistedAddressed'
     const observed = item.strength === 'inferred' ? { observation: { mode: 'auto' as const }, rules: ['copy'] } : {}
-    const basis: MandateBasis = { via: 'admission', source: 'feishu', scope: { chatId: CHAT, direct: false, mentioned: addressed }, row: CHAT, cell: item.cell,
-      ...addressed ? { addressed: 'mention' as const } : {}, ...observed }
+    const basis: MandateBasis = {
+      via: 'admission',
+      source: 'feishu',
+      scope: { chatId: CHAT, direct: false, mentioned: addressed },
+      row: CHAT,
+      cell: item.cell,
+      ...(addressed ? { addressed: 'mention' as const } : {}),
+      ...observed,
+    }
     const mandate = { strength: item.strength, policyVersion: 'v', basis, actor: { source: 'feishu', id: SENDER }, scope: '' }
     expect(setup(settings).policy.revalidate(mandate)).toBe(expected(item))
   })
 })
 describe('revalidate and version', () => {
   it('keeps explicit Mandates while the sender stays allowed and the Source still listens, and rule Mandates only while auto mode and the rules hold', () => {
-    const basis: MandateBasis = { via: 'addressed', source: 'feishu', scope: { chatId: CHAT, direct: false }, sender: 'Alice', addressed: 'mention' }
+    const basis: MandateBasis = {
+      via: 'addressed',
+      source: 'feishu',
+      scope: { chatId: CHAT, direct: false },
+      sender: 'Alice',
+      addressed: 'mention',
+    }
     const mandate = { strength: 'explicit' as const, policyVersion: 'v', basis, actor: { source: 'feishu', id: MEMBER }, scope: '' }
     expect(policy.revalidate(mandate)).toBe(true)
     const nobody = { ...base, policy: { ...base.policy, sources: {} } }
@@ -218,62 +295,141 @@ describe('revalidate and version', () => {
     const listed: MandateBasis = { via: 'listed', source: 'feishu', scope: { chatId: CHAT, direct: false }, sender: 'Alice' }
     expect(setup(silent).policy.revalidate({ ...mandate, basis: listed })).toBe(false)
     expect(policy.revalidate({ ...mandate, basis: listed })).toBe(true)
-    const inferred = { ...mandate, strength: 'inferred' as const, basis: { via: 'listed', observation: {}, rules: ['copy'] } satisfies MandateBasis }
+    const inferred = {
+      ...mandate,
+      strength: 'inferred' as const,
+      basis: { via: 'listed', observation: {}, rules: ['copy'] } satisfies MandateBasis,
+    }
     expect(policy.revalidate(inferred)).toBe(true)
     expect(setup({ ...base, eval: { ...base.eval, mode: 'observe' } }).policy.revalidate(inferred)).toBe(false)
-    expect(setup({ ...base, policy: { ...base.policy, rules: base.policy.rules.map(rule => ({ ...rule, enabled: rule.id !== 'copy' })) } }).policy.revalidate(inferred)).toBe(false)
+    expect(
+      setup({
+        ...base,
+        policy: { ...base.policy, rules: base.policy.rules.map(rule => ({ ...rule, enabled: rule.id !== 'copy' })) },
+      }).policy.revalidate(inferred),
+    ).toBe(false)
     expect(setup(nobody).policy.revalidate({ ...mandate, basis: { via: 'followup' } })).toBe(true)
   })
-  it('changes the Policy version for rules, accept mode and the Sources\' parts, not for pause, concurrency, models or Source configuration', () => {
+  it("changes the Policy version for rules, accept mode and the Sources' parts, not for pause, concurrency, models or Source configuration", () => {
     const version = setup().version
-    expect(setup({ ...base, paused: true, executor: { ...base.executor, maxWorkers: 9 }, eval: { ...base.eval, timeoutSeconds: 300 }, sources: { ...base.sources, github: { enabled: true, config: { pollSeconds: 600 } } } }).version).toBe(version)
+    expect(
+      setup({
+        ...base,
+        paused: true,
+        executor: { ...base.executor, maxWorkers: 9 },
+        eval: { ...base.eval, timeoutSeconds: 300 },
+        sources: { ...base.sources, github: { enabled: true, config: { pollSeconds: 600 } } },
+      }).version,
+    ).toBe(version)
     expect(setup({ ...base, sources: { feishu: feishuSource({ chats: [], directMessages: false }) } }).version).toBe(version)
     expect(setup({ ...base, eval: { ...base.eval, mode: 'off' } }).version).not.toBe(version)
-    expect(setup({ ...base, policy: { ...base.policy, sources: { ...base.policy.sources, github: { allowed: [], admission: {} } } } }).version).not.toBe(version)
+    expect(
+      setup({ ...base, policy: { ...base.policy, sources: { ...base.policy.sources, github: { allowed: [], admission: {} } } } }).version,
+    ).not.toBe(version)
   })
 })
 describe('settings migration', () => {
-  it('moves each member\'s identity into each Source\'s part of the Policy and drops the fields prompts and the execution environment replaced', () => {
-    const saved = SettingsSchema.parse(migrateSettings({
-      policy: { members: [{ name: 'Alice', feishuId: MEMBER, github: 'alice' }, { name: 'Bob', feishuId: 'ou_bob', github: '' }, { name: 'Carol', feishuId: '', github: 'carol' }], memberChat: CHAT, autoMergeLineLimit: 300,
-        rules: [{ id: 'visual', name: 'V', enabled: true, visual: true, instruction: 'x' }] },
-      executor: { maxWorkers: 2, reviewer: 'dave', visualReviewer: 'carol', branchPrefix: 'bot/' },
-      sources: { feishu: { enabled: true, config: { chats: [], directMessages: true }, authority: { chats: [] } } },
-    }))
+  it("moves each member's identity into each Source's part of the Policy and drops the fields prompts and the execution environment replaced", () => {
+    const saved = SettingsSchema.parse(
+      migrateSettings({
+        policy: {
+          members: [
+            { name: 'Alice', feishuId: MEMBER, github: 'alice' },
+            { name: 'Bob', feishuId: 'ou_bob', github: '' },
+            { name: 'Carol', feishuId: '', github: 'carol' },
+          ],
+          memberChat: CHAT,
+          autoMergeLineLimit: 300,
+          rules: [{ id: 'visual', name: 'V', enabled: true, visual: true, instruction: 'x' }],
+        },
+        executor: { maxWorkers: 2, reviewer: 'dave', visualReviewer: 'carol', branchPrefix: 'bot/' },
+        sources: { feishu: { enabled: true, config: { chats: [], directMessages: true }, authority: { chats: [] } } },
+      }),
+    )
     expect(saved.policy).toEqual({
       rules: [{ id: 'visual', name: 'V', enabled: true, instruction: 'x' }],
-      sources: { feishu: { allowed: [{ id: MEMBER, name: 'Alice' }, { id: 'ou_bob', name: 'Bob' }], syncChat: CHAT, admission: {} }, github: { allowed: [{ id: 'alice' }, { id: 'carol' }], admission: {} } },
+      sources: {
+        feishu: {
+          allowed: [
+            { id: MEMBER, name: 'Alice' },
+            { id: 'ou_bob', name: 'Bob' },
+          ],
+          syncChat: CHAT,
+          admission: {},
+        },
+        github: { allowed: [{ id: 'alice' }, { id: 'carol' }], admission: {} },
+      },
     })
-    expect(saved).toMatchObject({ paused: false, executor: { model: null, maxWorkers: 2, directory: '', prepare: '', blockedCommands: [] } })
+    expect(saved).toMatchObject({
+      paused: false,
+      executor: { model: null, maxWorkers: 2, directory: '', prepare: '', blockedCommands: [] },
+    })
     expect(saved.sources.feishu).toEqual({ enabled: true, config: { chats: [], directMessages: true } })
     expect(SettingsSchema.parse(migrateSettings(saved))).toEqual(saved)
-    expect(SettingsSchema.parse(migrateSettings({ executor: { maxWorkers: 2, paused: true } }))).toMatchObject({ paused: true, executor: { maxWorkers: 2 } })
+    expect(SettingsSchema.parse(migrateSettings({ executor: { maxWorkers: 2, paused: true } }))).toMatchObject({
+      paused: true,
+      executor: { maxWorkers: 2 },
+    })
   })
-  it('moves pre-domain chat lists into the Feishu Source, the pause into a setting of its own, and members into the Sources\' parts', () => {
-    const migrated = SettingsSchema.parse(migrateSettings({ paused: true, allowedChats: [CHAT, OBSERVED], allowDirectMessages: false, pollSeconds: 120, maxWorkers: 5, members: [{ name: 'A', feishuId: MEMBER, github: 'a' }],
-      models: { orchestrator: { provider: 'p', model: 'm' }, worker: null, admission: null }, admission: { mode: 'auto', chats: [OBSERVED], maxEvaluators: 1, timeoutSeconds: 90, rules: [] } }))
+  it("moves pre-domain chat lists into the Feishu Source, the pause into a setting of its own, and members into the Sources' parts", () => {
+    const migrated = SettingsSchema.parse(
+      migrateSettings({
+        paused: true,
+        allowedChats: [CHAT, OBSERVED],
+        allowDirectMessages: false,
+        pollSeconds: 120,
+        maxWorkers: 5,
+        members: [{ name: 'A', feishuId: MEMBER, github: 'a' }],
+        models: { orchestrator: { provider: 'p', model: 'm' }, worker: null, admission: null },
+        admission: { mode: 'auto', chats: [OBSERVED], maxEvaluators: 1, timeoutSeconds: 90, rules: [] },
+      }),
+    )
     expect(migrated).toEqual({
       paused: true,
-      sources: { feishu: feishuSource({ chats: [{ chatId: CHAT, listen: 'mentions' }, { chatId: OBSERVED, listen: 'all' }], directMessages: false }), github: { enabled: true, config: { pollSeconds: 120 } } },
-      policy: { rules: [], sources: { feishu: { allowed: [{ id: MEMBER, name: 'A' }], admission: {} }, github: { allowed: [{ id: 'a' }], admission: {} } } },
+      sources: {
+        feishu: feishuSource({
+          chats: [
+            { chatId: CHAT, listen: 'mentions' },
+            { chatId: OBSERVED, listen: 'all' },
+          ],
+          directMessages: false,
+        }),
+        github: { enabled: true, config: { pollSeconds: 120 } },
+      },
+      policy: {
+        rules: [],
+        sources: { feishu: { allowed: [{ id: MEMBER, name: 'A' }], admission: {} }, github: { allowed: [{ id: 'a' }], admission: {} } },
+      },
       eval: { mode: 'auto', timeoutSeconds: 90, model: { provider: 'p', model: 'm' } },
       executor: { model: null, maxWorkers: 5, directory: '', prepare: '', blockedCommands: [] },
     })
     expect(migrateSettings(migrated)).toEqual(migrated)
   })
   it('leaves chats that were observed only while admission was off outside the Feishu Source', () => {
-    const migrated = SettingsSchema.parse(migrateSettings({ allowedChats: [CHAT], members: [], admission: { mode: 'off', chats: [OBSERVED] } }))
+    const migrated = SettingsSchema.parse(
+      migrateSettings({ allowedChats: [CHAT], members: [], admission: { mode: 'off', chats: [OBSERVED] } }),
+    )
     expect(migrated.sources.feishu!.config).toEqual({ chats: [{ chatId: CHAT, listen: 'mentions' }], directMessages: true })
   })
 })
 
 it('renames the variables a stored prepare command reads from earlier project names to the current one', () => {
-  const settings = SettingsSchema.parse(migrateSettings({ executor: { prepare: 'git worktree add "$DSH_TAG_DIR" -b "agent/${DSH_GO_NAME}" "refs/x/$DSH_FREELANCER_TICKET"' } }))
-  expect(settings.executor.prepare).toBe('git worktree add "$DSH_SUPERAGENT_DIR" -b "agent/${DSH_SUPERAGENT_NAME}" "refs/x/$DSH_SUPERAGENT_TICKET"')
+  const settings = SettingsSchema.parse(
+    migrateSettings({ executor: { prepare: 'git worktree add "$DSH_TAG_DIR" -b "agent/${DSH_GO_NAME}" "refs/x/$DSH_FREELANCER_TICKET"' } }),
+  )
+  expect(settings.executor.prepare).toBe(
+    'git worktree add "$DSH_SUPERAGENT_DIR" -b "agent/${DSH_SUPERAGENT_NAME}" "refs/x/$DSH_SUPERAGENT_TICKET"',
+  )
 })
 
 it('reads a stored GitHub Source configuration that names a merge account without it', () => {
-  const settings = SettingsSchema.parse(migrateSettings({ sources: { github: { enabled: true, config: { repository: 'acme/widgets', cli: 'gh-agent', mergeCli: 'gh-merge-account', pollSeconds: 120 } } } }))
+  const settings = SettingsSchema.parse(
+    migrateSettings({
+      sources: {
+        github: { enabled: true, config: { repository: 'acme/widgets', cli: 'gh-agent', mergeCli: 'gh-merge-account', pollSeconds: 120 } },
+      },
+    }),
+  )
   expect(settings.sources.github!.config).toEqual({ repository: 'acme/widgets', cli: 'gh-agent', pollSeconds: 120 })
 })
 
@@ -312,80 +468,176 @@ describe('admission table settings', () => {
       expect(() => SettingsSchema.parse({ policy: { sources: { feishu: part } } })).toThrow()
       expect(() => sources.validatePolicy({ feishu: part })).toThrow()
     }
-    expect(sources.validatePolicy({ feishu: { allowed: [], admission: { [CHAT]: { unlistedAddressed: 'explicit' } } } }).feishu)
-      .toMatchObject({ admission: { [CHAT]: { unlistedAddressed: 'explicit' } } })
+    expect(
+      sources.validatePolicy({ feishu: { allowed: [], admission: { [CHAT]: { unlistedAddressed: 'explicit' } } } }).feishu,
+    ).toMatchObject({ admission: { [CHAT]: { unlistedAddressed: 'explicit' } } })
   })
   it('accepts an explicit candidate whatever the accept mode, which bears only on inferred ones', () => {
     const rules = SettingsSchema.parse({}).policy.rules.filter(rule => rule.enabled)
     const direction = { implementation_requested: true, target_basis: 'specified', requires_design_decision: false, evidence: 'asked' }
-    const assessment = { decision: 'accept' as const, direction, title: 'Fix', scope: 'small', reason: 'asked', intent_evidence: 'quote',
-      rule_assessments: rules.map((rule, index) => ({ rule_id: rule.id, matched: index === 0, reason: 'judged' })) }
+    const assessment = {
+      decision: 'accept' as const,
+      direction,
+      title: 'Fix',
+      scope: 'small',
+      reason: 'asked',
+      intent_evidence: 'quote',
+      rule_assessments: rules.map((rule, index) => ({ rule_id: rule.id, matched: index === 0, reason: 'judged' })),
+    }
     for (const mode of ['observe', 'off'] as const) {
       const settings = SettingsSchema.parse({ eval: { mode } })
       expect(assessmentOutcome(assessment, settings, 'explicit')).toMatchObject({ kind: 'accept', title: 'Fix' })
       expect(assessmentOutcome(assessment, settings, 'inferred')).toMatchObject({ kind: 'ignore', reason: { code: 'observed' } })
     }
   })
-  it('admits a listed bot that mentions the agent where the Source does not observe its messages, as a listed person\'s mention needs none', () => {
-    const settings = SettingsSchema.parse({ ...base, policy: { ...base.policy, sources: { ...base.policy.sources,
-      feishu: { ...base.policy.sources.feishu, bots: [{ id: 'cli_alerts' }] } } } })
-    const mention = feishu({ actor: { source: 'feishu', id: 'cli_alerts' }, human: false, meta: { chatId: CHAT, direct: false, mentioned: true } })
-    expect(setup(settings).policy.gate(mention, thread(), [])).toMatchObject({ admissible: true, strength: 'inferred',
-      basis: { via: 'bot', addressed: 'mention', row: CHAT } })
+  it("admits a listed bot that mentions the agent where the Source does not observe its messages, as a listed person's mention needs none", () => {
+    const settings = SettingsSchema.parse({
+      ...base,
+      policy: {
+        ...base.policy,
+        sources: { ...base.policy.sources, feishu: { ...base.policy.sources.feishu, bots: [{ id: 'cli_alerts' }] } },
+      },
+    })
+    const mention = feishu({
+      actor: { source: 'feishu', id: 'cli_alerts' },
+      human: false,
+      meta: { chatId: CHAT, direct: false, mentioned: true },
+    })
+    expect(setup(settings).policy.gate(mention, thread(), [])).toMatchObject({
+      admissible: true,
+      strength: 'inferred',
+      basis: { via: 'bot', addressed: 'mention', row: CHAT },
+    })
   })
 })
 describe('rule judgements', () => {
   it('refuses an assessment that judges one enabled rule twice and leaves another unjudged', () => {
-    const parsed = SettingsSchema.parse({ eval: { mode: 'auto' }, policy: { rules: [{ id: 'copy', name: 'Copy', enabled: true, instruction: 'Fix typos.' },
-      { id: 'visual', name: 'Visual', enabled: true, instruction: 'Fix colors.' }] } })
+    const parsed = SettingsSchema.parse({
+      eval: { mode: 'auto' },
+      policy: {
+        rules: [
+          { id: 'copy', name: 'Copy', enabled: true, instruction: 'Fix typos.' },
+          { id: 'visual', name: 'Visual', enabled: true, instruction: 'Fix colors.' },
+        ],
+      },
+    })
     const direction = { implementation_requested: true, target_basis: 'specified', requires_design_decision: false, evidence: 'asked' }
-    const assessment = { decision: 'accept' as const, direction, title: 'Fix', scope: 'small', reason: 'asked', intent_evidence: 'quote',
-      rule_assessments: [{ rule_id: 'copy', matched: true, reason: 'typo' }, { rule_id: 'copy', matched: false, reason: 'again' }] }
+    const assessment = {
+      decision: 'accept' as const,
+      direction,
+      title: 'Fix',
+      scope: 'small',
+      reason: 'asked',
+      intent_evidence: 'quote',
+      rule_assessments: [
+        { rule_id: 'copy', matched: true, reason: 'typo' },
+        { rule_id: 'copy', matched: false, reason: 'again' },
+      ],
+    }
     expect(() => assessmentOutcome(assessment, parsed, 'inferred')).toThrow('Exactly one assessment for every enabled rule')
-    const once = { ...assessment, rule_assessments: [assessment.rule_assessments[0]!, { rule_id: 'visual', matched: false, reason: 'no colors' }] }
+    const once = {
+      ...assessment,
+      rule_assessments: [assessment.rule_assessments[0]!, { rule_id: 'visual', matched: false, reason: 'no colors' }],
+    }
     expect(assessmentOutcome(once, parsed, 'inferred')).toMatchObject({ kind: 'accept', rules: ['copy'] })
   })
 })
 describe('policy effects', () => {
   const scope = () => ({ scope: () => ({ listened: true as const, observed: true }) })
-  const base = SettingsSchema.parse({ policy: { rules: [{ id: 'copy', name: 'Copy', enabled: true, instruction: 'Fix typos.' },
-    { id: 'visual', name: 'Visual', enabled: true, instruction: 'Fix colors.' }],
-  sources: { feishu: { allowed: [{ id: 'ou_alice' }] } } } })
-  const ticket = (id: string, mandate: object) => ({ id, mandate } as unknown as Ticket)
-  const inferred = ticket('t1', { strength: 'inferred', actor: { source: 'feishu', id: 'ou_guest' }, basis: { via: 'listed', rules: ['copy'] } })
-  const explicit = ticket('t2', { strength: 'explicit', actor: { source: 'feishu', id: 'ou_alice' }, basis: { via: 'listed', source: 'feishu' } })
+  const base = SettingsSchema.parse({
+    policy: {
+      rules: [
+        { id: 'copy', name: 'Copy', enabled: true, instruction: 'Fix typos.' },
+        { id: 'visual', name: 'Visual', enabled: true, instruction: 'Fix colors.' },
+      ],
+      sources: { feishu: { allowed: [{ id: 'ou_alice' }] } },
+    },
+  })
+  const ticket = (id: string, mandate: object) => ({ id, mandate }) as unknown as Ticket
+  const inferred = ticket('t1', {
+    strength: 'inferred',
+    actor: { source: 'feishu', id: 'ou_guest' },
+    basis: { via: 'listed', rules: ['copy'] },
+  })
+  const explicit = ticket('t2', {
+    strength: 'explicit',
+    actor: { source: 'feishu', id: 'ou_alice' },
+    basis: { via: 'listed', source: 'feishu' },
+  })
   it('tells a ticket how a change bears on it, and leaves the others alone', () => {
-    const rules = (copy: object, visual: object = {}) => ({ ...base, policy: { ...base.policy, rules: [{ ...base.policy.rules[0]!, ...copy }, { ...base.policy.rules[1]!, ...visual }] } })
+    const rules = (copy: object, visual: object = {}) => ({
+      ...base,
+      policy: {
+        ...base.policy,
+        rules: [
+          { ...base.policy.rules[0]!, ...copy },
+          { ...base.policy.rules[1]!, ...visual },
+        ],
+      },
+    })
     // A rule the ticket was not accepted under changes nothing for it.
     expect(policyEffects([inferred, explicit], base, rules({}, { enabled: false }), scope).size).toBe(0)
-    expect(policyEffects([inferred], base, rules({ instruction: 'Fix typos only.' }), scope).get('t1'))
-      .toEqual({ rules: [{ id: 'copy', name: 'Copy', change: 'changed', instruction: 'Fix typos only.' }] })
-    expect(policyEffects([inferred], base, rules({ enabled: false }), scope).get('t1')).toEqual({ rules: [{ id: 'copy', name: 'Copy', change: 'disabled' }] })
+    expect(policyEffects([inferred], base, rules({ instruction: 'Fix typos only.' }), scope).get('t1')).toEqual({
+      rules: [{ id: 'copy', name: 'Copy', change: 'changed', instruction: 'Fix typos only.' }],
+    })
+    expect(policyEffects([inferred], base, rules({ enabled: false }), scope).get('t1')).toEqual({
+      rules: [{ id: 'copy', name: 'Copy', change: 'disabled' }],
+    })
     // Another sender on the list, as a member sync adds, bears on no ticket; taking the requester off it does.
-    const allowed = (list: { id: string }[]) => ({ ...base, policy: { ...base.policy, sources: { ...base.policy.sources, feishu: { ...base.policy.sources.feishu!, allowed: list } } } })
+    const allowed = (list: { id: string }[]) => ({
+      ...base,
+      policy: { ...base.policy, sources: { ...base.policy.sources, feishu: { ...base.policy.sources.feishu!, allowed: list } } },
+    })
     expect(policyEffects([inferred, explicit], base, allowed([{ id: 'ou_alice' }, { id: 'ou_bob' }]), scope).size).toBe(0)
-    expect(policyEffects([explicit], base, allowed([]), scope).get('t2')).toEqual({ requesterAllowed: false, requester: { source: 'feishu', id: 'ou_alice' } })
+    expect(policyEffects([explicit], base, allowed([]), scope).get('t2')).toEqual({
+      requesterAllowed: false,
+      requester: { source: 'feishu', id: 'ou_alice' },
+    })
   })
   it('tells an inferred ticket that inferred work is no longer accepted when the accept mode leaves auto, and names a bot it is for', () => {
     const auto = { ...base, eval: { ...base.eval, mode: 'auto' as const } }
     const observe = { ...base, eval: { ...base.eval, mode: 'observe' as const } }
-    const rule = ticket('t3', { strength: 'inferred', actor: { source: 'feishu', id: 'ou_alice' },
-      basis: { via: 'listed', source: 'feishu', rules: ['copy'], observation: {} } })
+    const rule = ticket('t3', {
+      strength: 'inferred',
+      actor: { source: 'feishu', id: 'ou_alice' },
+      basis: { via: 'listed', source: 'feishu', rules: ['copy'], observation: {} },
+    })
     const effects = policyEffects([rule, explicit], auto, observe, scope)
     // Not a sender's removal: the person who wrote it may still start work.
     expect(effects.get('t3')).toEqual({ proactive: false })
     expect(effects.has('t2')).toBe(false)
-    const bot = ticket('t4', { strength: 'explicit', actor: { source: 'feishu', id: 'cli_ci_bot' }, basis: { via: 'listed', source: 'feishu' } })
-    const listed = { ...base, policy: { ...base.policy, sources: { ...base.policy.sources, feishu: { ...base.policy.sources.feishu!, allowed: [{ id: 'cli_ci_bot' }] } } } }
-    expect(policyEffects([bot], listed, base, scope).get('t4')).toEqual({ requesterAllowed: false, requester: { source: 'feishu', id: 'cli_ci_bot' } })
+    const bot = ticket('t4', {
+      strength: 'explicit',
+      actor: { source: 'feishu', id: 'cli_ci_bot' },
+      basis: { via: 'listed', source: 'feishu' },
+    })
+    const listed = {
+      ...base,
+      policy: {
+        ...base.policy,
+        sources: { ...base.policy.sources, feishu: { ...base.policy.sources.feishu!, allowed: [{ id: 'cli_ci_bot' }] } },
+      },
+    }
+    expect(policyEffects([bot], listed, base, scope).get('t4')).toEqual({
+      requesterAllowed: false,
+      requester: { source: 'feishu', id: 'cli_ci_bot' },
+    })
   })
-  it('keeps an inferred follow-up\'s Mandate only while candidates become work and its rules are on, as any inferred one', () => {
-    const followup = ticket('t5', { strength: 'inferred', actor: { source: 'feishu', id: 'ou_guest' }, scope: '',
-      basis: { via: 'followup', source: 'feishu', scope: { chatId: 'oc_team' }, rules: ['copy'] } })
+  it("keeps an inferred follow-up's Mandate only while candidates become work and its rules are on, as any inferred one", () => {
+    const followup = ticket('t5', {
+      strength: 'inferred',
+      actor: { source: 'feishu', id: 'ou_guest' },
+      scope: '',
+      basis: { via: 'followup', source: 'feishu', scope: { chatId: 'oc_team' }, rules: ['copy'] },
+    })
     const mode = (value: 'auto' | 'observe' | 'off') => ({ ...base, eval: { ...base.eval, mode: value } })
-    const disabled = { ...mode('auto'), policy: { ...base.policy, rules: base.policy.rules.map(rule => ({ ...rule, enabled: rule.id !== 'copy' })) } }
+    const disabled = {
+      ...mode('auto'),
+      policy: { ...base.policy, rules: base.policy.rules.map(rule => ({ ...rule, enabled: rule.id !== 'copy' })) },
+    }
     expect(settingsPolicy(mode('auto'), scope()).revalidate(followup.mandate)).toBe(true)
-    for (const settings of [mode('observe'), mode('off'), disabled]) expect(settingsPolicy(settings, scope()).revalidate(followup.mandate)).toBe(false)
+    for (const settings of [mode('observe'), mode('off'), disabled])
+      expect(settingsPolicy(settings, scope()).revalidate(followup.mandate)).toBe(false)
     expect(policyEffects([followup], mode('auto'), mode('observe'), scope).get('t5')).toEqual({ proactive: false })
     // An explicit follow-up holds whatever the mode.
     const explicitFollowup = ticket('t6', { ...followup.mandate, strength: 'explicit', actor: { source: 'feishu', id: 'ou_alice' } })
@@ -393,85 +645,163 @@ describe('policy effects', () => {
   })
   it('revokes an inferred ticket whose cell weakens or whose candidates no longer become work, and reports a deleted rule disabled', () => {
     const chat = 'oc_1111111111111111111111111111'
-    const table = (cell: 'inferred' | 'ignore', mode: 'auto' | 'observe' = 'auto') => SettingsSchema.parse({ ...base, eval: { ...base.eval, mode },
-      policy: { ...base.policy, sources: { feishu: { ...base.policy.sources.feishu!, admission: { [chat]: { unlistedUnaddressed: cell } } } } } })
+    const table = (cell: 'inferred' | 'ignore', mode: 'auto' | 'observe' = 'auto') =>
+      SettingsSchema.parse({
+        ...base,
+        eval: { ...base.eval, mode },
+        policy: {
+          ...base.policy,
+          sources: { feishu: { ...base.policy.sources.feishu!, admission: { [chat]: { unlistedUnaddressed: cell } } } },
+        },
+      })
     const observed = () => ({ scope: () => ({ listened: true as const, observed: true, row: chat }) })
-    const proactive = ticket('t3', { strength: 'inferred', actor: { source: 'feishu', id: 'ou_guest' }, scope: '',
-      basis: { via: 'admission', cell: 'unlistedUnaddressed', source: 'feishu', scope: { chatId: chat }, row: chat, rules: ['copy'],
-        observation: { mode: 'auto' } } })
+    const proactive = ticket('t3', {
+      strength: 'inferred',
+      actor: { source: 'feishu', id: 'ou_guest' },
+      scope: '',
+      basis: {
+        via: 'admission',
+        cell: 'unlistedUnaddressed',
+        source: 'feishu',
+        scope: { chatId: chat },
+        row: chat,
+        rules: ['copy'],
+        observation: { mode: 'auto' },
+      },
+    })
     expect(policyEffects([proactive], table('inferred'), table('inferred'), observed).size).toBe(0)
     // A weaker cell takes the work from its sender, whom the effect names; a mode change only stops inferred work.
-    expect(policyEffects([proactive], table('inferred'), table('ignore'), observed).get('t3'))
-      .toEqual({ requesterAllowed: false, requester: { source: 'feishu', id: 'ou_guest' } })
+    expect(policyEffects([proactive], table('inferred'), table('ignore'), observed).get('t3')).toEqual({
+      requesterAllowed: false,
+      requester: { source: 'feishu', id: 'ou_guest' },
+    })
     expect(policyEffects([proactive], table('inferred'), table('inferred', 'observe'), observed).get('t3')).toEqual({ proactive: false })
     const deleted = { ...base, policy: { ...base.policy, rules: base.policy.rules.filter(rule => rule.id !== 'visual') } }
-    const visual = ticket('t4', { strength: 'explicit', actor: { source: 'feishu', id: 'ou_alice' },
-      basis: { via: 'listed', source: 'feishu', rules: ['visual'] } })
-    expect(policyEffects([visual], base, deleted, scope).get('t4')).toEqual({ rules: [{ id: 'visual', name: 'Visual', change: 'disabled' }] })
+    const visual = ticket('t4', {
+      strength: 'explicit',
+      actor: { source: 'feishu', id: 'ou_alice' },
+      basis: { via: 'listed', source: 'feishu', rules: ['visual'] },
+    })
+    expect(policyEffects([visual], base, deleted, scope).get('t4')).toEqual({
+      rules: [{ id: 'visual', name: 'Visual', change: 'disabled' }],
+    })
   })
 })
 describe('bots and events without a sender', () => {
-  const observing = (config: Record<string, unknown>, part: Record<string, unknown> = {},
-    mode: 'auto' | 'off' = 'auto') => SettingsSchema.parse({
-    policy: { sources: { github: { allowed: [{ id: 'Alice' }], bots: [{ id: 'dependabot[bot]' }], ...part } } }, eval: { mode },
-    sources: { github: { enabled: true, config } } })
-  const comment: Trigger = { id: 'b', source: 'github', threads: [{ source: 'github', id: '1' }],
-    actor: { source: 'github', id: 'dependabot[bot]' }, human: false, at: '', text: 'Bump lodash',
-    meta: { number: 1, isPr: true, kind: 'conversation' } }
-  const ci = (meta: Record<string, unknown>): Trigger => ({ id: 'ci', source: 'github', threads: [{ source: 'github', id: 'ci:main' }],
-    actor: { source: 'github', id: '' }, human: false, at: '', text: 'CI failed 1/9 on main', meta: { ci: true, ...meta } })
-  it('admits a bot on its Source\'s list as an inferred candidate where the Source observes its scope, and no other bot', () => {
-    const { policy } = setup(observing({ observeComments: true }))
-    expect(policy.gate(comment, thread(), [])).toMatchObject({ admissible: true, strength: 'inferred',
-      basis: { via: 'bot', source: 'github', sender: 'dependabot[bot]', row: 'comments', observation: { mode: 'auto' } } })
-    // A bot that addresses the agent still makes no explicit request; on a Thread with tickets it is no follow-up either.
-    expect(policy.gate({ ...comment, addressed: 'mention' }, thread(['ticket']), [ticket])).toMatchObject({ strength: 'inferred',
-      basis: { via: 'bot', addressed: 'mention' } })
-    expect(policy.gate({ ...comment, actor: { source: 'github', id: 'renovate[bot]' } }, thread(), [])).toEqual({ admissible: false,
-      reason: 'not_human' })
-    expect(setup(observing({})).policy.gate(comment, thread(), [])).toEqual({ admissible: false, reason: 'not_human' })
-    expect(setup(observing({ observeComments: true }, {}, 'off')).policy.gate(comment, thread(), [])).toEqual({ admissible: false,
-      reason: 'admission_ignored' })
+  const observing = (config: Record<string, unknown>, part: Record<string, unknown> = {}, mode: 'auto' | 'off' = 'auto') =>
+    SettingsSchema.parse({
+      policy: { sources: { github: { allowed: [{ id: 'Alice' }], bots: [{ id: 'dependabot[bot]' }], ...part } } },
+      eval: { mode },
+      sources: { github: { enabled: true, config } },
+    })
+  const comment: Trigger = {
+    id: 'b',
+    source: 'github',
+    threads: [{ source: 'github', id: '1' }],
+    actor: { source: 'github', id: 'dependabot[bot]' },
+    human: false,
+    at: '',
+    text: 'Bump lodash',
+    meta: { number: 1, isPr: true, kind: 'conversation' },
+  }
+  const ci = (meta: Record<string, unknown>): Trigger => ({
+    id: 'ci',
+    source: 'github',
+    threads: [{ source: 'github', id: 'ci:main' }],
+    actor: { source: 'github', id: '' },
+    human: false,
+    at: '',
+    text: 'CI failed 1/9 on main',
+    meta: { ci: true, ...meta },
   })
-  it('keeps a bot candidate\'s Mandate while the bot stays on its list and candidates may become work', () => {
+  it("admits a bot on its Source's list as an inferred candidate where the Source observes its scope, and no other bot", () => {
+    const { policy } = setup(observing({ observeComments: true }))
+    expect(policy.gate(comment, thread(), [])).toMatchObject({
+      admissible: true,
+      strength: 'inferred',
+      basis: { via: 'bot', source: 'github', sender: 'dependabot[bot]', row: 'comments', observation: { mode: 'auto' } },
+    })
+    // A bot that addresses the agent still makes no explicit request; on a Thread with tickets it is no follow-up either.
+    expect(policy.gate({ ...comment, addressed: 'mention' }, thread(['ticket']), [ticket])).toMatchObject({
+      strength: 'inferred',
+      basis: { via: 'bot', addressed: 'mention' },
+    })
+    expect(policy.gate({ ...comment, actor: { source: 'github', id: 'renovate[bot]' } }, thread(), [])).toEqual({
+      admissible: false,
+      reason: 'not_human',
+    })
+    expect(setup(observing({})).policy.gate(comment, thread(), [])).toEqual({ admissible: false, reason: 'not_human' })
+    expect(setup(observing({ observeComments: true }, {}, 'off')).policy.gate(comment, thread(), [])).toEqual({
+      admissible: false,
+      reason: 'admission_ignored',
+    })
+  })
+  it("keeps a bot candidate's Mandate while the bot stays on its list and candidates may become work", () => {
     const settings = observing({ observeComments: true })
-    const mandate = { strength: 'inferred' as const, policyVersion: '', actor: comment.actor, scope: '',
-      basis: { via: 'bot' as const, source: 'github', scope: comment.meta, row: 'comments', sender: 'dependabot[bot]',
-        observation: { mode: 'auto' as const } } }
+    const mandate = {
+      strength: 'inferred' as const,
+      policyVersion: '',
+      actor: comment.actor,
+      scope: '',
+      basis: {
+        via: 'bot' as const,
+        source: 'github',
+        scope: comment.meta,
+        row: 'comments',
+        sender: 'dependabot[bot]',
+        observation: { mode: 'auto' as const },
+      },
+    }
     expect(setup(settings).policy.revalidate(mandate)).toBe(true)
     expect(setup(observing({ observeComments: true }, { bots: [] })).policy.revalidate(mandate)).toBe(false)
     expect(setup({ ...settings, eval: { ...settings.eval, mode: 'observe' } }).policy.revalidate(mandate)).toBe(false)
   })
-  it('admits the default branch\'s CI through its row once observed and set, and never a PR\'s CI', () => {
+  it("admits the default branch's CI through its row once observed and set, and never a PR's CI", () => {
     const admission = { ci: { unlistedUnaddressed: 'inferred' } }
     const branch = setup(observing({ observeCi: true }, { admission })).policy.gate(ci({ branch: 'main' }), thread(), [])
-    expect(branch).toMatchObject({ admissible: true, strength: 'inferred',
-      basis: { via: 'admission', cell: 'unlistedUnaddressed', row: 'ci', observation: { mode: 'auto' } } })
+    expect(branch).toMatchObject({
+      admissible: true,
+      strength: 'inferred',
+      basis: { via: 'admission', cell: 'unlistedUnaddressed', row: 'ci', observation: { mode: 'auto' } },
+    })
     // The cell defaults to ignore, so observing the CI changes nothing until the table says so.
-    expect(setup(observing({ observeCi: true })).policy.gate(ci({ branch: 'main' }), thread(), [])).toEqual({ admissible: false,
-      reason: 'admission_ignored' })
+    expect(setup(observing({ observeCi: true })).policy.gate(ci({ branch: 'main' }), thread(), [])).toEqual({
+      admissible: false,
+      reason: 'admission_ignored',
+    })
     const pull = setup(observing({ observeCi: true }, { admission })).policy.gate(ci({ number: 9, isPr: true }), thread(), [])
     expect(pull).toEqual({ admissible: false, reason: 'not_human' })
   })
   it('admits a Feishu bot on its list in a chat the Source observes', () => {
-    const settings = SettingsSchema.parse({ ...base, policy: { ...base.policy, sources: { ...base.policy.sources,
-      feishu: { ...base.policy.sources.feishu, bots: [{ id: 'cli_alerts', name: 'Alerts' }] } } } })
-    const alert = unaddressed({ actor: { source: 'feishu', id: 'cli_alerts' }, human: false,
-      meta: { chatId: OBSERVED, direct: false, mentioned: false } })
-    expect(setup(settings).policy.gate(alert, thread(), []))
-      .toMatchObject({ admissible: true, strength: 'inferred', basis: { via: 'bot', sender: 'Alerts', row: OBSERVED } })
+    const settings = SettingsSchema.parse({
+      ...base,
+      policy: {
+        ...base.policy,
+        sources: { ...base.policy.sources, feishu: { ...base.policy.sources.feishu, bots: [{ id: 'cli_alerts', name: 'Alerts' }] } },
+      },
+    })
+    const alert = unaddressed({
+      actor: { source: 'feishu', id: 'cli_alerts' },
+      human: false,
+      meta: { chatId: OBSERVED, direct: false, mentioned: false },
+    })
+    expect(setup(settings).policy.gate(alert, thread(), [])).toMatchObject({
+      admissible: true,
+      strength: 'inferred',
+      basis: { via: 'bot', sender: 'Alerts', row: OBSERVED },
+    })
     // In a chat the Source receives only mentions in, a bot's message that does not address the agent is not received.
     const unobserved = setup(settings).policy.gate({ ...alert, meta: { chatId: CHAT, direct: false, mentioned: false } }, thread(), [])
     expect(unobserved).toEqual({ admissible: false, reason: 'not_human' })
   })
-  it('says on the GitHub bot list when a listed bot\'s comment is received: when it mentions the agent, or comments are observed', () => {
+  it("says on the GitHub bot list when a listed bot's comment is received: when it mentions the agent, or comments are observed", () => {
     const field = githubKind.policy!.fields.find(item => item.key === 'bots')!
     const comments = githubKind.fields.find(item => item.key === 'observeComments')!.label
     expect(field.hint!.en).toContain('mentions the agent')
     expect(field.hint!.en).toContain(comments.en)
     expect(field.hint!.zh).toContain(comments.zh)
   })
-  it('names a GitHub Trigger\'s receiving scope, which the Source observes where its switch is on', () => {
+  it("names a GitHub Trigger's receiving scope, which the Source observes where its switch is on", () => {
     const { sources } = setup(observing({ observeIssues: true }))
     const github = (meta: Record<string, unknown>) => ({ source: 'github', meta })
     expect(sources.scope(github({ kind: 'issue', number: 3 }))).toEqual({ listened: true, observed: true, row: 'issues' })

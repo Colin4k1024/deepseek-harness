@@ -93,14 +93,28 @@ function failure(error: unknown): [number, Record<string, unknown>] {
 }
 
 function machineView({ stateDir, promptMaxChars, admissionContextMaxPages, admissionContextTimeoutMs }: Machine) {
-  return { stateDir, promptMaxChars: promptMaxChars.get(), admissionContextMaxPages: admissionContextMaxPages.get(),
-    admissionContextTimeoutMs: admissionContextTimeoutMs.get() }
+  return {
+    stateDir,
+    promptMaxChars: promptMaxChars.get(),
+    admissionContextMaxPages: admissionContextMaxPages.get(),
+    admissionContextTimeoutMs: admissionContextTimeoutMs.get(),
+  }
 }
 function setupView(runtime: HttpHost) {
   const resolved = runtime.configured() ? runtime.deployment : undefined
   return {
-    machine: machineView(runtime.machine), problem: runtime.setupProblem ?? null, feishuProblem: runtime.feishuProblem ?? null,
-    accounts: resolved ? { repository: resolved.repository, agent: resolved.github.login, feishu: resolved.feishu ? { appId: resolved.feishu.appId, brand: resolved.feishu.brand, botId: resolved.feishu.botId, name: resolved.feishu.name } : null } : null,
+    machine: machineView(runtime.machine),
+    problem: runtime.setupProblem ?? null,
+    feishuProblem: runtime.feishuProblem ?? null,
+    accounts: resolved
+      ? {
+        repository: resolved.repository,
+        agent: resolved.github.login,
+        feishu: resolved.feishu
+          ? { appId: resolved.feishu.appId, brand: resolved.feishu.brand, botId: resolved.feishu.botId, name: resolved.feishu.name }
+          : null,
+      }
+      : null,
   }
 }
 /**
@@ -157,12 +171,22 @@ const SaveRequest = z.object({ value: z.unknown(), revision: z.number().int().no
 
 function routes(runtime: HttpHost): Routes {
   const { store } = runtime
-  const ticket = (id: string) => { if (!store.tickets.get(id)) throw new RouteError(404, 'Ticket not found'); return id }
-  const promptBody = (input: { body: (maxBytes?: number) => Promise<unknown> }) => input.body(4 * runtime.machine.promptMaxChars.get() + 4096)
+  const ticket = (id: string) => {
+    if (!store.tickets.get(id)) throw new RouteError(404, 'Ticket not found')
+    return id
+  }
+  const promptBody = (input: { body: (maxBytes?: number) => Promise<unknown> }) =>
+    input.body(4 * runtime.machine.promptMaxChars.get() + 4096)
   return {
     'GET state': () => stateView(runtime),
-    'GET overview': () => overview(views(runtime), runtime.health, policyVersion(store.settings()),
-      executorLoad(store, runtime.executor.activeCount()), runtime.setupProblem ?? runtime.feishuProblem),
+    'GET overview': () =>
+      overview(
+        views(runtime),
+        runtime.health,
+        policyVersion(store.settings()),
+        executorLoad(store, runtime.executor.activeCount()),
+        runtime.setupProblem ?? runtime.feishuProblem,
+      ),
     'GET search': ({ query }) => search(views(runtime), query.q ?? '', runtime.sourceLinks),
     'GET sources': () => sourcesStatus(views(runtime), runtime.health, setupState(runtime)),
     'GET settings': () => settingsView(store, runtime.sources, runtime.health, setupState(runtime), runtime.machine.stateDir),

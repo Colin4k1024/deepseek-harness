@@ -26,21 +26,64 @@ import { join } from 'node:path'
 const MEMBER = 'ou_alice'
 function host(overrides: Partial<SourceContextDeps> = {}) {
   const store = new Store(join(mkdtempSync(join(tmpdir(), 'sources-')), 'db.sqlite'))
-  const settings = SettingsSchema.parse({ policy: { sources: { feishu: { allowed: [{ id: 'ou_alice', name: 'Alice' }], syncChat: 'oc_team' }, github: { allowed: [{ id: 'alice' }] } } }, eval: { mode: 'auto' }, sources: { feishu: { enabled: true, config: { chats: [{ chatId: 'oc_team', listen: 'mentions' }, { chatId: 'oc_observed', listen: 'all' }], directMessages: true } } } })
+  const settings = SettingsSchema.parse({
+    policy: {
+      sources: { feishu: { allowed: [{ id: 'ou_alice', name: 'Alice' }], syncChat: 'oc_team' }, github: { allowed: [{ id: 'alice' }] } },
+    },
+    eval: { mode: 'auto' },
+    sources: {
+      feishu: {
+        enabled: true,
+        config: {
+          chats: [
+            { chatId: 'oc_team', listen: 'mentions' },
+            { chatId: 'oc_observed', listen: 'all' },
+          ],
+          directMessages: true,
+        },
+      },
+    },
+  })
   store.saveSettings(settings)
   const board = new HealthBoard()
   const sources = new SourceRegistry(() => store.settings(), board)
   const deployment = testDeployment()
-  sources.register(feishuKind); sources.register(githubKind)
+  sources.register(feishuKind)
+  sources.register(githubKind)
   const assessor: Assessor = { request: vi.fn(() => {}) }
   const executor: Executor = { start: vi.fn(() => {}), deliver: vi.fn(() => {}), stop: vi.fn(() => {}) }
   const outbox = { send: () => {}, status: () => undefined, withdraw: () => {} }
-  const engine = new Engine({ repo: store, scope: sources, policy: () => settingsPolicy(store.settings(), sources), assessor, executor, outbox })
+  const engine = new Engine({
+    repo: store,
+    scope: sources,
+    policy: () => settingsPolicy(store.settings(), sources),
+    assessor,
+    executor,
+    outbox,
+  })
   const commands = new Commands(() => deployment, {}, new AbortController().signal)
-  const receive = vi.fn(async (trigger: Trigger) => { const result = engine.receive(trigger); engine.evaluateDue(); return result })
+  const receive = vi.fn(async (trigger: Trigger) => {
+    const result = engine.receive(trigger)
+    engine.evaluateDue()
+    return result
+  })
   // Record outbound messages in the store without sending them.
-  const parts: SourceContextDeps = { store, engine, outbox: { send: (message) => { store.receipts.add(message) } }, commands, sources, deployment,
-    ready: Promise.resolve(), configured: () => true, receive, ...overrides }
+  const parts: SourceContextDeps = {
+    store,
+    engine,
+    outbox: {
+      send: (message) => {
+        store.receipts.add(message)
+      },
+    },
+    commands,
+    sources,
+    deployment,
+    ready: Promise.resolve(),
+    configured: () => true,
+    receive,
+    ...overrides,
+  }
   // The Sources' functions take the context; plugin entries and kind callbacks take the host, which builds each kind's context.
   const value = { ...parts, context: (kind: { kind: string; health: readonly string[] }) => sourceContextOf(parts, kind) }
   const context = sourceContextOf(parts, { kind: 'feishu', health: ['github', 'feishu', 'history'] })
@@ -1078,40 +1121,69 @@ describe('feishu event consumer', () => {
     const deployment = testDeployment({ feishu: { ...testDeployment().feishu!, cli: path } })
     const health = board.all
     const commands = new Commands(() => deployment, {}, controller.signal)
-    const deps: SourceContextDeps = { store, engine, outbox: { send: () => {} }, commands, sources, deployment, ready: Promise.resolve(), configured: () => true,
-      receive: (trigger: Trigger) => engine.receive(trigger) }
+    const deps: SourceContextDeps = {
+      store,
+      engine,
+      outbox: { send: () => {} },
+      commands,
+      sources,
+      deployment,
+      ready: Promise.resolve(),
+      configured: () => true,
+      receive: (trigger: Trigger) => engine.receive(trigger),
+    }
     const turnOff = () => store.saveSettings(SettingsSchema.parse({ sources: { feishu: { enabled: false, config: { chats: [] } } } }))
     return { ctx: sourceContextOf(deps, feishuKind), health, store, turnOff }
   }
 
   /** A message event line as `event consume` prints it; a group message mentions the bot. */
-  const event = (id: string, chat: string, type: 'group' | 'p2p') => JSON.stringify({ message_id: id, chat_id: chat, chat_type: type,
-    sender_id: 'ou_alice', sender_type: 'user', content: 'fix it', create_time: String(Date.now()),
-    ...type === 'group' ? { mentions: [{ id: 'ou_bot', name: 'Bot' }] } : {} })
+  const event = (id: string, chat: string, type: 'group' | 'p2p') =>
+    JSON.stringify({
+      message_id: id,
+      chat_id: chat,
+      chat_type: type,
+      sender_id: 'ou_alice',
+      sender_type: 'user',
+      content: 'fix it',
+      create_time: String(Date.now()),
+      ...(type === 'group' ? { mentions: [{ id: 'ou_bot', name: 'Bot' }] } : {}),
+    })
   it('takes in the event lines it reads, records each chat as direct or not, and reports a malformed line without stopping', async () => {
-    writeFileSync(join(dir, 'events'), [event('om_1', 'oc_group', 'group'), event('om_2', 'oc_dm', 'p2p'), 'not json',
-      event('om_3', 'oc_group', 'group')].join('\n') + '\n')
+    writeFileSync(
+      join(dir, 'events'),
+      [event('om_1', 'oc_group', 'group'), event('om_2', 'oc_dm', 'p2p'), 'not json', event('om_3', 'oc_group', 'group')].join('\n') + '\n',
+    )
     const { ctx, health, store } = consumerSource(cli('events'))
     running = runFeishu(ctx, controller.signal)
-    await vi.waitFor(() =>{  expect(store.triggers.get(feishuTriggerId('om_3'))).toBeDefined() }, until)
+    await vi.waitFor(() => {
+      expect(store.triggers.get(feishuTriggerId('om_3'))).toBeDefined()
+    }, until)
     expect(['om_1', 'om_2'].map(id => store.triggers.get(feishuTriggerId(id))?.meta.direct)).toEqual([false, true])
     expect(store.get(KV.feishu.chats)).toEqual({ oc_group: false, oc_dm: true })
     expect(health.feishu).toMatchObject({ state: 'error', detail: expect.stringContaining('JSON') as unknown })
-    controller.abort(); await running; store.close()
+    controller.abort()
+    await running
+    store.close()
   }, 20_000)
   it('drops the events it reads once the Source is off', async () => {
     writeFileSync(join(dir, 'events'), event('om_9', 'oc_group', 'group') + '\n')
     const { ctx, health, store, turnOff } = consumerSource(cli('late'))
     running = runFeishu(ctx, controller.signal)
-    await vi.waitFor(() =>{  expect(health.feishu).toMatchObject({ state: 'ready' }) }, until)
+    await vi.waitFor(() => {
+      expect(health.feishu).toMatchObject({ state: 'ready' })
+    }, until)
     turnOff()
     // The CLI prints the event a second after it is ready, before the consumer stops for the Source being off.
-    await vi.waitFor(() =>{  expect(existsSync(join(dir, 'printed'))).toBe(true) }, until)
+    await vi.waitFor(() => {
+      expect(existsSync(join(dir, 'printed'))).toBe(true)
+    }, until)
     await new Promise(resolve => setTimeout(resolve, 300))
     expect(store.triggers.get(feishuTriggerId('om_9'))).toBeUndefined()
-    controller.abort(); await running; store.close()
+    controller.abort()
+    await running
+    store.close()
   }, 20_000)
-  it('keeps a chat\'s history cursor when its read fails, and recovers known direct chats only while direct messages are on', async () => {
+  it("keeps a chat's history cursor when its read fails, and recovers known direct chats only while direct messages are on", async () => {
     const hour = new Date(Date.now() - 3_600_000).toISOString()
     const recovered = async (directMessages: boolean) => {
       const chat = (chatId: string) => ({ chatId, listen: 'mentions' })

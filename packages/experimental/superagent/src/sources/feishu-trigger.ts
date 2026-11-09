@@ -5,19 +5,32 @@ import type { FeishuMessage, FeishuRef } from './feishu-read.ts'
 
 export const SOURCE = 'feishu'
 /** Constructs a Feishu reply channel address; records `direct` explicitly because both group and direct chat IDs start with `oc_`. */
-export const feishuChannel = (chatId: string, messageId: string, direct = false): ChannelRef =>
-  ({ source: SOURCE, thread: `feishu:${chatId}`, address: { chatId, messageId, ...direct ? { direct: 'true' } : {} } })
+export const feishuChannel = (chatId: string, messageId: string, direct = false): ChannelRef => ({
+  source: SOURCE,
+  thread: `feishu:${chatId}`,
+  address: { chatId, messageId, ...(direct ? { direct: 'true' } : {}) },
+})
 /** A message as the live event consumer prints it; the history and topic-page paths normalize what they read into this shape. */
-const EventSchema = z.object({ message_id: z.string(), chat_id: z.string(), chat_type: z.enum(['p2p', 'group']),
-  sender_id: z.string(), sender_type: z.enum(['user', 'bot']), content: z.string(), create_time: z.string(),
+const EventSchema = z.object({
+  message_id: z.string(),
+  chat_id: z.string(),
+  chat_type: z.enum(['p2p', 'group']),
+  sender_id: z.string(),
+  sender_type: z.enum(['user', 'bot']),
+  content: z.string(),
+  create_time: z.string(),
   mentions: z.array(z.object({ id: z.string(), key: z.string().optional(), name: z.string().optional() })).default([]),
-  root_id: z.string().optional(), parent_id: z.string().optional(), thread_id: z.string().optional(), message_app_link: z.url().optional() })
+  root_id: z.string().optional(),
+  parent_id: z.string().optional(),
+  thread_id: z.string().optional(),
+  message_app_link: z.url().optional(),
+})
 export type FeishuEvent = z.infer<typeof EventSchema>
 export const feishuThreadId = (chatId: string, rootId: string | undefined, messageId: string): string => `${chatId}:${rootId ?? messageId}`
 /** Deterministic trigger ID for a Feishu message; every read path for this message produces the same ID. */
 export const feishuTriggerId = (messageId: string): string => key('feishu', messageId)
 export const withMentionNames = (text: string, mentions: { key?: string | undefined; name?: string | undefined }[]): string =>
-  mentions.reduce((result, mention) => mention.key && mention.name ? result.replaceAll(mention.key, `@${mention.name}`) : result, text)
+  mentions.reduce((result, mention) => (mention.key && mention.name ? result.replaceAll(mention.key, `@${mention.name}`) : result), text)
 /**
  * Parses a Feishu message timestamp into an ISO-8601 string: live events and the history API return epoch milliseconds as a
  * string, whereas topic/thread pages return a local timestamp string such as `2026-09-11 12:00`.

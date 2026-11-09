@@ -3,8 +3,21 @@ import { DatabaseSync, type SQLInputValue } from 'node:sqlite'
 import { required } from '../core/required.ts'
 import { chmodSync, mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
-import { key, threadKey, type ChannelRef, type Decision, type OutboundMessage, type ReplyStatus, type Repositories, type Thread, type ThreadFact,
-  type ThreadFacts, type Ticket, type Trigger, type TriggerDisposition } from '../core/index.ts'
+import {
+  key,
+  threadKey,
+  type ChannelRef,
+  type Decision,
+  type OutboundMessage,
+  type ReplyStatus,
+  type Repositories,
+  type Thread,
+  type ThreadFact,
+  type ThreadFacts,
+  type Ticket,
+  type Trigger,
+  type TriggerDisposition,
+} from '../core/index.ts'
 import { KV, type Family, type Key } from '../kv.ts'
 import { SettingsSchema, type Settings, type SettingsOrigin, type SettingsSave } from '../policy.ts'
 import { OLDEST_SCHEMA, SCHEMA_VERSION, migrateTo11, tooOld } from './migration.ts'
@@ -239,25 +252,40 @@ export class Store implements Repositories {
     describe: (keyValue: string, patch: { label?: string; url?: string; facts?: Record<string, ThreadFact | null> }): void => {
       const thread = this.threads.get(keyValue)
       if (!thread) return
-      const facts = Object.fromEntries(Object.entries({ ...(thread.meta.facts as ThreadFacts | undefined ?? {}), ...patch.facts })
-        .filter(([, fact]) => !!fact)) as ThreadFacts
-      const meta = { ...thread.meta, ...(patch.label === undefined ? {} : { label: patch.label }), ...(patch.url === undefined ? {} : { url: patch.url }), facts }
+      const facts = Object.fromEntries(
+        Object.entries({ ...((thread.meta.facts as ThreadFacts | undefined) ?? {}), ...patch.facts }).filter(([, fact]) => !!fact),
+      ) as ThreadFacts
+      const meta = {
+        ...thread.meta,
+        ...(patch.label === undefined ? {} : { label: patch.label }),
+        ...(patch.url === undefined ? {} : { url: patch.url }),
+        facts,
+      }
       if (JSON.stringify(meta) !== JSON.stringify(thread.meta)) this.threads.save({ ...thread, meta })
     },
     /**
      * Atomically sets or removes (`undefined`) source-specific metadata keys on a thread after re-reading it; no-op if the thread does not
      * exist.
      */
-    patchMeta: (keyValue: string, patch: Record<string, unknown>): void => { this.atomic(() => {
-      const thread = this.threads.get(keyValue)
-      if (!thread) return
-      const meta = Object.fromEntries(Object.entries({ ...thread.meta, ...patch }).filter(([, value]) => value !== undefined))
-      if (JSON.stringify(meta) !== JSON.stringify(thread.meta)) this.threads.save({ ...thread, meta })
-    }) },
+    patchMeta: (keyValue: string, patch: Record<string, unknown>): void => {
+      this.atomic(() => {
+        const thread = this.threads.get(keyValue)
+        if (!thread) return
+        const meta = Object.fromEntries(Object.entries({ ...thread.meta, ...patch }).filter(([, value]) => value !== undefined))
+        if (JSON.stringify(meta) !== JSON.stringify(thread.meta)) this.threads.save({ ...thread, meta })
+      })
+    },
   }
   readonly tickets = {
-    get: (id: string): Ticket | undefined => { const row = this.db.prepare('SELECT value FROM ticket WHERE id=?').get(id); return row ? JSON.parse(String(row.value)) as Ticket : undefined },
-    save: (ticket: Ticket): void => { this.db.prepare('INSERT INTO ticket VALUES (?,?) ON CONFLICT(id) DO UPDATE SET value=excluded.value').run(ticket.id, JSON.stringify(ticket)) },
+    get: (id: string): Ticket | undefined => {
+      const row = this.db.prepare('SELECT value FROM ticket WHERE id=?').get(id)
+      return row ? (JSON.parse(String(row.value)) as Ticket) : undefined
+    },
+    save: (ticket: Ticket): void => {
+      this.db
+        .prepare('INSERT INTO ticket VALUES (?,?) ON CONFLICT(id) DO UPDATE SET value=excluded.value')
+        .run(ticket.id, JSON.stringify(ticket))
+    },
     /** Newest first. */
     list: (): Ticket[] => this.values('SELECT value FROM ticket ORDER BY rowid DESC'),
     /** Newest first. */

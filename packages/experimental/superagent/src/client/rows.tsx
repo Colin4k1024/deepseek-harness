@@ -16,67 +16,143 @@ export function TicketLine({ ticket, question, onChanged, context }: {
 }) {
   const { t, call, navigate } = usePanel()
   const status = ticketMark(t, ticket)
-  const after = async (request: Promise<unknown>) => { await request; await onChanged?.() }
+  const after = async (request: Promise<unknown>) => {
+    await request
+    await onChanged?.()
+  }
   const note = question && ticket.note && { ...ticket.note, text: readableMarkers(t, ticket.note.text) }
   const answer = ticket.reply && ticket.stage === 'person' && ticket.action === 'answer' ? ticket.reply : undefined
-  return <li className="dt-row dt-link dt-ticket" data-state={question ? status.dot : undefined}>
-    <div className="dt-ticket-stage"><StageMark state={status.dot} icon={status.icon} label={status.label} /></div>
-    <div className="dt-ticket-body">
-      <div className="dt-row-title"><button type="button" className="dt-open" onClick={() => { navigate({ page: 'execution',
-        id: ticket.id }) }}>{ticket.title}</button></div>
-      <div className="dt-row-meta dt-ticket-meta">
-        {ticket.threads.map(thread => <ThreadChip key={thread.key} thread={thread} />)}
-        {context && <ContextTag />}
-        {ticket.undelivered > 0 && <LabelValue label={t('ticketUndeliveredLabel')} value={ticket.undelivered} />}
-        {note ? <span className={note.error ? 'dt-ticket-note dt-ticket-note-error' : 'dt-ticket-note'} title={note.text}>{note.text}</span>
-          : <When at={ticket.updatedAt} />}
+  return (
+    <li className="dt-row dt-link dt-ticket" data-state={question ? status.dot : undefined}>
+      <div className="dt-ticket-stage">
+        <StageMark state={status.dot} icon={status.icon} label={status.label} />
       </div>
-      {/* Always render the actions container so every Ticket row keeps a uniform three-line height. */}
-      <div className="dt-ticket-actions">{onChanged && <>
-        {answer && <ActionLink href={answer.url} icon="message">{t('answerIn', { source: valueLabel(t, 'source',
-          answer.source) })}</ActionLink>}
-        {ticket.actions.retry && <ConfirmButton variant="outline" icon="refresh" label={t('retry')} title={t('retryTitle')}
-          message={t('retryConfirm', { title: ticket.title })}
-          onConfirm={() => after(call('POST tickets/:id/retry', { id: ticket.id }))} />}
-        {ticket.actions.retry && ticket.sessionId && <SessionButton variant="outline" sessionId={ticket.sessionId} />}
-        {ticket.actions.stop && <ConfirmButton variant="outline" icon="stop" label={t('stop')} title={t('stopConfirmTitle')}
-          message={t('stopConfirm', { title: ticket.title })}
-          onConfirm={() => after(call('POST tickets/:id/stop', { id: ticket.id }))} />}
-      </>}</div>
-    </div>
-  </li>
+      <div className="dt-ticket-body">
+        <div className="dt-row-title">
+          <button
+            type="button"
+            className="dt-open"
+            onClick={() => {
+              navigate({ page: 'execution', id: ticket.id })
+            }}
+          >
+            {ticket.title}
+          </button>
+        </div>
+        <div className="dt-row-meta dt-ticket-meta">
+          {ticket.threads.map(thread => (
+            <ThreadChip key={thread.key} thread={thread} />
+          ))}
+          {context && <ContextTag />}
+          {ticket.undelivered > 0 && <LabelValue label={t('ticketUndeliveredLabel')} value={ticket.undelivered} />}
+          {note ? (
+            <span className={note.error ? 'dt-ticket-note dt-ticket-note-error' : 'dt-ticket-note'} title={note.text}>
+              {note.text}
+            </span>
+          ) : (
+            <When at={ticket.updatedAt} />
+          )}
+        </div>
+        {/* Always render the actions container so every Ticket row keeps a uniform three-line height. */}
+        <div className="dt-ticket-actions">
+          {onChanged && (
+            <>
+              {answer && (
+                <ActionLink href={answer.url} icon="message">
+                  {t('answerIn', { source: valueLabel(t, 'source', answer.source) })}
+                </ActionLink>
+              )}
+              {ticket.actions.retry && (
+                <ConfirmButton
+                  variant="outline"
+                  icon="refresh"
+                  label={t('retry')}
+                  title={t('retryTitle')}
+                  message={t('retryConfirm', { title: ticket.title })}
+                  onConfirm={() => after(call('POST tickets/:id/retry', { id: ticket.id }))}
+                />
+              )}
+              {ticket.actions.retry && ticket.sessionId && <SessionButton variant="outline" sessionId={ticket.sessionId} />}
+              {ticket.actions.stop && (
+                <ConfirmButton
+                  variant="outline"
+                  icon="stop"
+                  label={t('stop')}
+                  title={t('stopConfirmTitle')}
+                  message={t('stopConfirm', { title: ticket.title })}
+                  onConfirm={() => after(call('POST tickets/:id/stop', { id: ticket.id }))}
+                />
+              )}
+            </>
+          )}
+        </div>
+      </div>
+    </li>
+  )
 }
 
 function ContextTag() {
   const { t } = usePanel()
-  return <Tag tone="quiet" title={t('contextOnlyHint')}>{t('contextOnly')}</Tag>
+  return (
+    <Tag tone="quiet" title={t('contextOnlyHint')}>
+      {t('contextOnly')}
+    </Tag>
+  )
 }
 /** Thread list row; on a Ticket page, `ticketId` omits that Ticket from fanout targets and `context` marks context-only threads. */
-export function ThreadLine({ thread, ticketId, context }: { thread: ThreadRow; ticketId?: string | undefined; context?: boolean | undefined }) {
+export function ThreadLine({
+  thread,
+  ticketId,
+  context,
+}: {
+  thread: ThreadRow
+  ticketId?: string | undefined
+  context?: boolean | undefined
+}) {
   const { t, navigate } = usePanel()
   const live = thread.tickets.filter(ticket => ticket.state === 'open' && ticket.id !== ticketId)
   const { dot, icon, label } = threadMark(t, thread)
   const reaches = live.length > 0 && `${required(live[0]).title}${live.length > 1 ? t('andMore', { count: live.length - 1 }) : ''}`
-  return <li className="dt-row dt-link dt-ticket">
-    <div className="dt-ticket-stage"><StageMark state={dot} icon={icon} label={label} /></div>
-    <div className="dt-ticket-body">
-      <div className="dt-row-title">
-        <button type="button" className="dt-open" title={thread.pollError} onClick={() => { navigate({ page: 'trigger',
-          id: thread.key }) }}>{readableMarkers(t, thread.title)}</button>
+  return (
+    <li className="dt-row dt-link dt-ticket">
+      <div className="dt-ticket-stage">
+        <StageMark state={dot} icon={icon} label={label} />
       </div>
-      <div className="dt-row-quote dt-line">
-        {thread.latest && <>{actorName(t, thread.latest.actor)}{t('labelSeparator')}{readableMarkers(t, thread.latest.preview)
-          || t('empty')}</>}
+      <div className="dt-ticket-body">
+        <div className="dt-row-title">
+          <button
+            type="button"
+            className="dt-open"
+            title={thread.pollError}
+            onClick={() => {
+              navigate({ page: 'trigger', id: thread.key })
+            }}
+          >
+            {readableMarkers(t, thread.title)}
+          </button>
+        </div>
+        <div className="dt-row-quote dt-line">
+          {thread.latest && (
+            <>
+              {actorName(t, thread.latest.actor)}
+              {t('labelSeparator')}
+              {readableMarkers(t, thread.latest.preview) || t('empty')}
+            </>
+          )}
+        </div>
+        <div className="dt-row-meta dt-line">
+          <ThreadChip thread={thread} />
+          {context && <ContextTag />}
+          {thread.pollError ? (
+            <span className="dt-line-text dt-error-text">{thread.pollError}</span>
+          ) : (
+            reaches && <LabelValue label={t('fanoutTo')} value={reaches} />
+          )}
+          <When at={thread.lastAt} />
+        </div>
       </div>
-      <div className="dt-row-meta dt-line">
-        <ThreadChip thread={thread} />
-        {context && <ContextTag />}
-        {thread.pollError ? <span className="dt-line-text dt-error-text">{thread.pollError}</span> : reaches && <LabelValue
-          label={t('fanoutTo')} value={reaches} />}
-        <When at={thread.lastAt} />
-      </div>
-    </div>
-  </li>
+    </li>
+  )
 }
 
 export function DecisionLine({ decision }: { decision: DecisionRow }) {

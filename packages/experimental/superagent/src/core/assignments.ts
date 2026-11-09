@@ -29,14 +29,24 @@ const RECOVERY_NOTE = 'The host restarted during this ticket. Inspect the curren
  * Executor's lifecycle callbacks and its workers' reports here.
  */
 export class Assignments extends EnginePart {
-  constructor(options: EngineOptions, private readonly tickets: Tickets, private readonly replies: Replies) { super(options) }
+  constructor(
+    options: EngineOptions,
+    private readonly tickets: Tickets,
+    private readonly replies: Replies,
+  ) {
+    super(options)
+  }
 
-  /** Marks a non-ended assignment running, queues delivery of waiting undelivered inputs on an open ticket, and emits `assignment.started`. */
+  /**
+   * Marks a non-ended assignment running, queues delivery of waiting undelivered inputs on an open ticket, and emits
+   * `assignment.started`.
+   */
   started(ticketId: string, assignmentId: string): void {
     const ticket = this.require(ticketId)
     const assignment = ticket.assignments.find(item => item.id === assignmentId)
     if (!assignment || assignment.state === 'ended') return
-    assignment.state = 'running'; assignment.startedAt ??= this.now()
+    assignment.state = 'running'
+    assignment.startedAt ??= this.now()
     ticket.updatedAt = this.now()
     this.repo.tickets.save(ticket)
     if (liveTicket(ticket) && ticket.undelivered.length) this.options.executor.deliver(ticket, assignment)

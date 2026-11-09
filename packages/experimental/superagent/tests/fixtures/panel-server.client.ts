@@ -155,145 +155,355 @@ function sourceStatuses(): SourceStatusRow[] {
     const enabled = server.settings.sources[kind.kind]?.enabled ?? true
     const health = kind.health.map(name => ({ name, ...healthOf(name) }))
     const problem = problemOf_(kind.kind)
-    const state = !enabled ? 'off' : problem || health.some(item => item.state === 'error') ? 'error' : server.setup.problem ? 'setup'
-      : health.some(item => item.state === 'starting') ? 'starting' : health.some(item => item.state === 'paused') ? 'paused' : 'ready'
+    const state = !enabled
+      ? 'off'
+      : problem || health.some(item => item.state === 'error')
+        ? 'error'
+        : server.setup.problem
+          ? 'setup'
+          : health.some(item => item.state === 'starting')
+            ? 'starting'
+            : health.some(item => item.state === 'paused')
+              ? 'paused'
+              : 'ready'
     const feishu = kind.kind === 'feishu'
-    return { id: kind.kind, title: kind.title, installed: true, enabled, state, health, ...problem ? { problem } : {},
+    return {
+      id: kind.kind,
+      title: kind.title,
+      installed: true,
+      enabled,
+      state,
+      health,
+      ...(problem ? { problem } : {}),
       stats: { received: feishu ? 12 : 0, filtered: feishu ? 2 : 0, lastAt: '2026-09-23T00:00:00Z' },
-      filtered: feishu ? [] : [{ id: 'e9', at: '2026-09-23T00:02:00Z', actor: actor('github', 'someone'), preview: 'looks wrong',
-        reason: { code: 'source_disabled' } }],
-      dropped: server.dropped.filter(item => item.channel.source === kind.kind && item.dropped.at >= dayAgo()) }
+      filtered: feishu
+        ? []
+        : [
+          {
+            id: 'e9',
+            at: '2026-09-23T00:02:00Z',
+            actor: actor('github', 'someone'),
+            preview: 'looks wrong',
+            reason: { code: 'source_disabled' },
+          },
+        ],
+      dropped: server.dropped.filter(item => item.channel.source === kind.kind && item.dropped.at >= dayAgo()),
+    }
   })
 }
 const stateView = (): StateView => ({
-  setup: server.setup, load: { running: server.setup.problem ? 0 : 2, queued: 0, maxWorkers: server.settings.executor.maxWorkers },
-  masterId: 'master', paused: server.settings.paused,
+  setup: server.setup,
+  load: { running: server.setup.problem ? 0 : 2, queued: 0, maxWorkers: server.settings.executor.maxWorkers },
+  masterId: 'master',
+  paused: server.settings.paused,
   // The panel does not read health; the service script does.
   health: {},
 })
 const settingsView = (): ApiResponse<'GET settings'> => ({
   policyVersion: 'abcdef1234567890',
-  blocks: { policy: { value: server.settings.policy, revision: server.revisions.policy ?? 0 },
+  blocks: {
+    policy: { value: server.settings.policy, revision: server.revisions.policy ?? 0 },
     eval: { value: server.settings.eval, revision: server.revisions.eval ?? 0 },
-    executor: { value: server.settings.executor, revision: server.revisions.executor ?? 0 } },
+    executor: { value: server.settings.executor, revision: server.revisions.executor ?? 0 },
+  },
   sources: sourceSettings(),
-  environment: { root: '/srv/dsh-superagent/work', variables: [
-    { owner: 'executor', enabled: true, variables: [{ key: 'DSH_SUPERAGENT_DIR', description: { zh: '工单的执行目录',
-      en: 'The ticket directory' } },
-    { key: 'DSH_SUPERAGENT_NAME', description: { zh: '工单短名', en: 'Short name' } }] },
-    { owner: 'github', enabled: false, variables: [{ key: 'DSH_SUPERAGENT_GITHUB_REPOSITORY', description: { zh: '仓库',
-      en: 'Repository' } }] }] },
+  environment: {
+    root: '/srv/dsh-superagent/work',
+    variables: [
+      {
+        owner: 'executor',
+        enabled: true,
+        variables: [
+          { key: 'DSH_SUPERAGENT_DIR', description: { zh: '工单的执行目录', en: 'The ticket directory' } },
+          { key: 'DSH_SUPERAGENT_NAME', description: { zh: '工单短名', en: 'Short name' } },
+        ],
+      },
+      {
+        owner: 'github',
+        enabled: false,
+        variables: [{ key: 'DSH_SUPERAGENT_GITHUB_REPOSITORY', description: { zh: '仓库', en: 'Repository' } }],
+      },
+    ],
+  },
 })
 const overviewView = (): ApiResponse<'GET overview'> => {
   const { problem, feishuProblem } = server.setup
   const setup = problem ?? feishuProblem
   return {
-    problems: [...setup ? [{ kind: 'setup' as const, ...setup }] : [],
-      ...KINDS.some(kind => server.settings.sources[kind.kind]?.enabled !== false) ? [] : [{ kind: 'no-source' as const }],
-      ...feishuProblem || server.settings.sources.feishu?.enabled === false ? [] : [{ kind: 'source-error' as const, source: { id: 'feishu',
-        title: { zh: '飞书', en: 'Feishu' },
-        health: { name: 'feishu', state: 'error' as const, detail: 'socket closed' } } }],
-      ...server.threads.filter(thread => thread.evaluating && thread.evaluating.deadline < new Date().toISOString())
+    problems: [
+      ...(setup ? [{ kind: 'setup' as const, ...setup }] : []),
+      ...(KINDS.some(kind => server.settings.sources[kind.kind]?.enabled !== false) ? [] : [{ kind: 'no-source' as const }]),
+      ...(feishuProblem || server.settings.sources.feishu?.enabled === false
+        ? []
+        : [
+          {
+            kind: 'source-error' as const,
+            source: {
+              id: 'feishu',
+              title: { zh: '飞书', en: 'Feishu' },
+              health: { name: 'feishu', state: 'error' as const, detail: 'socket closed' },
+            },
+          },
+        ]),
+      ...server.threads
+        .filter(thread => thread.evaluating && thread.evaluating.deadline < new Date().toISOString())
         .map(thread => ({ kind: 'eval-overdue' as const, thread })),
       { kind: 'eval-unavailable' as const, decisionId: 'u1', thread: threadSummary(), reason: [{ code: 'timeout' }], triggerId: 'e3' },
-      ...server.settings.paused ? [{ kind: 'executor-paused' as const }] : [],
+      ...(server.settings.paused ? [{ kind: 'executor-paused' as const }] : []),
       // As on the host, every entry in error that is not a Source's own, a Policy sync, or the individually listed unavailable Evals is a
       // runtime-error.
-      ...Object.entries(server.health).filter(([name, item]) => item.state === 'error' && !KINDS.some(kind => kind.health.includes(name))
-        && !name.startsWith('sync:') && name !== 'evals')
+      ...Object.entries(server.health)
+        .filter(
+          ([name, item]) =>
+            item.state === 'error' && !KINDS.some(kind => kind.health.includes(name)) && !name.startsWith('sync:') && name !== 'evals',
+        )
         .map(([name, item]) => ({ kind: 'runtime-error' as const, name, detail: item.detail })),
-      ...Object.values(server.settings.policy.sources).some(part => part.allowed.length) ? [] : [{ kind: 'no-allowed' as const }],
-      ...server.failing.map(outgoing => ({ kind: 'outgoing' as const, outgoing }))],
-    person: server.person, executor: { running: 2, queued: 0, maxWorkers: server.settings.executor.maxWorkers, idle: 1 },
-    flow: { received: 12, filtered: 2, triggers: 10, judged: 5, accepted: 1, evaluating: 0,
-      dropped: server.dropped.filter(item => item.dropped.at >= dayAgo()).length },
+      ...(Object.values(server.settings.policy.sources).some(part => part.allowed.length) ? [] : [{ kind: 'no-allowed' as const }]),
+      ...server.failing.map(outgoing => ({ kind: 'outgoing' as const, outgoing })),
+    ],
+    person: server.person,
+    executor: { running: 2, queued: 0, maxWorkers: server.settings.executor.maxWorkers, idle: 1 },
+    flow: {
+      received: 12,
+      filtered: 2,
+      triggers: 10,
+      judged: 5,
+      accepted: 1,
+      evaluating: 0,
+      dropped: server.dropped.filter(item => item.dropped.at >= dayAgo()).length,
+    },
     policyVersion: 'abcdef1234567890',
   }
 }
-export const acceptDecision = (): NonNullable<TicketPageView['decision']> => ({ id: 'd1', kind: 'accept', outcome: 'accept',
-  reason: [{ code: 'explicitRouted' }], at: '2026-09-22T00:00:00Z', strength: 'explicit', ticketId: undefined,
-  triggerIds: ['e1'], thread: 'feishu:oc_1:om_root', rules: [], preview: '@bot 修一下', ticketTitle: undefined })
+export const acceptDecision = (): NonNullable<TicketPageView['decision']> => ({
+  id: 'd1',
+  kind: 'accept',
+  outcome: 'accept',
+  reason: [{ code: 'explicitRouted' }],
+  at: '2026-09-22T00:00:00Z',
+  strength: 'explicit',
+  ticketId: undefined,
+  triggerIds: ['e1'],
+  thread: 'feishu:oc_1:om_root',
+  rules: [],
+  preview: '@bot 修一下',
+  ticketTitle: undefined,
+})
 const ticketDetail = (): TicketPageView => ({
-  ...ticketSummary(), paused: false, decision: acceptDecision(), threads: [threadSummary()],
-  mandate: { strength: 'explicit', policyVersion: 'abcdef1234567890', basis: { via: 'addressed', sender: 'Alice', addressed: 'mention' },
-    actor: actor('feishu', MEMBER), scope: '修复登录页回归' },
-  basis: { facts: [{ name: 'sender', value: 'Alice' }, { name: 'addressed', value: 'mention' }], legacy: false },
-  environment: [{ key: 'DSH_SUPERAGENT_DIR', value: '/w/t1', description: { zh: '执行目录', en: 'Directory' }, owner: 'executor' },
-    { key: 'DSH_SUPERAGENT_GITHUB_NUMBER', value: '', description: { zh: '编号', en: 'Number' }, owner: 'github' }],
-  channels: [{ source: 'feishu', url: 'https://applink.feishu.cn/client/chat/open?openChatId=oc_1', label: { zh: '飞书消息',
-    en: 'Feishu message' } },
-  { source: 'github', url: 'https://github.com/acme/widgets/issues/42', label: { zh: 'GitHub #42', en: 'GitHub #42' } }],
-  assignments: [{ id: 'a1', state: 'running', createdAt: '2026-09-22T00:00:00Z',
-    startedAt: '2026-09-22T00:01:00Z',
-    report: { state: 'progress', summary: 'working', at: '2026-09-22T00:02:00Z' } }],
-  inputs: [{ id: 'i1', kind: 'trigger', triggerId: 'e2', at: '2026-09-22T00:03:00Z', delivered: false,
-    trigger: { id: 'e2', actor: actor('feishu', MEMBER), human: true, preview: '顺便改标题', thread: 'feishu:oc_1:om_root' } },
-  { id: 'i2', kind: 'policy-changed', at: '2026-09-22T00:04:00Z', delivered: true, from: 'aaaaaaaaaaaaaaaa', to: 'bbbbbbbbbbbbbbbb' }],
+  ...ticketSummary(),
+  paused: false,
+  decision: acceptDecision(),
+  threads: [threadSummary()],
+  mandate: {
+    strength: 'explicit',
+    policyVersion: 'abcdef1234567890',
+    basis: { via: 'addressed', sender: 'Alice', addressed: 'mention' },
+    actor: actor('feishu', MEMBER),
+    scope: '修复登录页回归',
+  },
+  basis: {
+    facts: [
+      { name: 'sender', value: 'Alice' },
+      { name: 'addressed', value: 'mention' },
+    ],
+    legacy: false,
+  },
+  environment: [
+    { key: 'DSH_SUPERAGENT_DIR', value: '/w/t1', description: { zh: '执行目录', en: 'Directory' }, owner: 'executor' },
+    { key: 'DSH_SUPERAGENT_GITHUB_NUMBER', value: '', description: { zh: '编号', en: 'Number' }, owner: 'github' },
+  ],
+  channels: [
+    {
+      source: 'feishu',
+      url: 'https://applink.feishu.cn/client/chat/open?openChatId=oc_1',
+      label: { zh: '飞书消息', en: 'Feishu message' },
+    },
+    { source: 'github', url: 'https://github.com/acme/widgets/issues/42', label: { zh: 'GitHub #42', en: 'GitHub #42' } },
+  ],
+  assignments: [
+    {
+      id: 'a1',
+      state: 'running',
+      createdAt: '2026-09-22T00:00:00Z',
+      startedAt: '2026-09-22T00:01:00Z',
+      report: { state: 'progress', summary: 'working', at: '2026-09-22T00:02:00Z' },
+    },
+  ],
+  inputs: [
+    {
+      id: 'i1',
+      kind: 'trigger',
+      triggerId: 'e2',
+      at: '2026-09-22T00:03:00Z',
+      delivered: false,
+      trigger: { id: 'e2', actor: actor('feishu', MEMBER), human: true, preview: '顺便改标题', thread: 'feishu:oc_1:om_root' },
+    },
+    { id: 'i2', kind: 'policy-changed', at: '2026-09-22T00:04:00Z', delivered: true, from: 'aaaaaaaaaaaaaaaa', to: 'bbbbbbbbbbbbbbbb' },
+  ],
 })
 function threadPage(key: string, { before, around }: { before?: string; around?: string }): ThreadPageView | undefined {
   if (key !== threadSummary().key) return undefined
-  const base = { ...threadSummary(), tickets: [ticketSummary()], correlated: [{ key: 'github:42', title: 'PR 42' }], decisions: [],
-    url: 'https://example.test/thread', context: [] }
+  const base = {
+    ...threadSummary(),
+    tickets: [ticketSummary()],
+    correlated: [{ key: 'github:42', title: 'PR 42' }],
+    decisions: [],
+    url: 'https://example.test/thread',
+    context: [],
+  }
   const decision = { id: 'd1', outcome: 'accept' as const, reason: [{ code: 'said', values: { text: 'x' } }], ticketId: 't1' }
-  if (before === 'cursor-1' || around === 'e1') return { ...base, timeline: [trigger('e1', '2026-09-20T00:00:00Z',
-    { disposition: { decision } })], earlier: null }
-  return { ...base, earlier: 'cursor-1', timeline: [trigger('e3', '2026-09-23T00:00:00Z', { disposition: { fanout: ['t1'] } }),
-    trigger('e4', '2026-09-23T00:01:00Z', { disposition: { filtered: { code: 'not_a_member' } } })] }
+  if (before === 'cursor-1' || around === 'e1')
+    return { ...base, timeline: [trigger('e1', '2026-09-20T00:00:00Z', { disposition: { decision } })], earlier: null }
+  return {
+    ...base,
+    earlier: 'cursor-1',
+    timeline: [
+      trigger('e3', '2026-09-23T00:00:00Z', { disposition: { fanout: ['t1'] } }),
+      trigger('e4', '2026-09-23T00:01:00Z', { disposition: { filtered: { code: 'not_a_member' } } }),
+    ],
+  }
 }
 function initial(): PanelServer {
   const settings = SettingsSchema.parse({
-    policy: { sources: { feishu: { allowed: [{ id: 'ou_alice', name: 'Alice' }], syncChat: 'oc_team' },
-      github: { allowed: [{ id: 'alice' }] } },
-    rules: [{ id: 'copy', name: '文案修改', enabled: true, instruction: '修正明确的文案错误' }] },
-    sources: { feishu: { enabled: true, config: { cli: 'lark-bot', chats: [{ chatId: 'oc_team', listen: 'mentions' }],
-      directMessages: true } },
-    github: { enabled: true, config: { repository: 'acme/widgets', cli: 'gh-agent' } } },
+    policy: {
+      sources: { feishu: { allowed: [{ id: 'ou_alice', name: 'Alice' }], syncChat: 'oc_team' }, github: { allowed: [{ id: 'alice' }] } },
+      rules: [{ id: 'copy', name: '文案修改', enabled: true, instruction: '修正明确的文案错误' }],
+    },
+    sources: {
+      feishu: { enabled: true, config: { cli: 'lark-bot', chats: [{ chatId: 'oc_team', listen: 'mentions' }], directMessages: true } },
+      github: { enabled: true, config: { repository: 'acme/widgets', cli: 'gh-agent' } },
+    },
     executor: { blockedCommands: ['gh-personal'] },
   })
-  const ended = ticketSummary({ id: 't0', title: '旧工单', state: 'ended', actions: { retry: false, stop: false },
-    ended: { at: '2026-09-21T00:00:00Z', by: 'human', reason: 'Human asked to stop', outcome: 'stopped' } }, { stage: 'ended' })
-  const reply = { source: 'feishu', url: 'https://applink.feishu.cn/client/chat/open?openChatId=oc_1', label: { zh: '飞书消息',
-    en: 'Feishu message' } }
+  const ended = ticketSummary(
+    {
+      id: 't0',
+      title: '旧工单',
+      state: 'ended',
+      actions: { retry: false, stop: false },
+      ended: { at: '2026-09-21T00:00:00Z', by: 'human', reason: 'Human asked to stop', outcome: 'stopped' },
+    },
+    { stage: 'ended' },
+  )
+  const reply = {
+    source: 'feishu',
+    url: 'https://applink.feishu.cn/client/chat/open?openChatId=oc_1',
+    label: { zh: '飞书消息', en: 'Feishu message' },
+  }
   const defaults = { revision: 0, previousRevision: null, savedAt: '', source: 'defaults' }
   return {
-    health: {}, down: false, pending: 0, opened: [], requests: [], misuse: [], queued: new Set(), dropped: [], failing: [],
-    setup: { machine: MACHINE, problem: null, feishuProblem: null,
-      accounts: { repository: 'acme/widgets', agent: 'agent-bot', feishu: { appId: 'cli_bot', brand: 'feishu', botId: 'ou_bot',
-        name: 'Widgets Bot' } } },
-    settings, revisions: { policy: 3, eval: 1, executor: 0 },
-    prompts: { masterId: 'master', sections: TEAM_SECTIONS, skillName: SKILL_NAME.source, builtin: ['feishu', 'github'],
-      skillPrefix: SKILL_PREFIX, revision: 0, current: { ...defaults, config: defaultPrompts() },
-      defaults: defaultPrompts(), parts: Object.entries(builtInParts()).map(([key, part]) => ({ key, ...part, base: builtInBase(part.text) })),
-      defaultChanged: [], revisions: [{ ...defaults, changed: [] }], sessions: [], notificationPending: false, next_offset: null },
-    tickets: { open: [ticketSummary()], ended: [ended] }, ticketDetails: { t1: ticketDetail() },
-    threads: [threadSummary()], threadPages: threadPage,
-    person: [ticketSummary({ attention: { id: 'q1', question: '需要确认按钮颜色' }, note: { text: '需要确认按钮颜色', error: false }, reply },
-      { stage: 'person', action: 'answer' }),
-    ticketSummary({ id: 't4', title: '截图工具', actions: { retry: true, stop: true }, sessionId: 'worker-t4',
-      summary: 'LlmError: no adapter registered for provider "provider-a"',
-      note: { text: 'LlmError: no adapter registered for provider "provider-a"', error: true } }, { stage: 'person', action: 'failed' })],
+    health: {},
+    down: false,
+    pending: 0,
+    opened: [],
+    requests: [],
+    misuse: [],
+    queued: new Set(),
+    dropped: [],
+    failing: [],
+    setup: {
+      machine: MACHINE,
+      problem: null,
+      feishuProblem: null,
+      accounts: {
+        repository: 'acme/widgets',
+        agent: 'agent-bot',
+        feishu: { appId: 'cli_bot', brand: 'feishu', botId: 'ou_bot', name: 'Widgets Bot' },
+      },
+    },
+    settings,
+    revisions: { policy: 3, eval: 1, executor: 0 },
+    prompts: {
+      masterId: 'master',
+      sections: TEAM_SECTIONS,
+      skillName: SKILL_NAME.source,
+      builtin: ['feishu', 'github'],
+      skillPrefix: SKILL_PREFIX,
+      revision: 0,
+      current: { ...defaults, config: defaultPrompts() },
+      defaults: defaultPrompts(),
+      parts: Object.entries(builtInParts()).map(([key, part]) => ({ key, ...part, base: builtInBase(part.text) })),
+      defaultChanged: [],
+      revisions: [{ ...defaults, changed: [] }],
+      sessions: [],
+      notificationPending: false,
+      next_offset: null,
+    },
+    tickets: { open: [ticketSummary()], ended: [ended] },
+    ticketDetails: { t1: ticketDetail() },
+    threads: [threadSummary()],
+    threadPages: threadPage,
+    person: [
+      ticketSummary(
+        { attention: { id: 'q1', question: '需要确认按钮颜色' }, note: { text: '需要确认按钮颜色', error: false }, reply },
+        { stage: 'person', action: 'answer' },
+      ),
+      ticketSummary(
+        {
+          id: 't4',
+          title: '截图工具',
+          actions: { retry: true, stop: true },
+          sessionId: 'worker-t4',
+          summary: 'LlmError: no adapter registered for provider "provider-a"',
+          note: { text: 'LlmError: no adapter registered for provider "provider-a"', error: true },
+        },
+        { stage: 'person', action: 'failed' },
+      ),
+    ],
     search: { items: [], threads: [] },
-    history: { current: 3, policyVersion: 'abcdef1234567890', items: [
-      { revision: 4, savedAt: '2026-09-23T00:00:00Z', source: 'panel', policyVersion: '9876543210fedcba', policyChanged: true, notified: [],
-        block: 'source:feishu',
-        changes: [{ code: 'sourceRowsAdded', source: 'feishu', field: 'chats', items: ['oc_team'] }] },
-      { revision: 3, savedAt: '2026-09-22T00:00:00Z', source: 'panel', policyVersion: 'abcdef1234567890', policyChanged: true,
-        notified: [{ id: 't1', title: '修复回归' }], block: 'policy',
-        changes: [{ code: 'mode', from: 'off', to: 'observe' }, { code: 'sourceField', source: 'feishu', field: 'directMessages',
-          from: true, to: false },
-        { code: 'sourceRowsAdded', source: 'feishu', field: 'chats', items: ['oc_other', 'oc_new'] }] }] },
+    history: {
+      current: 3,
+      policyVersion: 'abcdef1234567890',
+      items: [
+        {
+          revision: 4,
+          savedAt: '2026-09-23T00:00:00Z',
+          source: 'panel',
+          policyVersion: '9876543210fedcba',
+          policyChanged: true,
+          notified: [],
+          block: 'source:feishu',
+          changes: [{ code: 'sourceRowsAdded', source: 'feishu', field: 'chats', items: ['oc_team'] }],
+        },
+        {
+          revision: 3,
+          savedAt: '2026-09-22T00:00:00Z',
+          source: 'panel',
+          policyVersion: 'abcdef1234567890',
+          policyChanged: true,
+          notified: [{ id: 't1', title: '修复回归' }],
+          block: 'policy',
+          changes: [
+            { code: 'mode', from: 'off', to: 'observe' },
+            { code: 'sourceField', source: 'feishu', field: 'directMessages', from: true, to: false },
+            { code: 'sourceRowsAdded', source: 'feishu', field: 'chats', items: ['oc_other', 'oc_new'] },
+          ],
+        },
+      ],
+    },
   }
 }
 
 /** A refusal response carrying the host's HTTP status code and JSON error body. Returned by route handlers when a request is rejected. */
-class Refusal { constructor(readonly status: 400 | 404 | 409 | 500, readonly body: Record<string, unknown>) {} }
+class Refusal {
+  constructor(
+    readonly status: 400 | 404 | 409 | 500,
+    readonly body: Record<string, unknown>,
+  ) {}
+}
 const refuse = (status: Refusal['status'], error: string, more: Record<string, unknown> = {}) => new Refusal(status, { error, ...more })
 type Query<K extends keyof Api> = Api[K] extends { query?: infer Q } ? keyof NonNullable<Q> & string : never
 type Body<K extends keyof Api> = Api[K] extends { body: infer B } ? B : undefined
-interface Request<K extends keyof Api> { params: RouteParams<K>; query: Partial<Record<Query<K>, string>>; body: Body<K> }
+interface Request<K extends keyof Api> {
+  params: RouteParams<K>
+  query: Partial<Record<Query<K>, string>>
+  body: Body<K>
+}
 type Answer<K extends keyof Api> = ApiResponse<K> | Refusal
-type Route<K extends keyof Api> = { query?: readonly Query<K>[]; answer: (request: Request<K>) => Answer<K> | Promise<Answer<K>> }
-  & (Api[K] extends { body: unknown } ? { body: true } : { body?: never })
+type Route<K extends keyof Api> = {
+  query?: readonly Query<K>[]
+  answer: (request: Request<K>) => Answer<K> | Promise<Answer<K>>
+} & (Api[K] extends { body: unknown } ? { body: true } : { body?: never })
 const page = <T>(items: T[]) => ({ items, total: items.length, next_offset: null })
 const ticketOf = (id: string) =>
   [...server.tickets.open, ...server.person, ...server.tickets.ended].find(ticket => ticket.id === id) ?? server.ticketDetails[id]

@@ -11,14 +11,26 @@ import type { Store } from '../store.ts'
 import { attribute, markdown, plain, preview, readable } from './text.ts'
 
 export type LinkTarget = (channel: ChannelRef) => ChannelLink
-export interface ViewHost { store: Store; sources: SourceRegistry; links: LinkTarget }
-export const page = <T>(items: T[], offset: number, limit: number) => ({ items: items.slice(offset, offset + limit), total: items.length, next_offset: offset + limit < items.length ? offset + limit : null })
+export interface ViewHost {
+  store: Store
+  sources: SourceRegistry
+  links: LinkTarget
+}
+export const page = <T>(items: T[], offset: number, limit: number) => ({
+  items: items.slice(offset, offset + limit),
+  total: items.length,
+  next_offset: offset + limit < items.length ? offset + limit : null,
+})
 const DAY = 86_400_000
 export const dayAgo = () => new Date(Date.now() - DAY).toISOString()
 export const newestFirst = (a: Ticket, b: Ticket) => b.updatedAt.localeCompare(a.updatedAt)
 
 /** Sender projection for the UI; automated notices have an empty `id` and no `name`. */
-export interface ActorView { source: string; id: string; name?: Localized }
+export interface ActorView {
+  source: string
+  id: string
+  name?: Localized
+}
 /** The tickets whose worker decides a person's follow-up (see `followupOwners`). */
 export type Owners = (trigger: Trigger) => string[]
 /**
@@ -88,26 +100,52 @@ export function triggerView(view: Snapshot, trigger: Trigger, threadDecisions?: 
   const { store } = view
   const disposition = store.triggers.disposition(trigger.id)
   const home = store.threads.get(threadKey(required(trigger.threads[0])))
-  const decision = disposition?.decisionId ? store.decisions.get(disposition.decisionId)
+  const decision = disposition?.decisionId
+    ? store.decisions.get(disposition.decisionId)
     : (threadDecisions ?? (home ? store.decisions.byThread(home.key) : [])).filter(item => item.triggerIds.includes(trigger.id)).at(-1)
   const delivered = view.owners(trigger).length > 0
   const queued = !!home?.pending.includes(trigger.id) && !delivered
   const evaluating = !!home?.evaluating?.triggerIds.includes(trigger.id)
   const decided = !!disposition?.acked?.length || (!!decision && settled(decision))
-  const unjudged = !!disposition?.filtered || decision?.kind === 'unavailable' || delivered || (!!disposition?.fanout.length && !decided)
-    || (!!decision && !decided)
+  const unjudged =
+    !!disposition?.filtered ||
+    decision?.kind === 'unavailable' ||
+    delivered ||
+    (!!disposition?.fanout.length && !decided) ||
+    (!!decision && !decided)
   const requeue = trigger.human && !queued && !evaluating && unjudged
-  return { id: trigger.id, source: trigger.source, actor: view.actor(trigger.actor, trigger.human), human: trigger.human, at: trigger.at,
+  return {
+    id: trigger.id,
+    source: trigger.source,
+    actor: view.actor(trigger.actor, trigger.human),
+    human: trigger.human,
+    at: trigger.at,
     text: plain(readable(trigger.text), true),
-    preview: preview(trigger.text), url: trigger.url, threads: trigger.threads.map(threadKey), actions: { requeue },
-    disposition: { queued, evaluating, delivered, filtered: disposition?.filtered, fanout: disposition?.fanout ?? [],
-      handbacks: (disposition?.handbacks ?? []).map(item => ({ ...item,
-        title: store.tickets.get(item.ticketId)?.title ?? item.ticketId })),
-      decision: decision ? { id: decision.id, outcome: outcomeOf(decision), reason: decision.reason, ticketId: decision.ticketId }
-        : undefined } }
+    preview: preview(trigger.text),
+    url: trigger.url,
+    threads: trigger.threads.map(threadKey),
+    actions: { requeue },
+    disposition: {
+      queued,
+      evaluating,
+      delivered,
+      filtered: disposition?.filtered,
+      fanout: disposition?.fanout ?? [],
+      handbacks: (disposition?.handbacks ?? []).map(item => ({
+        ...item,
+        title: store.tickets.get(item.ticketId)?.title ?? item.ticketId,
+      })),
+      decision: decision
+        ? { id: decision.id, outcome: outcomeOf(decision), reason: decision.reason, ticketId: decision.ticketId }
+        : undefined,
+    },
+  }
 }
 export type TriggerView = ReturnType<typeof triggerView>
-/** Single-line summary of why a ticket in the `person` stage is waiting on human action (omitted once answered and back with the Executor). */
+/**
+ * Single-line summary of why a ticket in the `person` stage is waiting on human action (omitted once answered and back with the
+ * Executor).
+ */
 function ticketNote(ticket: Ticket, stage: TicketStage): { text: string; error: boolean } | undefined {
   if (stage.stage !== 'person') return undefined
   if (stage.action === 'answer' && ticket.attention) return { text: preview(ticket.attention.question), error: false }
@@ -136,11 +174,19 @@ function threadUrl(store: Store, thread: Thread): string | undefined {
 }
 export function threadFacts(store: Store, thread: Thread) {
   const url = threadUrl(store, thread)
-  return { key: thread.key, source: thread.ref.source, title: threadTitle(store, thread), ...url ? { url } : {}, facts: (thread.meta.facts ?? {}) as ThreadFacts }
+  return {
+    key: thread.key,
+    source: thread.ref.source,
+    title: threadTitle(store, thread),
+    ...(url ? { url } : {}),
+    facts: (thread.meta.facts ?? {}) as ThreadFacts,
+  }
 }
 export type ThreadFactsView = ReturnType<typeof threadFacts>
-export const ticketLine = (view: Snapshot, ticket: Ticket) => ({ ...ticketSummary(ticket),
-  threads: view.threadsOf(ticket.id).map(thread => threadFacts(view.store, thread)) })
+export const ticketLine = (view: Snapshot, ticket: Ticket) => ({
+  ...ticketSummary(ticket),
+  threads: view.threadsOf(ticket.id).map(thread => threadFacts(view.store, thread)),
+})
 export function threadTitle(store: Pick<Store, 'read'>, thread: Thread): string {
   const label = attribute(thread.meta.label)
   if (label) return label
@@ -172,12 +218,30 @@ export function threadSummary(view: Snapshot, thread: Thread) {
     return { id, title: ticket?.title ?? id, state: !ticket ? 'unknown' : liveTicket(ticket) ? 'open' : 'ended' }
   })
   const pending = awaitingEval(view, thread).length
-  return { key: thread.key, source: thread.ref.source, title: threadTitle(store, thread), stage: threadStage(thread, pending, tickets),
-    latest: latestOnThread(view, thread), lastAt: thread.lastAt ?? thread.createdAt, createdAt: thread.createdAt,
-    subscriptions: thread.subscriptions.length, tickets,
-    evaluating: thread.evaluating ? { id: thread.evaluating.id, strength: thread.evaluating.strength, triggers: thread.evaluating.triggerIds.length, startedAt: thread.evaluating.startedAt, deadline: thread.evaluating.deadline } : undefined,
-    pending, pollError: attribute(thread.meta.pollError), url: threadUrl(store, thread),
-    facts: (thread.meta.facts ?? {}) as ThreadFacts }
+  return {
+    key: thread.key,
+    source: thread.ref.source,
+    title: threadTitle(store, thread),
+    stage: threadStage(thread, pending, tickets),
+    latest: latestOnThread(view, thread),
+    lastAt: thread.lastAt ?? thread.createdAt,
+    createdAt: thread.createdAt,
+    subscriptions: thread.subscriptions.length,
+    tickets,
+    evaluating: thread.evaluating
+      ? {
+        id: thread.evaluating.id,
+        strength: thread.evaluating.strength,
+        triggers: thread.evaluating.triggerIds.length,
+        startedAt: thread.evaluating.startedAt,
+        deadline: thread.evaluating.deadline,
+      }
+      : undefined,
+    pending,
+    pollError: attribute(thread.meta.pollError),
+    url: threadUrl(store, thread),
+    facts: (thread.meta.facts ?? {}) as ThreadFacts,
+  }
 }
 export type ThreadSummaryView = ReturnType<typeof threadSummary>
 /** Resolves a channel link, preferring the specific trigger URL when the source link references a trigger. */
@@ -200,15 +264,28 @@ const outcomeOf = (decision: Decision): DecisionOutcome =>
 export function decisionView(view: Snapshot, decision: Decision) {
   const { store } = view
   const thread = store.threads.get(decision.threadKey)
-  const texts = decision.triggerIds.flatMap((id) => { const trigger = store.triggers.get(id); return trigger ? [preview(trigger.text)] : [] })
+  const texts = decision.triggerIds.flatMap((id) => {
+    const trigger = store.triggers.get(id)
+    return trigger ? [preview(trigger.text)] : []
+  })
   const audit = AuditSchema.parse(decision.audit ?? {})
   // Fall back to `matches` for assessments recorded by older versions.
   const judged = audit.rule_assessments ?? audit.matches?.map(match => ({ ...match, matched: true })) ?? []
-  return { id: decision.id, kind: decision.kind, outcome: outcomeOf(decision), reason: decision.reason, at: decision.at,
-    strength: decision.strength, ticketId: decision.ticketId, triggerIds: decision.triggerIds, thread: decision.threadKey,
+  return {
+    id: decision.id,
+    kind: decision.kind,
+    outcome: outcomeOf(decision),
+    reason: decision.reason,
+    at: decision.at,
+    strength: decision.strength,
+    ticketId: decision.ticketId,
+    triggerIds: decision.triggerIds,
+    thread: decision.threadKey,
     rules: judged.map(rule => ({ ...view.rule(rule.rule_id), matched: rule.matched, reason: rule.reason })),
-    ...audit.direction ? { direction: audit.direction } : {},
-    ...thread ? { threadTitle: threadTitle(store, thread) } : {}, preview: texts.join(' / '),
-    ticketTitle: decision.ticketId ? store.tickets.get(decision.ticketId)?.title : undefined }
+    ...(audit.direction ? { direction: audit.direction } : {}),
+    ...(thread ? { threadTitle: threadTitle(store, thread) } : {}),
+    preview: texts.join(' / '),
+    ticketTitle: decision.ticketId ? store.tickets.get(decision.ticketId)?.title : undefined,
+  }
 }
 export type DecisionView = ReturnType<typeof decisionView>

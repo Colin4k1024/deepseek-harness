@@ -87,25 +87,42 @@ function useThreadTimeline(key: string, target: string | undefined) {
   useEffect(() => {
     if (!missing) return
     let active = true
-    call('GET threads/:key', { key, query: { limit: PAGE, around: target } }).then((page) => {
-      if (active) setOlder({ triggers: page.timeline, cursor: page.earlier })
-    }, (failure: unknown) => { if (active) notify(errorText(failure)) })
-    return () => { active = false }
+    call('GET threads/:key', { key, query: { limit: PAGE, around: target } }).then(
+      (page) => {
+        if (active) setOlder({ triggers: page.timeline, cursor: page.earlier })
+      },
+      (failure: unknown) => {
+        if (active) notify(errorText(failure))
+      },
+    )
+    return () => {
+      active = false
+    }
   }, [missing, call, key, target, notify])
   const gapPage = newest && older ? { newest, older, gap: gapBetween(newest, older) } : undefined
   useEffect(() => {
     if (gapPage === undefined || !gapPage.gap) return
     let active = true
     const fill = async () => {
-      let run = gapPage.newest.timeline, cursor = gapPage.newest.earlier
+      let run = gapPage.newest.timeline,
+        cursor = gapPage.newest.earlier
       while (cursor !== null && !overlaps(run, gapPage.older.triggers)) {
         const page = await call('GET threads/:key', { key, query: { limit: PAGE, before: cursor } })
-        run = [...page.timeline, ...run]; cursor = page.earlier
+        run = [...page.timeline, ...run]
+        cursor = page.earlier
       }
-      if (active) setOlder({ triggers: byTime([...gapPage.older.triggers, ...run]), cursor: overlaps(run, gapPage.older.triggers) ? gapPage.older.cursor : cursor })
+      if (active)
+        setOlder({
+          triggers: byTime([...gapPage.older.triggers, ...run]),
+          cursor: overlaps(run, gapPage.older.triggers) ? gapPage.older.cursor : cursor,
+        })
     }
-    fill().catch((failure: unknown) => { if (active) notify(errorText(failure)) })
-    return () => { active = false }
+    fill().catch((failure: unknown) => {
+      if (active) notify(errorText(failure))
+    })
+    return () => {
+      active = false
+    }
   }, [gapPage?.gap, newest, older, call, key, notify])
   const earlier = useAction(async (shown: ThreadPageView) => {
     const page = await call('GET threads/:key', { key, query: { limit: PAGE, before: required(shown.earlier) } })

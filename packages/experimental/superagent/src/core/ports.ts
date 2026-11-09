@@ -1,6 +1,18 @@
 /** Ports the core depends on. Sources, policies, assessors, executors, and channels are project-specific. */
-import type { Assignment, ChannelRef, Decision, DecisionKind, Mandate, MandateBasis, Strength, Thread, Ticket, TicketEndBy, TicketOutcome, Trigger }
-  from './model.ts'
+import type {
+  Assignment,
+  ChannelRef,
+  Decision,
+  DecisionKind,
+  Mandate,
+  MandateBasis,
+  Strength,
+  Thread,
+  Ticket,
+  TicketEndBy,
+  TicketOutcome,
+  Trigger,
+} from './model.ts'
 import type { Reason } from './reasons.ts'
 
 /** Gate admission result: either inadmissible with a reason code, or admissible with strength and MandateBasis. */
@@ -74,12 +86,21 @@ export interface Executor {
    * or `Engine.deliveryFailed`, and through `Engine.inputsRead` once its worker's Session takes them into a step.
    */
   readonly deliver: (ticket: Ticket, assignment: Assignment) => void
-  /** End an assignment's work, such as cancelling its Session's turn; called after the ticket or assignment has already ended in the domain. */
+  /**
+   * End an assignment's work, such as cancelling its Session's turn; called after the ticket or assignment has already ended in the
+   * domain.
+   */
   readonly stop: (ticket: Ticket, assignment: Assignment, reason: string) => void
 }
 
 /** A message for a Channel; `ticketId` names the Ticket it is for, when there is one. */
-export interface OutboundMessage { id: string; channel: ChannelRef; text: string; kind: 'acknowledgement' | 'reply' | 'notice'; ticketId?: string }
+export interface OutboundMessage {
+  id: string
+  channel: ChannelRef
+  text: string
+  kind: 'acknowledgement' | 'reply' | 'notice'
+  ticketId?: string
+}
 /** A queued message waits (`pending`), went out (`sent`), or was dropped because its conversation can never receive it (`dropped`). */
 export type ReplyStatus = 'pending' | 'sent' | 'dropped'
 /** The messages queued for Channels; the Engine queues them inside its commands, and a sender delivers them later. */

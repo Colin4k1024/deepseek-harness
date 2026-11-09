@@ -260,37 +260,46 @@ export class MasterAssessor implements Assessor {
     const source = this.host.threadContext(trigger)
     if (read.resource === 'message') {
       const message = messages.get(read.message_id ?? source?.messageId ?? '')
-      if (message === undefined) throw new Error('Unknown message reference. Use resource=root/parent or read the thread first; copy a returned message read call.')
+      if (message === undefined)
+        throw new Error('Unknown message reference. Use resource=root/parent or read the thread first; copy a returned message read call.')
       body = message
-    }
-    else if (read.resource === 'thread' || read.resource === 'root' || read.resource === 'parent') {
+    } else if (read.resource === 'thread' || read.resource === 'root' || read.resource === 'parent') {
       if (!source) throw new Error(NO_CONTEXT)
-      if (read.cursor !== undefined && !cursors.has(read.cursor)) throw new Error('Unknown thread cursor. First call {resource:"thread"}; then copy the returned next_read exactly.')
+      if (read.cursor !== undefined && !cursors.has(read.cursor))
+        throw new Error('Unknown thread cursor. First call {resource:"thread"}; then copy the returned next_read exactly.')
       const result = await source.read(commands, read.resource, read.cursor)
-      const references = result.messages.filter(message => !message.deleted).flatMap((message) => {
-        messages.set(message.id, message.text)
-        return this.imageReferences(source, trigger, message.text, message.id, cache)
-      })
+      const references = result.messages
+        .filter(message => !message.deleted)
+        .flatMap((message) => {
+          messages.set(message.id, message.text)
+          return this.imageReferences(source, trigger, message.text, message.id, cache)
+        })
       if (result.next) cursors.add(result.next)
       const next = result.next ? { trigger_id: trigger.id, resource: 'thread', cursor: result.next } : null
       body = JSON.stringify({ images: references, next_read: next, ...result.body })
-    }
-    else {
+    } else {
       body = await readRepositoryPath(commands, required(read.path), read.resource === 'directory' ? 'directory' : 'file')
     }
     snapshots.set(cacheKey, body)
     return textPage(read.resource, body, read.offset, 4000)
   }
   /** Converts the assessment into an outcome under current settings and passes it to `Engine.decide` for policy verification. */
-  async decide(triggerId: string, result: z.infer<typeof AssessmentSchema>, signal?: AbortSignal): Promise<{ state: string; ticket_id?: string; reason: string }> {
+  async decide(
+    triggerId: string,
+    result: z.infer<typeof AssessmentSchema>,
+    signal?: AbortSignal,
+  ): Promise<{ state: string; ticket_id?: string; reason: string }> {
     await Promise.resolve()
     const { candidate } = this.evalFor(triggerId)
     signal?.throwIfAborted()
     let outcome: AssessmentOutcome = assessmentOutcome(result, this.host.settings(), candidate.strength)
-    if (outcome.kind === 'accept' && outcome.acknowledgement) outcome = { ...outcome, acknowledgement: checkedImText(outcome.acknowledgement) }
+    if (outcome.kind === 'accept' && outcome.acknowledgement)
+      outcome = { ...outcome, acknowledgement: checkedImText(outcome.acknowledgement) }
     const decision = this.host.engine.decide(triggerId, { ...outcome, evalId: candidate.evalId })
     return { state: decision.kind, ...(decision.ticketId ? { ticket_id: decision.ticketId } : {}), reason: reasonText(decision.reason) }
   }
   /** Aborts any in-flight thread context or repository read commands when the runtime stops. */
-  stop(): void { this.controller.abort() }
+  stop(): void {
+    this.controller.abort()
+  }
 }

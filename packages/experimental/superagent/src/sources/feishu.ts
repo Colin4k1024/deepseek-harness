@@ -113,21 +113,45 @@ export const feishuKind: SourceKind<FeishuConfig> = {
         // Preserve existing member order so policy version hashes stay stable; update names in place and append new members.
         const users = new Map(result.users.map(user => [user.member_id, user.name]))
         const known = new Set(part.allowed.map(entry => entry.id))
-        return { ...part, allowed: [...part.allowed.filter(entry => users.has(entry.id)).map(entry => ({ ...entry, name: required(users.get(entry.id)) })), ...result.users.filter(user => !known.has(user.member_id)).map(user => ({ id: user.member_id, name: user.name }))] }
+        return {
+          ...part,
+          allowed: [
+            ...part.allowed.filter(entry => users.has(entry.id)).map(entry => ({ ...entry, name: required(users.get(entry.id)) })),
+            ...result.users.filter(user => !known.has(user.member_id)).map(user => ({ id: user.member_id, name: user.name })),
+          ],
+        }
       },
     },
   },
   environment: {
     variables: [
       { key: 'DSH_SUPERAGENT_FEISHU_BOT', description: { zh: '飞书机器人；lark-cli 以它行事', en: 'The Feishu bot; lark-cli acts as it' } },
-      { key: 'DSH_SUPERAGENT_FEISHU_CHAT', description: { zh: '接下工单的飞书群 chat_id；工单不是从飞书来的时为空', en: 'chat_id of the Feishu chat that started the ticket; empty when the ticket did not start on Feishu' } },
+      {
+        key: 'DSH_SUPERAGENT_FEISHU_CHAT',
+        description: {
+          zh: '接下工单的飞书群 chat_id；工单不是从飞书来的时为空',
+          en: 'chat_id of the Feishu chat that started the ticket; empty when the ticket did not start on Feishu',
+        },
+      },
     ],
-    values: ({ deployment, trigger }) => ({ DSH_SUPERAGENT_FEISHU_BOT: deployment.feishu ? deployment.feishu.name || deployment.feishu.botId : '', DSH_SUPERAGENT_FEISHU_CHAT: trigger?.source === SOURCE ? textValue(trigger.meta.chatId) : '' }),
+    values: ({ deployment, trigger }) => ({
+      DSH_SUPERAGENT_FEISHU_BOT: deployment.feishu ? deployment.feishu.name || deployment.feishu.botId : '',
+      DSH_SUPERAGENT_FEISHU_CHAT: trigger?.source === SOURCE ? textValue(trigger.meta.chatId) : '',
+    }),
   },
-  facts: (deployment): Record<string, Localized | string> => deployment?.feishu ? { cli: { zh: `当前机器人 ${deployment.feishu.name || deployment.feishu.botId}`, en: `Current bot ${deployment.feishu.name || deployment.feishu.botId}` } } : {},
+  facts: (deployment): Record<string, Localized | string> =>
+    deployment?.feishu
+      ? {
+        cli: {
+          zh: `当前机器人 ${deployment.feishu.name || deployment.feishu.botId}`,
+          en: `Current bot ${deployment.feishu.name || deployment.feishu.botId}`,
+        },
+      }
+      : {},
 }
 /** Returns the Feishu Source's settings, falling back to schema defaults while the Feishu plugin is disabled. */
-export const feishuSettings = (sources: SourceRegistry): FeishuConfig => sources.instance<FeishuConfig>(SOURCE)?.config ?? FeishuConfigSchema.parse({})
+export const feishuSettings = (sources: SourceRegistry): FeishuConfig =>
+  sources.instance<FeishuConfig>(SOURCE)?.config ?? FeishuConfigSchema.parse({})
 
 export const name = 'dsh-superagent-feishu'
 export const inject = ['orchestrator']

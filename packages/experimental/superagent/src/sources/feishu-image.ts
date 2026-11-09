@@ -8,7 +8,10 @@ import { z } from 'zod'
 import type { Commands } from '../infra/commands.ts'
 import type { FeishuRef } from './feishu-read.ts'
 
-/** Extracts Feishu image keys from message text so keys remain paired with the originating message; arbitrary remote IDs are not accepted. */
+/**
+ * Extracts Feishu image keys from message text so keys remain paired with the originating message; arbitrary remote IDs are not
+ * accepted.
+ */
 export function admissionImageKeys(text: string): string[] {
   return [...new Set(text.match(/\bimg_[a-zA-Z0-9_-]+\b/g) ?? [])]
 }
@@ -19,9 +22,20 @@ export interface AdmissionImage {
   image: ImageAttachmentRef
 }
 
-export async function readAdmissionImage(agent: Agent, commands: Commands, ref: FeishuRef, text: string, imageKey: string, stateDir: string, signal: AbortSignal): Promise<AdmissionImage> {
+export async function readAdmissionImage(
+  agent: Agent,
+  commands: Commands,
+  ref: FeishuRef,
+  text: string,
+  imageKey: string,
+  stateDir: string,
+  signal: AbortSignal,
+): Promise<AdmissionImage> {
   if (!admissionImageKeys(text).includes(imageKey)) throw new Error('Choose an image key from this source message')
-  const messageId = z.string().regex(/^om_[a-zA-Z0-9_-]+$/).parse(ref.messageId)
+  const messageId = z
+    .string()
+    .regex(/^om_[a-zA-Z0-9_-]+$/)
+    .parse(ref.messageId)
   const attachments = agent.ctx.get('attachments')
   if (!attachments) throw new Error('Image reading is unavailable: no attachment service is mounted')
   const route = agent.session.requestHeader()?.config

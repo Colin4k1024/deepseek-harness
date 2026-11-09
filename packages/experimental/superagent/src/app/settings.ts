@@ -182,13 +182,22 @@ export class Settings {
       return { saved: true, revision: store.blockRevision(block), policy_changed: false, restarting: false, context_delivery: delivery }
     }
     const restarting = setupChanged(old, settings) || !this.host.setup.configured()
-    const before = policyVersion(old), after = policyVersion(settings)
+    const before = policyVersion(old),
+      after = policyVersion(settings)
     const scope = (version: SettingsValue) => ({
-      scope: (input: { source: string; meta: Record<string, unknown> }) => this.host.sources.scope(input, version) })
-    const effects: Map<string, PolicyEffect> = before === after ? new Map<string, PolicyEffect>() : policyEffects(store.tickets.open(), old, SettingsSchema.parse(settings), scope)
+      scope: (input: { source: string; meta: Record<string, unknown> }) => this.host.sources.scope(input, version),
+    })
+    const effects: Map<string, PolicyEffect> =
+      before === after ? new Map<string, PolicyEffect>() : policyEffects(store.tickets.open(), old, SettingsSchema.parse(settings), scope)
     const notified = [...effects.keys()]
     store.atomic(() => {
-      store.saveSettings(SettingsSchema.parse(settings), { source: origin, block, policyVersion: after, policyChanged: before !== after, notified })
+      store.saveSettings(SettingsSchema.parse(settings), {
+        source: origin,
+        block,
+        policyVersion: after,
+        policyChanged: before !== after,
+        notified,
+      })
       if (origin !== 'tool') sessions.notify(...settingsNotice(block, changedPaths(old, settings)))
       if (before !== after) engine.policyChanged(before, after, effects)
     })
@@ -243,8 +252,13 @@ export class Settings {
     const health = this.syncHealth(id)
     try {
       const revision = store.blockRevision('policy')
-      const part = await required(required(required(sources.kind(id)).policy).sync).run(this.host.sourceHost, required(sources.policyPart(id)), this.host.lifetime)
-      if (revision !== store.blockRevision('policy')) throw new SettingsConflict('Policy changed during synchronization. Retry with the current settings.')
+      const part = await required(required(required(sources.kind(id)).policy).sync).run(
+        this.host.sourceHost,
+        required(sources.policyPart(id)),
+        this.host.lifetime,
+      )
+      if (revision !== store.blockRevision('policy'))
+        throw new SettingsConflict('Policy changed during synchronization. Retry with the current settings.')
       const policy = store.settings().policy
       // Skip saving a new revision when the synced list is unchanged.
       if (JSON.stringify(part) !== JSON.stringify(policy.sources[id])) {
