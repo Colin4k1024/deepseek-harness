@@ -63,7 +63,7 @@ class RouteError extends Error { constructor(readonly status: 400 | 404, message
 async function readBody(req: IncomingMessage, maxBytes = 128 * 1024): Promise<unknown> {
   let size = 0; const chunks: Buffer[] = []
   for await (const chunk of req) {
-    const bytes = Buffer.from(chunk); size += bytes.length
+    const bytes = Buffer.from(chunk as Uint8Array); size += bytes.length
     if (size > maxBytes) throw new RouteError(400, `Request exceeds ${maxBytes} bytes`)
     chunks.push(bytes)
   }

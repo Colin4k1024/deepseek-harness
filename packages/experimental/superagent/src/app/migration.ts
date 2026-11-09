@@ -593,7 +593,7 @@ function feishuThreadLinks(store: Store): void {
  */
 function issueSourceRecords(store: Store): void {
   store.db.exec('UPDATE trigger SET value = json_set(value, \'$.source\', \'github\') WHERE value ->> \'$.source\' = \'github-issue\'')
-  const pending = store.get('github-issue-pending') ?? {}
+  const pending = store.get<Record<string, { number: number; at: string }>>('github-issue-pending') ?? {}
   const retries = { ...store.get(KV.github.retries) }
   for (const { number, at } of Object.values(pending)) {
     if (!(Date.now() - Date.parse(at) < POLL_HORIZON_MS)) continue

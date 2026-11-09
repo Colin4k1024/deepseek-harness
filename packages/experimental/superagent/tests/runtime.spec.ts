@@ -160,7 +160,7 @@ beforeEach(async () => {
   restricts = new Map()
   deliveries = vi.fn()
   controller = {
-    create: vi.fn(async ({ sessionId, agentPreset }) => {
+    create: vi.fn(async ({ sessionId, agentPreset }: { sessionId: string; agentPreset: object }) => {
       if (agents.has(sessionId)) return
       const agentCtx = new Context()
       const preset = {}
@@ -198,7 +198,7 @@ beforeEach(async () => {
       agents.set(sessionId, { id: sessionId, ctx: agentCtx, inbox, followup: deliver('queue'), steer: deliver('steer'), status: 'idle', inject: vi.fn(), session: { id: sessionId, header: { agentPreset }, snapshotEvents: () => modelEvents, requestHeader: () => undefined, append: vi.fn((type: string, data: unknown) => { modelEvents.push({ type, data }) }) }, cancel: vi.fn(), whenIdle: async () => {} } as never)
       bindScopeParent(agents.get(sessionId)!, preset)
     }),
-    selectModel: vi.fn(async () => {}), resolveAgent: vi.fn(async id => agents.has(id) ? { agent: agents.get(id) } : { error: { code: 'session/not-found' } }), rename: vi.fn(async () => {}),
+    selectModel: vi.fn(async () => {}), resolveAgent: vi.fn(async (id: string) => agents.has(id) ? { agent: agents.get(id) } : { error: { code: 'session/not-found' } }), rename: vi.fn(async () => {}),
     prompt: vi.fn(() => { throw new Error('Plugin delivery must not use user RPC') }),
     inspect: vi.fn(async () => ({ events: [] })),
   }

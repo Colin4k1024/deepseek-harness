@@ -126,7 +126,7 @@ it('registers the built-in Source skills, Feishu only with a Feishu bot, before 
 
 describe('overrides of built-in parts', () => {
   const settings = () => SettingsSchema.parse({})
-  const config = (overrides: PromptConfig['overrides']) => ({ ...defaultPrompts(), overrides })
+  const config = (overrides: PromptConfig['overrides']): PromptConfig => ({ ...defaultPrompts(), overrides })
   it('compose in place of the built-in texts, for the roles that read each, the handoff per role and the Source skills', () => {
     withStore((store) => {
       const prompts = promptsOf(store)
@@ -228,10 +228,10 @@ describe('overrides of built-in parts', () => {
     withStore((store) => {
       const prompts = promptsOf(store)
       for (const part of ['constructor', 'toString']) {
-        expect(() => prompts.validate(config(JSON.parse(`{"${part}": { "text": "x" }}`)))).toThrow(new UserError('unknownPromptPart', { part }))
+        expect(() => prompts.validate(config(JSON.parse(`{"${part}": { "text": "x" }}`) as PromptConfig['overrides']))).toThrow(new UserError('unknownPromptPart', { part }))
       }
       // The parser drops a __proto__ key, which sets no prototype.
-      expect(prompts.validate(config(JSON.parse('{"__proto__": { "text": "x" }}')))).toEqual(defaultPrompts())
+      expect(prompts.validate(config(JSON.parse('{"__proto__": { "text": "x" }}') as PromptConfig['overrides']))).toEqual(defaultPrompts())
       expect(() => prompts.validate(config({ 'runtime/shared': { text: ' \n ' } }))).toThrow(new UserError('promptPartEmpty', { part: 'runtime/shared' }))
       const edited = prompts.validate(config({ 'runtime/environment': { text: '{constructor} {toString}\n{variables}' } }))
       expect(prompts.compose(edited, 'worker').endsWith(`{constructor} {toString}\n${ENVIRONMENT_LINE}`)).toBe(true)

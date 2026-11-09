@@ -17,13 +17,14 @@ function harness(policyOverrides: Partial<Policy> = {}, { emit, prepareTicket }:
   const outbox: OutboundMessage[] = []
   const withdrawn: string[] = []
   const requests: Candidate[] = []
-  const assessor: Assessor = { request: vi.fn((candidate) => { requests.push(candidate) }), release: vi.fn() }
+  const assessor: Assessor = { request: vi.fn((candidate: Candidate) => { requests.push(candidate) }), release: vi.fn() }
   const launches: [Ticket, Assignment][] = []
   const deliveries = new Set<string>()
   /** Inputs the Executor handed to a running assignment, as [ticket id, input id]. */
   const delivered: [string, string][] = []
   const executor: Executor = {
-    start: vi.fn((ticket, assignment) => { launches.push([ticket, assignment]) }), deliver: vi.fn((ticket) => { deliveries.add(ticket.id) }), stop: vi.fn(),
+    start: vi.fn((ticket: Ticket, assignment: Assignment) => { launches.push([ticket, assignment]) }),
+    deliver: vi.fn((ticket: Ticket) => { deliveries.add(ticket.id) }), stop: vi.fn(),
   }
   let version = 'v1', paused = false
   const policy: Policy = {
