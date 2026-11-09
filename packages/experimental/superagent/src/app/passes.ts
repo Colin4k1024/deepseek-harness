@@ -61,10 +61,11 @@ export class Passes {
     const next = () => { this.pumpAgain = undefined; return this.pump() }
     return this.pumpAgain ??= this.pumping.then(next, next)
   }
-  private async pumpOnce(): Promise<void> {
+  private pumpOnce(): Promise<void> {
     this.host.effects.kick()
-    if (this.host.closing()) return
+    if (this.host.closing()) return Promise.resolve()
     // While processing is paused, the Engine only records the pause on active Evals so they do not expire.
     this.host.engine.evaluateDue()
+    return Promise.resolve()
   }
 }

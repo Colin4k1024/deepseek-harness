@@ -309,6 +309,7 @@ export async function readResource(host: ResourceHost, resource: string, offset:
   if (!route) throw new Error('Unknown context resource')
   const sessionId = ticketId ? workerSessionId(ticketId) : host.masterId
   const rest = route[0].endsWith('/') ? name.slice(route[0].length) : ''
+  await Promise.resolve()
   return route[1]({ host, resource: name, rest, offset, sessionId, ...limit ? { limit } : {}, ...ticketId ? { ticketId } : {},
     ...signal ? { signal } : {} })
 }

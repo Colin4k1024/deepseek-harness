@@ -48,7 +48,7 @@ export function executorTools(host: ExecutorToolsHost, ticket: Ticket): Tool[] {
         thread: z.string().min(1).describe('The thread key, which trigger/<id> of one of its messages shows as thread, such as feishu:<chat>:<root> or github:<number>.'),
         reason: z.string().trim().min(1).max(300).describe('One sentence on why the thread is not about this ticket.'),
       }).strict(),
-      execute: async (args) => { host.engine.markUnrelated(ticketId, args.thread, args.reason); return { removed: true, thread: args.thread } },
+      execute: async (args) => { await Promise.resolve(); host.engine.markUnrelated(ticketId, args.thread, args.reason); return { removed: true, thread: args.thread } },
     }),
     tool({
       name: 'orchestrator_thread_follow',
@@ -57,13 +57,13 @@ export function executorTools(host: ExecutorToolsHost, ticket: Ticket): Tool[] {
         thread: z.string().describe('Thread key, such as github:<number>.'),
         reason: z.string().trim().min(1).max(300).describe('How it relates, in one sentence.'),
       }).strict(),
-      execute: async args => host.store.atomic(() => {
+      execute: async args => await Promise.resolve(host.store.atomic(() => {
         const at = args.thread.indexOf(':')
         if (at < 1 || at === args.thread.length - 1) throw new Error('A thread key is <source>:<id>, such as github:<number>')
         const followed = host.engine.followForContext(ticketId, { source: args.thread.slice(0, at), id: args.thread.slice(at + 1) })
         if (followed) host.sessions.notify(...threadFollowedNotice(ticketId, args.thread, args.reason))
         return { followed, thread: args.thread }
-      }),
+      })),
     }),
     tool({
       name: 'orchestrator_trigger_handback',
@@ -72,7 +72,7 @@ export function executorTools(host: ExecutorToolsHost, ticket: Ticket): Tool[] {
         trigger_id: z.string().min(1),
         reason: z.string().trim().min(1).max(300).describe('One sentence on what it asks for beyond this ticket.'),
       }).strict(),
-      execute: async args => ({ trigger_id: args.trigger_id, queued: host.engine.handback(ticketId, args.trigger_id, args.reason) }),
+      execute: async args => await Promise.resolve({ trigger_id: args.trigger_id, queued: host.engine.handback(ticketId, args.trigger_id, args.reason) }),
     }),
     tool({
       name: 'orchestrator_report',

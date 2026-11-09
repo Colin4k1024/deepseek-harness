@@ -94,7 +94,7 @@ export class Runtime extends Service implements SourceHost {
     mkdirSync(machine.stateDir, { recursive: true, mode: 0o700 })
     const compromised = (error: Error) => { this.runtimeHealth.set({ state: 'error', detail: error.message }); this.stopped.abort() }
     const release = lockSync(machine.stateDir, { stale: 30_000, onCompromised: compromised })
-    this.releaseLock = async () => { release() }
+    this.releaseLock = async () => { await Promise.resolve(); release() }
     let opened: Store | undefined
     try {
       const report = (error: unknown) => { ctx.logger.warn('dsh-superagent: %s', String(error)) }

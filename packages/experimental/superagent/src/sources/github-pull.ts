@@ -56,6 +56,7 @@ export function claimPull(ctx: SourceContext, ticketId: string, pr: Pull): strin
  * @returns whether the PR has ended.
  */
 export async function observePull(ctx: SourceContext, pr: Pull): Promise<boolean> {
+  await Promise.resolve()
   const ended = pr.state === 'closed' || !!pr.merged
   if (ended) closePull(ctx, pr)
   else {

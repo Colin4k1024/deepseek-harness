@@ -128,6 +128,7 @@ function routeTool(host: MainToolsHost): Tool {
     description: 'Route candidates, one item each by the card\'s trigger_id, in one call: accept an explicit request as a new ticket, attach a trigger to an existing ticket, stop a ticket on a person\'s stop message, or ignore a candidate that needs no ticket or stop, as dispatch says. Items run in order and each is answered on its own; a refused item leaves the others. An inferred candidate may be ignored here; accepting one goes through orchestrator_eval_decide.',
     schema: z.object({ decisions: z.array(RouteItemSchema).min(1).max(20) }).strict(),
     execute: async ({ decisions }) => {
+      await Promise.resolve()
       const decided = new Map<string, string>()
       const results = decisions.map((item) => {
         const head = { trigger_id: item.trigger_id, kind: item.kind }
@@ -162,13 +163,14 @@ export function mainTools(host: MainToolsHost, agent: Agent): Tool[] {
       name: 'orchestrator_ticket_retry',
       description: 'Start a new assignment on an explicit human request to retry a ticket whose worker reported failed or blocked, or whose input was not delivered; the stalled one ends.',
       schema: z.object({ ticket_id: z.string() }).strict(),
-      execute: async args => routed(host, { reason: 'Started a new assignment', ticketId: host.engine.retryTicket(args.ticket_id).id }),
+      execute: async args => await Promise.resolve(routed(host, { reason: 'Started a new assignment', ticketId: host.engine.retryTicket(args.ticket_id).id })),
     }),
     tool({
       name: 'orchestrator_ticket_request_status',
       description: 'Ask the worker of an idle ticket, one whose turn ended without a report, for a status report; for other tickets it sends nothing and returns the card.',
       schema: z.object({ ticket_id: z.string() }).strict(),
       execute: async (args) => {
+        await Promise.resolve()
         const reason = host.engine.requestStatus(args.ticket_id) ? 'Asked the worker for a status report' : 'The worker is not waiting; nothing was sent'
         return routed(host, { reason, ticketId: args.ticket_id })
       },
@@ -181,6 +183,7 @@ export function mainTools(host: MainToolsHost, agent: Agent): Tool[] {
         text: z.string().trim().min(1).refine(text => wordCount(text) <= IM_WORDS, `At most ${IM_WORDS} words`),
       }).strict(),
       execute: async (args) => {
+        await Promise.resolve()
         host.engine.note(args.ticket_id, args.text)
         return routed(host, { reason: 'Noted for the worker', ticketId: args.ticket_id })
       },
@@ -190,6 +193,7 @@ export function mainTools(host: MainToolsHost, agent: Agent): Tool[] {
       description: 'Queue a trigger for a fresh assessment, such as after its Source\'s access changed; a follow-up that reached a ticket comes back only from its worker.',
       schema: z.object({ trigger_id: z.string() }).strict(),
       execute: async (args) => {
+        await Promise.resolve()
         // A follow-up that reached a ticket is its worker's to judge, which hands back what is not its own; a person may still requeue it.
         const trigger = host.store.triggers.get(args.trigger_id)
         const owners = trigger ? followupOwners(trigger, host.store) : []
@@ -242,6 +246,7 @@ export function mainTools(host: MainToolsHost, agent: Agent): Tool[] {
       description: 'Drop every ticket subscription on a thread. Later messages there no longer reach those tickets as context; a new positive decision can subscribe it again.',
       schema: z.object({ thread: z.string().describe('Thread key, for example github:123 or feishu:<chat>:<root message>') }).strict(),
       execute: async (args) => {
+        await Promise.resolve()
         return { removed: host.quietly(() => host.engine.unsubscribe(args.thread)), thread: args.thread }
       },
     }),
