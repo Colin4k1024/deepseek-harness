@@ -447,7 +447,7 @@ export function usePanelServer(cleanup: () => void) {
       const address = new URL(url, 'http://127.0.0.1:3082')
       const path = address.pathname.replace('/orchestrator/api/', '')
       const method = init?.method ?? 'GET'
-      const body: unknown = init?.body ? JSON.parse(String(init.body)) : undefined
+      const body: unknown = init?.body ? JSON.parse(typeof init.body === 'string' ? init.body : JSON.stringify(init.body)) : undefined
       server.requests.push({ path: decodeURIComponent(`${path}${address.search}`), method, ...body === undefined ? {} : { body } })
       const route = match(method, path.split('/'))
       if (!route) return new Reply({ error: 'Unknown operation' }, 404)

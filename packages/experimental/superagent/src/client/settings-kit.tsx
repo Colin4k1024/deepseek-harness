@@ -10,6 +10,7 @@ import { useAction, usePanel, usePanelData } from './provider.tsx'
 import { settingsRoute } from './route.ts'
 import { errorText, localized, valueLabel, when, type T } from './text.ts'
 import { Hint, LoadState } from './widgets.tsx'
+import { textValue } from '../infra/text.ts'
 
 /** Parse a numeric input string, returning `null` when empty so the server rejects blank required numbers instead of coercing to 0. */
 export const numberOf = (text: string): number | null => text.trim() ? Number(text) : null
@@ -109,7 +110,7 @@ function changeText(t: T, change: HistoryChange, sources: SourceView[]): string 
   const field = (change.part ? source?.policy?.fields : source?.fields)?.find(item => item.key === change.field)
   const shown = (value: unknown) => value === undefined || value === null || value === '' ? t('unsetValue') : typeof value === 'boolean'
     ? t(value ? 'yes' : 'no')
-    : change.code === 'mode' ? valueLabel(t, 'mode', String(value)) : String(value)
+    : change.code === 'mode' ? valueLabel(t, 'mode', textValue(value)) : textValue(value)
   return t(`change.${change.code}`,
     { items: (change.items ?? []).map(item => source?.labels[item] ?? item).join(t('listSeparator')),
       from: shown(change.from), to: shown(change.to), name: change.name ?? '', source: source ? localized(t, source.title)
@@ -254,21 +255,21 @@ export function SourceField({ field, value, saved, fact, onChange, labels, refre
   switch (field.type) {
     case 'switch': return <SwitchRow label={label} hint={hint} checked={value === true} onChange={onChange} />
     case 'select': return <Field label={label} hint={hint}>
-      <SegmentedControl className="dt-segmented dt-field-segmented" label={label} value={String(value ?? field.options[0]!.value)}
+      <SegmentedControl className="dt-segmented dt-field-segmented" label={label} value={textValue(value ?? field.options[0]!.value)}
         options={field.options.map(option => ({ value: option.value, label: localized(t, option.label) }))} onChange={onChange} />
     </Field>
     case 'number': return <Field label={label} hint={hint}>
-      <Input type="number" min={field.min} max={field.max} required value={String(value ?? '')}
+      <Input type="number" min={field.min} max={field.max} required value={textValue(value)}
         onChange={(event) => { onChange(event.target.value === '' ? '' : Number(event.target.value)) }} />
     </Field>
     case 'text': return <Field label={label} hint={hint} note={localized(t, fact)}>
       {field.choose && Object.keys(labels).length
-        ? <select className="dt-select" value={String(value ?? '')} onChange={(event) => { onChange(event.target.value) }}>
+        ? <select className="dt-select" value={textValue(value)} onChange={(event) => { onChange(event.target.value) }}>
           <option value="">{localized(t, field.choose)}</option>
-          {value && !labels[String(value)] ? <option value={String(value)}>{String(value)}</option> : null}
+          {value && !labels[textValue(value)] ? <option value={textValue(value)}>{textValue(value)}</option> : null}
           {Object.entries(labels).sort(byName).map(([option, name]) => <option key={option} value={option}>{name}</option>)}
         </select>
-        : <Input value={String(value ?? '')} readOnly={field.readonly} pattern={field.pattern} spellCheck={false}
+        : <Input value={textValue(value)} readOnly={field.readonly} pattern={field.pattern} spellCheck={false}
           onChange={(event) => { onChange(event.target.value) }} />}
     </Field>
     case 'fact': return <div className="dt-field">

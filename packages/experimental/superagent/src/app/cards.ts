@@ -3,6 +3,7 @@ import { latestReport, reasonText, threadKey, ticketStage, type Decision, type M
   type Trigger, type TriggerDisposition } from '../core/index.ts'
 import { pullOf } from '../sources/github-pull.ts'
 import { batchLine, inputResource } from '../executor/dsh.ts'
+import { textValue } from '../infra/text.ts'
 
 /** Collapses whitespace and truncates text for display previews while keeping code, angle brackets, and links intact for model readers. */
 export function preview(text: string): string { return text.replace(/\s+/g, ' ').slice(0, 160) }
@@ -75,7 +76,7 @@ export function threadCard(thread: Thread, label: string) {
   return { thread: thread.key, label, source: thread.ref.source, tickets: thread.subscriptions,
     ...(thread.evaluating ? { evaluating: { since: thread.evaluating.startedAt, deadline: thread.evaluating.deadline } } : {}),
     pending: thread.pending.length,
-    ...(thread.meta.pollError ? { error: preview(String(thread.meta.pollError)) } : {}), ...(thread.meta.url ? { url: thread.meta.url } : {}),
+    ...(thread.meta.pollError ? { error: preview(textValue(thread.meta.pollError)) } : {}), ...(thread.meta.url ? { url: thread.meta.url } : {}),
     read: `thread/${thread.key}` }
 }
 export function decisionCard(decision: Decision) {

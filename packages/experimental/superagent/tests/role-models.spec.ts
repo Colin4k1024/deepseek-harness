@@ -9,7 +9,7 @@ const contexts: Context[] = []
 afterEach(async () => { await Promise.all(contexts.splice(0).map(ctx => ctx.fiber.dispose())); vi.restoreAllMocks() })
 async function fixture() {
   const ctx = new Context(); contexts.push(ctx); await ctx.plugin(SystemPrompt)
-  const resolve = vi.fn(async value => value)
+  const resolve = vi.fn(async (value: unknown): Promise<unknown> => value)
   const flush = vi.fn(async () => {})
   ctx.reflect.provide('llm', { resolveCallConfig: resolve })
   ctx.reflect.provide('sessionPersistence', { flush })

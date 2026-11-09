@@ -176,7 +176,7 @@ async function drive(host: Host) {
   expect(routed.results[2]!.reason).toMatch(/^Ignored from its card/)
   const a = routed.results[0]!.ticket!.ticket_id
   const answer = { trigger_id: request.id, purpose: 'answer', text: '是配置。' }
-  const refusal = await run(master, 'orchestrator_reply', answer).then(() => '', (error: unknown) => error.message)
+  const refusal = await run(master, 'orchestrator_reply', answer).then(() => '', (error: unknown) => error instanceof Error ? error.message : String(error))
   const proposal = feishu('5', '把副标题改成“浏览网页”', { mentions: [] })
   runtime.receive(proposal)
   vi.spyOn(Commands.prototype, 'lark').mockResolvedValue({ items: [{ message_id: 'om_5', chat_id: CHAT }] })
@@ -269,7 +269,7 @@ function collect(host: Host, { a, b, workerA, workerB, refusal }: Awaited<Return
   surfaces.push({ where: 'orchestrator tool orchestrator_reply error', owner: ERRORS, role: 'orchestrator', text: refusal })
   for (const { text } of host.inputs.filter(input => input.sessionId === runtime.masterId)) {
     const value = JSON.parse(text) as Record<string, unknown>
-    const kind = String(value.kind ?? Object.keys(value)[0])
+    const kind = String(typeof value.kind === 'string' ? value.kind : Object.keys(value)[0])
     const owner = kind === 'candidate' ? LINKS : kind === 'worker_attention' ? TOOLS : kind === 'worker_report' ? EXECUTOR : NOTICES
     surfaces.push({ where: `orchestrator input ${kind}`, owner, role: 'orchestrator', text })
   }

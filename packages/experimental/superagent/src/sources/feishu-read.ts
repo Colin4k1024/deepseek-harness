@@ -6,6 +6,7 @@ import { admissionImageKeys, readAdmissionImage } from './feishu-image.ts'
 import { feishuRef, feishuTime, HistoricalMessageSchema, HistoryPageSchema, historyText, withMentionNames, type HistoricalMessage }
   from './feishu-trigger.ts'
 import type { ContextMessage, ThreadContext } from './kind.ts'
+import { textValue } from '../infra/text.ts'
 
 /** Retained source message reference anchoring context reads; `at` is the timestamp around which `chatAround` queries. */
 export interface FeishuRef { triggerId: string; chatId: string; messageId: string; at?: string }
@@ -151,7 +152,7 @@ function sourceRef(trigger: Trigger): FeishuRef {
   return ref
 }
 export const feishuThreadContext: ThreadContext<{ readPageSize: number }> = {
-  messageId: trigger => String(trigger.meta.messageId ?? ''),
+  messageId: trigger => textValue(trigger.meta.messageId),
   read: async (commands, trigger, part, cursor, config) => {
     const ref = sourceRef(trigger)
     const resource = `feishu/${trigger.id}/${part}${cursor ? '/' + encodeURIComponent(cursor) : ''}`

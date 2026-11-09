@@ -18,6 +18,7 @@ import { WorktreeNameSchema } from '../app/assessment.ts'
 import { resultRelay } from '../app/notices.ts'
 import type { HealthEntry } from '../infra/health.ts'
 import { cancelled, collectJob, killJobs, runningJobs, stopBackground, stopSubagents, until, untilQuiet } from './background.ts'
+import { textValue } from '../infra/text.ts'
 
 const now = (): string => new Date().toISOString()
 /** Returns the worker session ID (`worker-<ticketId>`) for a ticket. */
@@ -51,7 +52,7 @@ const PASSING = new RegExp(['ECONNRESET', 'ECONNREFUSED', 'ETIMEDOUT', 'EAI_AGAI
 export function transient(error: unknown): boolean {
   const status = (error as { status?: unknown } | undefined)?.status
   if (typeof status === 'number') return status === 408 || status === 429 || status >= 500
-  const text = error instanceof Error ? `${error.name} ${error.message} ${String((error as { code?: unknown }).code ?? '')}` : String(error)
+  const text = error instanceof Error ? `${error.name} ${error.message} ${textValue((error as { code?: unknown }).code)}` : String(error)
   return PASSING.test(text)
 }
 /** Appends a stable 12-character ticket ID suffix to a validated English worktree name. */

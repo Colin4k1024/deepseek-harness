@@ -275,7 +275,7 @@ export async function startRuntime(seed?: (store: Store) => void) {
   /** Route one decision with the main Session's orchestrator_route, answering its result; a refused one throws its reason. */
   async function route(item: Record<string, unknown>): Promise<Record<string, unknown>> {
     const { results } = await runTool(runtime.masterId, 'orchestrator_route', { decisions: [item] }) as { results: Record<string, unknown>[] }
-    if (results[0]!.refused) throw new Error(String(results[0]!.refused))
+    if (results[0]!.refused) throw new Error(typeof results[0]!.refused === 'string' ? results[0]!.refused : '')
     return results[0]!
   }
   async function acceptedTicket(trigger: Trigger) {

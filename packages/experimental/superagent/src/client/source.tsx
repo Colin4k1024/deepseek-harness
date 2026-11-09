@@ -10,6 +10,7 @@ import { setupPage, settingsRoute, type Route } from './route.ts'
 import { ConfigHistory, Fields, SourceField, useBlockDraft, useSettings } from './settings-kit.tsx'
 import { actorName, healthText, localized, readableMarkers, reasonLabel, valueLabel, when } from './text.ts'
 import { CheckSetupButton, Hint, LabelValue, LoadState, SetupMessage, StatusHead, When } from './widgets.tsx'
+import { textValue } from '../infra/text.ts'
 
 function SourceCard({ source }: { source: SourceView }) {
   const { t, call } = usePanel()
@@ -21,7 +22,7 @@ function SourceCard({ source }: { source: SourceView }) {
   const draft = useBlockDraft(`source:${source.id}`, source.value, source.revision)
   const value = draft.value
   const { problem, value: saved } = source
-  const changed = (key: string) => String(value.config[key] ?? '') !== String(saved.config[key] ?? '')
+  const changed = (key: string) => textValue(value.config[key]) !== textValue(saved.config[key])
   // Saving a modified setup-sensitive field restarts dsh-superagent, interrupting running Assignments.
   const restarts = draft.dirty && source.restarts.some(changed)
   const description = localized(t, source.description)

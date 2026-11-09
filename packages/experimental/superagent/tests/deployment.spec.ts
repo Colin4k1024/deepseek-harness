@@ -20,7 +20,8 @@ const minimal = (overrides: Record<string, unknown> = {}) => ({ stateDir: join(d
 const machine = (overrides: Partial<Machine> = {}): Machine => ({ ...machineOf(Config(minimal())), ...overrides })
 /** Runs commands like worker shells do, but locally: the stand-ins first on PATH, then the system's git. */
 const probe: Probe = async argv => (await exec(argv[0]!, argv.slice(1), { env: { PATH: path, HOME: dir } })).stdout
-const setupError = (place: string, code: string, values: Record<string, unknown> = {}) => expect.objectContaining({ place, code, values: expect.objectContaining(values) })
+const setupError = (place: string, code: string, values: Record<string, unknown> = {}): Record<string, unknown> =>
+  expect.objectContaining({ place, code, values: expect.objectContaining(values) })
 
 beforeEach(async () => {
   dir = mkdtempSync(join(tmpdir(), 'deployment-'))

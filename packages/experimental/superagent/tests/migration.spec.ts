@@ -415,7 +415,7 @@ it('writes the Sources\' records in their current shape once, so no Source conve
   for (const name of ['github-issue-pending', 'github-issues-since', 'github-thread:7', 'thread-since:github:7', 'github-thread:8']) {
     expect(store.get(name)).toBeUndefined()
   }
-  const effects = store.db.prepare("SELECT key, value FROM effect WHERE kind = 'assessment'").all().map(row => [row.key,
+  const effects = (store.db.prepare("SELECT key, value FROM effect WHERE kind = 'assessment'").all() as Array<{ key: string; value: string }>).map(row => [row.key,
     JSON.parse(String(row.value))])
   expect(effects).toEqual([['e1', { triggerId: 'issue' }]])
   store.close()
@@ -533,7 +533,7 @@ it('delivers the candidate of an Eval in progress at the upgrade again, so its d
     thread: [{ key: 'github:9', ref: { source: 'github', id: '9' }, createdAt: '', subscriptions: [], correlated: [], pending: [], evaluating, meta: {} }],
   })
   const store = new Store(path)
-  const effects = store.db.prepare("SELECT key, value FROM effect WHERE kind = 'assessment'").all().map(row => [row.key, JSON.parse(String(row.value))])
+  const effects = (store.db.prepare("SELECT key, value FROM effect WHERE kind = 'assessment'").all() as Array<{ key: string; value: string }>).map(row => [row.key, JSON.parse(String(row.value))])
   expect(effects).toEqual([['e9', { triggerId: 'issue-9' }]])
   store.close()
 })

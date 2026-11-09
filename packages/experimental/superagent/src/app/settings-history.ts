@@ -3,6 +3,7 @@ import type { FieldSpec } from '../sources/kind.ts'
 import type { SourceRegistry } from '../sources/registry.ts'
 import { KV } from '../kv.ts'
 import type { Store, SettingsVersion } from './store.ts'
+import { textValue } from '../infra/text.ts'
 
 type SourceSettings = SettingsVersion['settings']['sources'][string]
 /** Change codes localized by the web panel as `change.<code>`. */
@@ -32,7 +33,7 @@ function fieldChanges(id: string, fields: readonly FieldSpec[], a: Record<string
       const rowKey = field.columns[0]!.key
       const rows = (value: unknown) => new Map((Array.isArray(value) ? value as Record<string, unknown>[] : []).map(row => [String(row[rowKey]), row]))
       // Prefer the second column (human-readable label) over the row key when naming changed rows.
-      const label = (row: Record<string, unknown> | undefined, item: string) => String((field.columns[1] && row?.[field.columns[1].key]) || item)
+      const label = (row: Record<string, unknown> | undefined, item: string) => textValue(field.columns[1] && row?.[field.columns[1].key]) || item
       const old = rows(from), next = rows(to)
       const added = [...next.keys()].filter(item => !old.has(item)).map(item => label(next.get(item), item)), removed = [...old.keys()].filter(item => !next.has(item)).map(item => label(old.get(item), item))
       const changed = [...next.keys()].filter(item => old.has(item) && !same(old.get(item), next.get(item))).map(item => label(next.get(item), item))

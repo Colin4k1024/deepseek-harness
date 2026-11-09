@@ -564,7 +564,7 @@ describe('a worker whose work runs in the background', () => {
     await vi.waitFor(() =>{  expect(h.jobs.service.wait).toHaveBeenCalledWith(server, expect.any(Number), one.sessionId, expect.anything()) })
     // The server ends while the host stops, after it cancelled the workers.
     const cancel = agent.cancel.getMockImplementation()!
-    agent.cancel.mockImplementationOnce((...args: unknown[]) => { h.jobs.end(server); return cancel(...args as [unknown, { keepInbox?: boolean }]) })
+    agent.cancel.mockImplementationOnce((...args: unknown[]) => { h.jobs.end(server); return cancel(...args as [unknown, { keepInbox?: boolean }]) as Promise<void> })
     const woken = agent.followup.mock.calls.length
     await h.stop()
     expect(agent.followup.mock.calls.length).toBe(woken)

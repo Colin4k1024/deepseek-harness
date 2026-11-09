@@ -14,6 +14,7 @@ import { health, type SourceContext } from './host.ts'
 import { KV } from '../kv.ts'
 import { cursorAt, POLL_HORIZON_MS, polled, pollThreads as pollEach } from './poll.ts'
 import type { FeishuConfig } from './feishu.ts'
+import { textValue } from '../infra/text.ts'
 
 export const runFeishu = (ctx: SourceContext, signal: AbortSignal): Promise<unknown> =>
   Promise.allSettled([watch, backfillLoop, chatNamesLoop].map(loop => loop(ctx, signal)))
@@ -25,7 +26,7 @@ const bot = (ctx: SourceContext): FeishuBot => {
 }
 async function receive(ctx: SourceContext, trigger: Trigger): Promise<void> {
   await ctx.receive(trigger)
-  const chatId = String(trigger.meta.chatId ?? '')
+  const chatId = textValue(trigger.meta.chatId)
   if (!chatId) return
   const name = ctx.state.get(KV.sources.labels(SOURCE))?.[chatId] ?? chatId
   const chat = trigger.meta.direct === true ? { value: { zh: '私聊', en: 'Direct message' } } : { value: name }
@@ -199,7 +200,7 @@ export async function backfillChat(ctx: SourceContext, chatId: string, direct: b
   await scan('chat', chatId)
   // A quiet topic is forgotten unless a subscribed Thread that is still polled follows it.
   const followed = new Set(ctx.threads.subscribed(SOURCE).filter(thread => polled(ctx, thread))
-    .map(thread => String(thread.meta.threadId ?? ctx.triggers.latest(thread.key)?.meta.threadId ?? '')))
+    .map(thread => textValue(thread.meta.threadId) || textValue(ctx.triggers.latest(thread.key)?.meta.threadId)))
   topics = Object.fromEntries(Object.entries(topics)
     .filter(([id, seen]) => followed.has(id) || Date.parse(until) - Date.parse(seen) < POLL_HORIZON_MS))
   ctx.state.set(topicsKey, topics)
