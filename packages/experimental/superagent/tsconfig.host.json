@@ -1,0 +1,33 @@
+{
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "lib/types",
+    "tsBuildInfoFile": "lib/tsconfig.host.tsbuildinfo"
+  },
+  "include": [
+    "src"
+  ],
+  "exclude": [
+    "src/client"
+  ],
+  "references": [
+    { "path": "../../../vendor/cordis" },
+    { "path": "../../../vendor/schemastery" },
+    { "path": "../../core/agent" },
+    { "path": "../../llm/llm" },
+    { "path": "../../core/session" },
+    { "path": "../../session/session-persistence" },
+    { "path": "../../core/scope" },
+    { "path": "../../subprocess/subprocess" },
+    { "path": "../../core/system-prompt" },
+    { "path": "../../workspace/workspace" },
+    { "path": "../../core/tools" },
+    { "path": "../../skill/skill" },
+    { "path": "../../settings/settings" },
+    { "path": "../../interaction/permission-presets" },
+    { "path": "../../host/webserver" },
+    { "path": "../../attachment/attachment" },
+    { "path": "../../api/session-controller/tsconfig.host.json" }
+  ]
+}

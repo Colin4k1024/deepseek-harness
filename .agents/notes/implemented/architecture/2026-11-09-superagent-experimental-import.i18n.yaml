@@ -1,0 +1,19 @@
+# Bilingual-pair consistency record for 2026-11-09-superagent-experimental-import.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-11-09-superagent-experimental-import.md
+/agent-note-superagent-imported-as-one-experimental-package:
+  en: 7a55af4941b5ccd5
+  zh: c3bd3f76d3bec107
+/agent-note-superagent-imported-as-one-experimental-package/problem:
+  en: d0f9207f6907ef23
+  zh: 88336d55da711c4b
+/agent-note-superagent-imported-as-one-experimental-package/decision:
+  en: 3dee755b5388311b
+  zh: fc4c3e64d0610b53
+/agent-note-superagent-imported-as-one-experimental-package/alternatives-considered:
+  en: 0990cc67adfda447
+  zh: 0667bda65ddff727
+/agent-note-superagent-imported-as-one-experimental-package/consequences:
+  en: 923609f4a58f98f2
+  zh: 43db80cdb135fe3f

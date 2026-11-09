@@ -47,6 +47,7 @@ kind: "package-group"
 | [`hooks-codex`](hooks-codex/README.zh.md) | Codex 钩子桥接 | — |
 | [`webhook`](webhook/README.zh.md) | 已认证投递分发与 Workspace Session 创建 | `ctx.webhookRuntime` |
 | [`webhook-github`](webhook-github/README.zh.md) | 带签名的 GitHub webhook 入口 | — |
+| [`superagent`](superagent/README.zh.md) | 单仓库主动式 agent：策略把关的 GitHub/飞书工单与每工单独立会话 | — |
 | [`session-title-all-prompts-llm`](session-title-all-prompts-llm/README.zh.md) | 根据所有人类提示生成会话标题 | — |
 | [`tool-terminal`](tool-terminal/README.zh.md) | 持久终端工具 | — |
 | [`tool-ralph`](tool-ralph/README.zh.md) | 有界重复委派任务 | — |

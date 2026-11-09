@@ -193,6 +193,9 @@ const packageFileExtras: Readonly<Record<string, readonly string[]>> = {
   '@deepseek-ai/dsh-ptc-runtime-node': ['lib/process.js'],
   // The Inspector owns a Worker and a mirrored frontend outside package export paths.
   '@deepseek-ai/dsh-experimental-inspector': ['lib/client.*.js', 'lib/worker.js', 'lib/devtools/**'],
+  // Superagent publishes its setup and numbered guides, runtime prompts and skills,
+  // the example profile patch, and its two bundled Source watcher entries.
+  '@deepseek-ai/dsh-experimental-superagent': ['SETUP.md', 'docs', 'examples', 'prompts', 'skills', 'lib/github-watch.js', 'lib/feishu-watch.js'],
   // Creator's composition guidance travels with the declaration package.
   '@deepseek-ai/dsh-agent-preset': ['skills'],
   // The Web Host mounts the default-off settings owner independently of each

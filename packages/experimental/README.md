@@ -47,6 +47,7 @@ Promotion requires a named product role, documented public behavior and limitati
 | [`hooks-codex`](hooks-codex/README.md) | Codex hook bridge | — |
 | [`webhook`](webhook/README.md) | Authenticated delivery dispatch and Workspace Session creation | `ctx.webhookRuntime` |
 | [`webhook-github`](webhook-github/README.md) | Signed GitHub webhook ingress | — |
+| [`superagent`](superagent/README.md) | Proactive single-repository agent with policy-gated GitHub/Feishu tickets and per-ticket Sessions | — |
 | [`session-title-all-prompts-llm`](session-title-all-prompts-llm/README.md) | Session titles from all human prompts | — |
 | [`tool-terminal`](tool-terminal/README.md) | Persistent terminal tools | — |
 | [`tool-ralph`](tool-ralph/README.md) | Bounded repeated delegated tasks | — |
