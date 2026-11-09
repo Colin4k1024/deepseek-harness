@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 // The overview.
-import { expect, it } from 'vitest'
+import { expect, it, onTestFinished, vi } from 'vitest'
+import { act } from 'react'
 import { en, zh } from '../src/client/locales.ts'
-import { usePanel, mount, remount, all, find, tab, click, text } from './fixtures/panel.client.tsx'
+import { usePanel, mount, remount, settle, all, find, tab, click, text } from './fixtures/panel.client.tsx'
 import { server, droppedReply, threadSummary } from './fixtures/panel-server.client.ts'
 
 usePanel()
@@ -113,10 +114,15 @@ it('words a Source health code through the localized health text', async () => {
   expect(text()).not.toContain('raw detail')
 })
 
-it('shows the host-not-running error on the overview', async () => {
-  server.down = true
+it('keeps the overview data while a later poll reports the host not running', async () => {
+  vi.useFakeTimers({ shouldAdvanceTime: true })
+  onTestFinished(() => { vi.useRealTimers() })
   await mount()
+  server.down = true
+  await act(async () => { await vi.advanceTimersByTimeAsync(5000) })
+  await settle()
   expect(text()).toContain(zh.hostNotRunning)
+  expect(text()).toContain(zh.pendingTickets)
 })
 
 it('names a failing part of dsh-superagent itself by its label', async () => {

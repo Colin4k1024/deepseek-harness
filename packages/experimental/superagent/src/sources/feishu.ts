@@ -30,6 +30,12 @@ const FeishuConfigSchema = FeishuBotSchema.extend({
   otherChats: z.enum(['none', 'mentions']).default('none'),
 }).strict()
 export type FeishuConfig = z.infer<typeof FeishuConfigSchema>
+const feishuScope: NonNullable<SourceKind<FeishuConfig>['scope']> = ({ meta }, config) => {
+  if (meta.direct === true) return config.directMessages ? { listened: true, observed: false, row: 'direct' } : { listened: false, reason: 'direct_messages_not_allowed' }
+  const chat = config.chats.find(item => item.chatId === meta.chatId)
+  if (chat) return { listened: true, observed: chat.listen === 'all', row: chat.chatId }
+  return config.otherChats === 'mentions' ? { listened: true, observed: false, row: 'other' } : { listened: false, reason: 'chat_not_allowed' }
+}
 export const feishuKind: SourceKind<FeishuConfig> = {
   kind: SOURCE,
   refreshLabels: (host, signal) => refreshChatNames(sourceContext(host, feishuKind), signal),
@@ -53,19 +59,11 @@ export const feishuKind: SourceKind<FeishuConfig> = {
       hint: { zh: '查询原消息链接最多等待的时间；超时后智能体改为直接读取原消息。', en: 'How long to wait for an original message\'s link; after that, agents read the message itself.' } },
   ],
   health: ['feishu', 'history'],
-  scope({ meta }, config) {
-    if (meta.direct === true) return config.directMessages ? { listened: true, observed: false, row: 'direct' } : { listened: false, reason: 'direct_messages_not_allowed' }
-    const chat = config.chats.find(item => item.chatId === meta.chatId)
-    if (chat) return { listened: true, observed: chat.listen === 'all', row: chat.chatId }
-    return config.otherChats === 'mentions' ? { listened: true, observed: false, row: 'other' } : { listened: false, reason: 'chat_not_allowed' }
-  },
+  scope: feishuScope,
   // A reply goes only to a chat the Source still receives.
   channel: {
-    allowed: (address, config) => {
-      const scope = feishuKind.scope?.bind(feishuKind)
-      if (scope === undefined) throw new Error('Feishu Source has no listening rule')
-      return scope({ meta: { chatId: address.chatId ?? '', direct: address.direct === 'true' } }, config).listened
-    },
+    allowed: (address, config) =>
+      feishuScope({ meta: { chatId: address.chatId ?? '', direct: address.direct === 'true' } }, config).listened,
     send: sendFeishu, link: feishuLink,
   },
   threadContext: feishuThreadContext,

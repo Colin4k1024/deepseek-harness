@@ -14,6 +14,12 @@ function passes(closing = () => false) {
 const trigger = { id: 't1', source: 'feishu', threads: [{ source: 'feishu', id: 'oc_1:om_1' }], actor: { source: 'feishu', id: 'ou_a' }, human: true,
   at: '2026-10-01T00:00:00.000Z', text: 'hi', meta: {} } as Trigger
 
+it('is idle immediately when no pass is running', async () => {
+  const h = passes()
+  await h.passes.idle()
+  expect(h.effects.idle).toHaveBeenCalledOnce()
+})
+
 it('reports a failed pass as an error of the runtime, which the next pass that succeeds clears', async () => {
   const h = passes()
   h.engine.evaluateDue.mockImplementationOnce(() => { throw new Error('database is locked') })

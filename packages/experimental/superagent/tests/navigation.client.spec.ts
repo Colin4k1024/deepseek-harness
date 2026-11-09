@@ -34,6 +34,22 @@ it('reports unavailable targets without calling the throwing Session selector', 
   await expect(navigation).rejects.toMatchObject({ code: 'not-listed' })
   expect(open).not.toHaveBeenCalled()
 })
+it('does not refresh or navigate a request that is already aborted', async () => {
+  const { sessions, refresh } = fixture(); const open = vi.fn(); const controller = new AbortController()
+  controller.abort()
+  await expect(openKnownSession(sessions, id, open, controller.signal)).resolves.toBe(false)
+  expect(refresh).not.toHaveBeenCalled()
+  expect(open).not.toHaveBeenCalled()
+})
+
+it('reports a Session catalog that never becomes ready', async () => {
+  const { sessions, pending } = fixture(); const open = vi.fn()
+  const navigation = openKnownSession(sessions, id, open, new AbortController().signal)
+  pending.resolve()
+  await expect(navigation).rejects.toMatchObject({ code: 'not-ready' })
+  expect(open).not.toHaveBeenCalled()
+})
+
 it('does not navigate after the panel unmounts or a newer request supersedes it', async () => {
   const { sessions, pending, state } = fixture(); const open = vi.fn(); const controller = new AbortController()
   const navigation = openKnownSession(sessions, id, open, controller.signal)

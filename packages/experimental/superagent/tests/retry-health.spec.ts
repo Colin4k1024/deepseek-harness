@@ -1,7 +1,8 @@
-import { createAssistantMessage } from '@deepseek-ai/dsh-llm'
-import { SessionSeq, type SessionEvent } from '@deepseek-ai/dsh-session'
+import { createAssistantMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
+import { Session, SessionId, SessionSeq, type SessionEvent } from '@deepseek-ai/dsh-session'
 import { expect, it } from 'vitest'
 import { RetryHealth, type RetryHealthEvent } from '../src/app/retry-health.ts'
+import { transcriptEntry } from '../src/app/context.ts'
 
 const epoch = Date.parse('2026-09-21T08:00:00Z')
 const event = (type: string, seq: number, data: unknown): RetryHealthEvent => ({ type, seq, time: epoch + seq * 1000, data })
@@ -142,4 +143,16 @@ it('bounds counters and provider labels and exposes detached status values only'
 it.each([NaN, Infinity, -1, 1.5])('ignores malformed retry count %s', (attempts) => {
   const health = new RetryHealth(); health.observe('worker', retry(1, { retry: attempts }))
   expect(health.list()).toEqual([])
+})
+
+it('projects only user, tool, and assistant messages into transcript entries', () => {
+  const session = Session.create(SessionId('transcript'))
+  const user = createUserMessage({ content: [{ type: 'text', text: 'please fix' }] })
+  const assistant = createAssistantMessage({ content: [{ type: 'text', text: 'done' }], source: { provider: 'provider', model: 'model' } })
+  const userEvent = session.append('user/message', user, { surfaceOp: 'append' })
+  const assistantEvent = session.append('assistant/message', { turn: 1, step: 1, stream: [], message: assistant }, { surfaceOp: 'append' })
+  const unrelated = session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+  expect(transcriptEntry(unrelated)).toBeUndefined()
+  expect(transcriptEntry(userEvent)).toEqual({ type: 'user/message', message: { role: 'user', content: [{ type: 'text', text: 'please fix' }] } })
+  expect(transcriptEntry(assistantEvent)).toEqual({ type: 'assistant/message', message: { role: 'assistant', content: [{ type: 'text', text: 'done' }] } })
 })
