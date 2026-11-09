@@ -49,7 +49,8 @@ export type UserErrorCode = keyof typeof USER_ERRORS
 
 /**
  * Structured error thrown by Engine parts and application services when a caller request is invalid or references missing state.
- * Tool handlers and HTTP routes inspect its code and missing flag to return appropriate status responses, while the web panel localizes the code.
+ * Tool handlers and HTTP routes inspect its code and missing flag to return appropriate status responses, while the web panel localizes the
+ * code.
  */
 export class UserError extends Error {
   readonly missing: boolean

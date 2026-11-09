@@ -29,7 +29,7 @@ function SourceCard({ source }: { source: SourceView }) {
   const field = (spec: FieldSpec) => <SourceField key={spec.key} field={spec} value={value.config[spec.key]} saved={saved.config[spec.key]}
     labels={source.labels}
     refreshLabels={refreshLabels} fact={spec.type === 'fact' || !changed(spec.key) ? source.facts[spec.key] : undefined}
-    onChange={next => draft.edit({ ...value, config: { ...value.config, [spec.key]: next } })} />
+    onChange={(next) => { draft.edit({ ...value, config: { ...value.config, [spec.key]: next } }) }} />
   const advanced = source.fields.filter(spec => spec.advanced)
   return <form id={`dt-source-${source.id}`} className="dt-card" onSubmit={(event) => { void draft.submit(event) }}>
     <Fields disabled={draft.busy}>
@@ -40,7 +40,7 @@ function SourceCard({ source }: { source: SourceView }) {
             {!source.installed && <Tag tone="warning">{t('sourceNotInstalled')}</Tag>}
           </div>
         </div>
-        {source.installed && <Switch checked={value.enabled} onChange={enabled => draft.edit({ ...value, enabled })}
+        {source.installed && <Switch checked={value.enabled} onChange={(enabled) => { draft.edit({ ...value, enabled }) }}
           label={t('sourceEnable', { name: localized(t, source.title) })} />}
       </div>
       {problem && <div className="dt-row-buttons">
@@ -49,7 +49,7 @@ function SourceCard({ source }: { source: SourceView }) {
       {!source.installed && <Hint>{t('sourceNotInstalledHint')}</Hint>}
       {source.installed && source.fields.filter(spec => !spec.advanced).map(field)}
       {source.installed && advanced.length > 0 && <DisclosureRow icon={<Icon name="settings" />} title={t('advanced')} open={advancedOpen}
-        onToggle={() => setAdvancedOpen(!advancedOpen)}>
+        onToggle={() => { setAdvancedOpen(!advancedOpen) }}>
         <div className="dt-disclosure-body">{advanced.map(field)}</div>
       </DisclosureRow>}
     </Fields>
@@ -76,7 +76,7 @@ function DroppedReplies({ items }: { items: DroppedReply[] }) {
     : item.thread ? { route: { page: 'trigger', id: item.thread }, name: t('term.thread') } : undefined
   return <DisclosureRow icon={<Icon name="dismiss" />} title={<>{t('sourceDroppedTitle')} <span
     className="dt-count">{items.length}</span></>} open={open}
-  onToggle={() => setOpen(!open)}>
+  onToggle={() => { setOpen(!open) }}>
     <div className="dt-disclosure-body">
       <Hint>{t('sourceDroppedHint')}</Hint>
       <ul className="dt-list">{items.map((item) => {
@@ -85,7 +85,7 @@ function DroppedReplies({ items }: { items: DroppedReply[] }) {
           <div className="dt-row-title dt-line">{readableMarkers(t, item.preview) || t('empty')}</div>
           <div className="dt-row-meta">
             <Tag tone="neutral">{reasonLabel(t, item.dropped.reason)}</Tag><When at={item.dropped.at} />
-            {link && <button type="button" className="dt-textlink" onClick={() => navigate(link.route)}>{link.name}</button>}
+            {link && <button type="button" className="dt-textlink" onClick={() => { navigate(link.route) }}>{link.name}</button>}
           </div>
         </div></li>
       })}</ul>
@@ -114,7 +114,7 @@ function SourceRow({ source }: { source: SourceStatusRow }) {
       </div>
       {problem && <p className="dt-error">
         <SetupMessage problem={problem} lead /> <button type="button" className="dt-textlink"
-          onClick={() => navigate(settingsRoute('source', { source: source.id }))}>
+          onClick={() => { navigate(settingsRoute('source', { source: source.id })) }}>
           {t('sourceOpenSettings')}
         </button>
       </p>}
@@ -123,7 +123,7 @@ function SourceRow({ source }: { source: SourceStatusRow }) {
           item)}</span>
       </p>)}
       {source.filtered.length > 0 && <DisclosureRow icon={<Icon name="filter" />} title={t('sourceFilteredTitle')} open={filteredOpen}
-        onToggle={() => setFilteredOpen(!filteredOpen)}>
+        onToggle={() => { setFilteredOpen(!filteredOpen) }}>
         <div className="dt-disclosure-body">
           <ul className="dt-list">{source.filtered.map(item => <li key={item.id} className="dt-row"><Dot state="idle" /><div
             className="dt-row-main">
@@ -148,7 +148,7 @@ export function SourceStatus() {
     <StatusHead hint={t('sourceStatusIntro')} settings="source" />
     {elsewhere && <p className="dt-error">
       <SetupMessage problem={elsewhere} lead /> <button type="button" className="dt-textlink"
-        onClick={() => navigate(setupPage(elsewhere.place))}>{t('setupFixLink')}</button>
+        onClick={() => { navigate(setupPage(elsewhere.place)) }}>{t('setupFixLink')}</button>
     </p>}
     <LoadState error={error} loading={!data} />
     {data && <ul className="dt-list">{data.map(source => <SourceRow key={source.id} source={source} />)}</ul>}

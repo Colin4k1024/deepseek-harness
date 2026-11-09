@@ -18,8 +18,10 @@ const setupFields = (settings: Settings) =>
 export const setupChanged = (before: Settings, after: Settings): boolean => setupFields(before) !== setupFields(after)
 
 /**
- * Resolves the target repository, GitHub account, and optional Feishu bot by probing CLIs, then writes and applies the isolated git and shim environment used by worker processes.
- * `Runtime` runs it at startup to gate orchestration readiness, while `Settings` uses it to validate account changes, update blocked command shims, and schedule restarts.
+ * Resolves the target repository, GitHub account, and optional Feishu bot by probing CLIs, then writes and applies the isolated git and
+ * shim environment used by worker processes.
+ * `Runtime` runs it at startup to gate orchestration readiness, while `Settings` uses it to validate account changes, update blocked
+ * command shims, and schedule restarts.
  */
 export class Setup {
   private resolved?: Deployment
@@ -41,7 +43,10 @@ export class Setup {
     return this.resolved
   }
   configured(): boolean { return this.resolved !== undefined }
-  /** Resolve deployment accounts and apply the worker environment, recording `SetupError` failures in `problem`/`feishuProblem` and rethrowing unexpected errors. */
+  /**
+   * Resolve deployment accounts and apply the worker environment, recording `SetupError` failures in `problem`/`feishuProblem` and
+   * rethrowing unexpected errors.
+   */
   async run(settings: Settings): Promise<boolean> {
     try { this.resolved = await this.resolve(settings); return true }
     catch (error) {

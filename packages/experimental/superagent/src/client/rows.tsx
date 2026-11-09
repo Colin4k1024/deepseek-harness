@@ -8,7 +8,10 @@ import { actorName, localized, readableMarkers, reasonLabel, valueLabel } from '
 import { ActionLink, ConfirmButton, LabelValue, SessionButton, StageMark, When } from './widgets.tsx'
 
 export function TicketLine({ ticket, question, onChanged, context }: {
-  ticket: TicketRow; question?: boolean; onChanged?: () => Promise<void>; context?: boolean
+  ticket: TicketRow
+  question?: boolean
+  onChanged?: () => Promise<void>
+  context?: boolean
 }) {
   const { t, call, navigate } = usePanel()
   const status = ticketMark(t, ticket)
@@ -18,8 +21,8 @@ export function TicketLine({ ticket, question, onChanged, context }: {
   return <li className="dt-row dt-link dt-ticket" data-state={question ? status.dot : undefined}>
     <div className="dt-ticket-stage"><StageMark state={status.dot} icon={status.icon} label={status.label} /></div>
     <div className="dt-ticket-body">
-      <div className="dt-row-title"><button type="button" className="dt-open" onClick={() => navigate({ page: 'execution',
-        id: ticket.id })}>{ticket.title}</button></div>
+      <div className="dt-row-title"><button type="button" className="dt-open" onClick={() => { navigate({ page: 'execution',
+        id: ticket.id }) }}>{ticket.title}</button></div>
       <div className="dt-row-meta dt-ticket-meta">
         {ticket.threads.map(thread => <ThreadChip key={thread.key} thread={thread} />)}
         {context && <ContextTag />}
@@ -57,8 +60,8 @@ export function ThreadLine({ thread, ticketId, context }: { thread: ThreadRow; t
     <div className="dt-ticket-stage"><StageMark state={dot} icon={icon} label={label} /></div>
     <div className="dt-ticket-body">
       <div className="dt-row-title">
-        <button type="button" className="dt-open" title={thread.pollError} onClick={() => navigate({ page: 'trigger',
-          id: thread.key })}>{readableMarkers(t, thread.title)}</button>
+        <button type="button" className="dt-open" title={thread.pollError} onClick={() => { navigate({ page: 'trigger',
+          id: thread.key }) }}>{readableMarkers(t, thread.title)}</button>
       </div>
       <div className="dt-row-quote dt-line">
         {thread.latest && <>{actorName(t, thread.latest.actor)}{t('labelSeparator')}{readableMarkers(t, thread.latest.preview)
@@ -81,8 +84,8 @@ export function DecisionLine({ decision }: { decision: DecisionRow }) {
   const mark = decisionMark(t, decision.outcome)
   const preview = readableMarkers(t, decision.preview)
   const reason = decision.reason ? reasonLabel(t, decision.reason) : ''
-  const open = () => decision.ticketId ? navigate({ page: 'execution', id: decision.ticketId })
-    : navigate({ page: 'trigger', id: decision.thread, query: { trigger: decision.triggerIds[0] ?? '' } })
+  const open = () => { decision.ticketId ? navigate({ page: 'execution', id: decision.ticketId })
+    : navigate({ page: 'trigger', id: decision.thread, query: { trigger: decision.triggerIds[0] ?? '' } }) }
   return <li className="dt-row dt-link dt-ticket">
     <div className="dt-ticket-stage"><StageMark state={mark.dot} icon={mark.icon} label={mark.label} /></div>
     <div className="dt-ticket-body">
@@ -131,7 +134,7 @@ export function Earlier({ items }: { items: { id: string; at: string; preview: s
   const [open, setOpen] = useState(false)
   if (!items.length) return null
   return <div>
-    <button type="button" className="dt-textlink" aria-expanded={open} onClick={() => setOpen(!open)}>
+    <button type="button" className="dt-textlink" aria-expanded={open} onClick={() => { setOpen(!open) }}>
       {open ? t('collapse') : t('automatedEarlier', { count: items.length })}
     </button>
     {open && <ul className="dt-plain-list dt-hint">{items.map(item => <li key={item.id}><When

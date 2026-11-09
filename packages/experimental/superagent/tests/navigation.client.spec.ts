@@ -6,7 +6,7 @@ import { openKnownSession } from '../src/client/navigation.ts'
 import { initialLocation, parseRoute, remember, setupPage } from '../src/client/route.ts'
 const id = 'orchestrator-test' as SessionId
 function fixture(ready = false) {
-  const pending = Promise.withResolvers<void>()
+  const pending: PromiseWithResolvers<void> = Promise.withResolvers()
   const state = { phase: ready ? 'ready' : 'pending', byId: ready ? { [id]: {} } : {} as Record<string, object> }
   const refresh = vi.fn(async () => { await pending.promise })
   // Navigation reads only catalog readiness and membership, not summary fields.

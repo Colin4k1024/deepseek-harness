@@ -112,7 +112,7 @@ async function restart(machine: Partial<Machine> = {}, accounts: Accounts = {}):
 }
 let deliveries: ReturnType<typeof vi.fn<(request: { sessionId: string; mode: 'queue' | 'steer'; id: string; text: string }) => void>>
 const relays = (sessionId: string) => deliveries.mock.calls.map(([call]) => call).filter(call => call.sessionId === sessionId).map((call) => {
-  try { return JSON.parse(call.text) as Record<string, unknown> } catch { return { text: call.text } as Record<string, unknown> }
+  try { return JSON.parse(call.text) as Record<string, unknown> } catch { return { text: call.text } }
 })
 const MEMBER = 'ou_alice'
 const CHAT = 'oc_team'
@@ -136,7 +136,7 @@ async function acceptedTicket(trigger = feishu('1', '@bot 修一下回归')) {
 }
 beforeEach(async () => {
   directory = mkdtempSync(join(tmpdir(), 'orchestrator-runtime-'))
-  vi.spyOn(Commands.prototype, 'gh').mockImplementation(async args => args[1] === 'user' ? { login: 'agent-bot' } : args[1]?.includes('/pulls/') ? { state: 'open', user: { login: 'agent-bot' }, html_url: 'https://github.com/acme/widgets/pull/' + args[1].split('/').at(-1), head: { ref: `agent/${String(runtime.store.tickets.list()[0]?.execution?.name)}`, sha: 'head-1', repo: { full_name: 'acme/widgets' } } } : { default_branch: 'master', permissions: { push: true } })
+  vi.spyOn(Commands.prototype, 'gh').mockImplementation(async args => args[1] === 'user' ? { login: 'agent-bot' } : args[1]?.includes('/pulls/') ? { state: 'open', user: { login: 'agent-bot' }, html_url: 'https://github.com/acme/widgets/pull/' + (args[1].split('/').at(-1) ?? ''), head: { ref: `agent/${String(runtime.store.tickets.list()[0]?.execution?.name)}`, sha: 'head-1', repo: { full_name: 'acme/widgets' } } } : { default_branch: 'master', permissions: { push: true } })
   vi.spyOn(Commands.prototype, 'lark').mockResolvedValue({ users: [{ member_id: MEMBER, name: 'Alice' }], has_more: false })
   vi.spyOn(Commands.prototype, 'git').mockResolvedValue('')
   vi.spyOn(Commands.prototype, 'run').mockResolvedValue('{"ok":true,"data":{}}')
@@ -223,7 +223,8 @@ it('relays an explicit member mention as a candidate and creates the ticket, ack
   expect(ticket).toMatchObject({ title: '修复回归', mandate: { strength: 'explicit', basis: expect.objectContaining({ via: 'addressed', source: 'feishu', sender: 'Alice', addressed: 'mention', scope: expect.objectContaining({ chatId: CHAT }) }) },
     execution: expect.objectContaining({ name: expect.stringMatching(/^fix-regression-/) }), origin: expect.objectContaining({ triggerId: trigger.id }) })
   expect(ticket).not.toHaveProperty('ended')
-  // The ticket's execution environment is fixed at accept time: its directory under the execution root, and the Sources' values from its Trigger.
+  // The ticket's execution environment is fixed at accept time: its directory under the execution root, and the Sources' values from its
+  // Trigger.
   expect(ticket.execution!.directory).toBe(join(directory, 'work', ticket.execution!.name))
   expect(Object.fromEntries(runtime.ticketEnvironment(ticket).map(variable => [variable.key, variable.value]))).toMatchObject({ DSH_SUPERAGENT_DIR: ticket.execution!.directory, DSH_SUPERAGENT_NAME: ticket.execution!.name, DSH_SUPERAGENT_TICKET: ticket.id, DSH_SUPERAGENT_FEISHU_CHAT: CHAT, DSH_SUPERAGENT_GITHUB_REPOSITORY: 'acme/widgets', DSH_SUPERAGENT_GITHUB_ACCOUNT: 'agent-bot', DSH_SUPERAGENT_GITHUB_NUMBER: '' })
   expect(ticket.assignments).toEqual([expect.objectContaining({ state: 'running', startedAt: expect.any(String) })])
@@ -555,7 +556,8 @@ it('projects read models for the management page and removes thread subscription
   runtime.store.threads.describe(thread.key, { label: 'Named by its source' })
   expect(threadList(viewsOf(runtime), 'all', 0, 20).items[0]).toMatchObject({ title: 'Named by its source' })
   expect((await api('GET', 'state')).body).not.toHaveProperty('tickets')
-  // scripts/dsh-superagent and agents read health from GET state (docs/006, Management API); settings and their revisions have their own route.
+  // scripts/dsh-superagent and agents read health from GET state (docs/006, Management API); settings and their revisions have their own
+  // route.
   expect((await api('GET', 'state')).body).toMatchObject({ health: { runtime: { state: expect.any(String) } }, paused: false, load: { maxWorkers: 3 } })
   expect((await api('GET', 'settings')).body).toMatchObject({ sources: expect.arrayContaining([expect.objectContaining({ id: 'github',
     revision: expect.any(Number), value: expect.objectContaining({ enabled: true }) })]), blocks: { policy: { revision: expect.any(Number) } } })
@@ -574,7 +576,7 @@ it('lets an Executor drop only its own ticket from a thread it finds unrelated, 
   vi.mocked(inject).mockClear()
   expect(await runTool(sessionId, 'orchestrator_thread_unrelated', { thread: 'feishu:oc_side:om_side', reason: 'It discusses the login page, not this regression.' })).toEqual({ removed: true, thread: 'feishu:oc_side:om_side' })
   expect(runtime.store.threads.get('feishu:oc_side:om_side')!.subscriptions).toEqual([other.ticket.id])
-  await vi.waitFor(() => expect(JSON.stringify(vi.mocked(inject).mock.calls)).toContain('thread_unrelated'))
+  await vi.waitFor(() =>{  expect(JSON.stringify(vi.mocked(inject).mock.calls)).toContain('thread_unrelated') })
   await expect(runTool(sessionId, 'orchestrator_thread_unrelated', { thread: 'feishu:oc_side:om_side', reason: 'again' })).rejects.toThrow('does not follow that thread')
   await expect(runTool(sessionId, 'orchestrator_thread_unrelated', { thread: threadKey(trigger.threads[0]!), reason: 'no' })).rejects.toThrow('the ticket started on')
   runtime.engine.bindThread(ticket.id, { source: 'github', id: '7' }, true)
@@ -628,7 +630,7 @@ it('syncs a Source\'s list once its plugin loads after dsh-superagent started', 
   await next.ready
   vi.mocked(Commands.prototype.lark).mockResolvedValue({ users: [{ member_id: MEMBER, name: 'Alice' }], has_more: false })
   next.sources.register(feishuKind)
-  await vi.waitFor(() => expect(next.health['sync:feishu']).toMatchObject({ state: 'ready' }))
+  await vi.waitFor(() =>{  expect(next.health['sync:feishu']).toMatchObject({ state: 'ready' }) })
 })
 
 it('syncs the Feishu part of the Policy from its sync chat in place, and keeps the Policy version when only the order the chat lists changes', async () => {
@@ -749,7 +751,7 @@ it('queues a requeued trigger visibly and tells the orchestrator', async () => {
   runtime.store.saveSettings({ ...runtime.store.settings(), paused: true })
   expect(runtime.engine.reevaluate(stranger.id)).toBe(true)
   expect(threadDetail(viewsOf(runtime), 'github:8', undefined, 50)!.timeline[0]!.disposition).toMatchObject({ queued: true })
-  await vi.waitFor(() => expect(agents.get(runtime.masterId)!.inject).toHaveBeenCalled())
+  await vi.waitFor(() =>{  expect(agents.get(runtime.masterId)!.inject).toHaveBeenCalled() })
 })
 
 it('asks a question where the human message that raised it was written, not in the ticket\'s original conversation', async () => {
@@ -814,7 +816,7 @@ it('leaves waiting and blocked assignments alone after a restart and keeps block
 it('waits for setup without the agent\'s GitHub CLI: the panel works, and nothing is polled, assessed or dispatched', async () => {
   const { ticket, sessionId } = await acceptedTicket()
   await runTool(sessionId, 'orchestrator_report', { state: 'failed', summary: 'crashed' })
-  expect(() => runtime.checkSetup()).toThrow('Setup is complete')
+  expect(() =>{  runtime.checkSetup() }).toThrow('Setup is complete')
   controller.create.mockClear(); deliveries.mockClear()
   const next = await restart({}, { github: { cli: '' } })
   await next.ready
@@ -836,9 +838,9 @@ it('waits for setup without the agent\'s GitHub CLI: the panel works, and nothin
   expect(await next.settings.save('policy', next.store.settings().policy, next.store.blockRevision('policy'), 'panel')).toMatchObject({ saved: true, restarting: false })
   expect(next.store.get<number>('settings-revision')).toBe(revision)
   expect(await next.settings.save('policy', { ...next.store.settings().policy, rules: [] }, next.store.blockRevision('policy'), 'panel')).toMatchObject({ saved: true, restarting: true })
-  await vi.waitFor(() => expect(restarts).toHaveBeenCalledTimes(1))
+  await vi.waitFor(() =>{  expect(restarts).toHaveBeenCalledTimes(1) })
   next.checkSetup()
-  await vi.waitFor(() => expect(restarts).toHaveBeenCalledTimes(2))
+  await vi.waitFor(() =>{  expect(restarts).toHaveBeenCalledTimes(2) })
 })
 
 it('reports each setup problem where the operator fixes it, and checks the agent CLI the way worker shells run it', async () => {
@@ -916,7 +918,7 @@ it('checks a changed account CLI before saving it, restarts after the save, and 
   expect(restarts).not.toHaveBeenCalled()
   answers[`${OTHER()} api repos/acme/widgets --jq {name: .full_name, push: .permissions.push}`] = '{"name":"acme/widgets","push":true}\n'
   expect(await save({ cli: OTHER() })).toMatchObject({ saved: true, restarting: true })
-  await vi.waitFor(() => expect(restarts).toHaveBeenCalledTimes(1))
+  await vi.waitFor(() =>{  expect(restarts).toHaveBeenCalledTimes(1) })
   // Other fields of the Source take effect without a restart.
   expect(await save({ pollSeconds: 120 })).toMatchObject({ saved: true, restarting: false })
   expect(restarts).toHaveBeenCalledTimes(1)
@@ -962,7 +964,7 @@ it('runs setup again while the Feishu bot check failed, and restores the process
   expect(next.configured()).toBe(true)
   expect(next.feishuProblem?.code).toBe('feishuUserIdentity')
   next.checkSetup()
-  await vi.waitFor(() => expect(restarts).toHaveBeenCalledTimes(1))
+  await vi.waitFor(() =>{  expect(restarts).toHaveBeenCalledTimes(1) })
   answers[HELPERS] = 'file:/home/me/.gitconfig\0!gh auth git-credential\0'
   const broken = await restart()
   await broken.ready
@@ -1229,8 +1231,8 @@ it('resumes several ended tickets on one thread from one message without the lau
   const second = await acceptedTicket(another)
   for (const ticket of [first, second]) await runTool(ticket.sessionId, 'orchestrator_report', { state: 'dropped', summary: 'nothing to do' })
   await receive(feishu('32', '还有问题', { mentions: [], root_id: 'om_1', sender_id: 'ou_guest' }))
-  await vi.waitFor(() => expect([first, second].map(ticket => runtime.store.tickets.get(ticket.ticket.id)!.ended)).toEqual([undefined, undefined]), { timeout: 3000 })
-  await vi.waitFor(() => expect([first, second].map(ticket => runtime.store.tickets.get(ticket.ticket.id)!.assignments.at(-1)!.state)).toEqual(['running', 'running']), { timeout: 3000 })
+  await vi.waitFor(() =>{  expect([first, second].map(ticket => runtime.store.tickets.get(ticket.ticket.id)!.ended)).toEqual([undefined, undefined]) }, { timeout: 3000 })
+  await vi.waitFor(() =>{  expect([first, second].map(ticket => runtime.store.tickets.get(ticket.ticket.id)!.assignments.at(-1)!.state)).toEqual(['running', 'running']) }, { timeout: 3000 })
 })
 
 it('attaches a message to an ended ticket and so resumes it', async () => {
@@ -1239,7 +1241,7 @@ it('attaches a message to an ended ticket and so resumes it', async () => {
   const other = feishu('40', '@bot 上次那个改动还要改一下', { root_id: undefined })
   await receive(other)
   await route({ kind: 'attach', ticket_id: ticket.id, trigger_id: other.id })
-  await vi.waitFor(() => expect(runtime.store.tickets.get(ticket.id)!.ended).toBeUndefined())
+  await vi.waitFor(() =>{  expect(runtime.store.tickets.get(ticket.id)!.ended).toBeUndefined() })
   expect(runtime.store.tickets.get(ticket.id)!.assignments).toHaveLength(2)
 })
 
@@ -1283,7 +1285,7 @@ it('drops a message only when its conversation is gone or not listened to, newes
   vi.useFakeTimers({ toFake: ['Date'], now: Date.now() + 5000 })
   try { await runtime.sendReplies() } finally { vi.useRealTimers() }
   expect([runtime.store.replyStatus('off-reply'), runtime.store.replyStatus('ignored-reply')]).toEqual(['sent', 'dropped'])
-  const dropped = ((await api('GET', 'sources')).body as unknown as { dropped: { id: string }[] }[]).flatMap(source => source.dropped)
+  const dropped = ((await api('GET', 'sources')).body as { dropped: { id: string }[] }[]).flatMap(source => source.dropped)
   expect(dropped).toMatchObject([{ id: 'ignored-reply', dropped: { reason: 'channelIgnored' } }, { id: 'gone-reply', dropped: { reason: 'channelGone' } }])
 })
 
@@ -1294,7 +1296,7 @@ it('reports a dropped acknowledgement as dropped, with its Ticket on the Source 
   vi.mocked(Commands.prototype.lark).mockRejectedValue(new CliError('the message was withdrawn', 230011))
   expect(await runTool(sessionId, 'orchestrator_ack', { trigger_id: followup.id, text: '收到，也处理这个。' })).toMatchObject({ acknowledgement: 'dropped' })
   expect(await runTool(runtime.masterId, 'orchestrator_read', { resource: `trigger/${followup.id}` })).toMatchObject({ acknowledgement: 'dropped' })
-  const dropped = ((await api('GET', 'sources')).body as unknown as { dropped: unknown[] }[]).flatMap(source => source.dropped)
+  const dropped = ((await api('GET', 'sources')).body as { dropped: unknown[] }[]).flatMap(source => source.dropped)
   expect(dropped).toMatchObject([{ id: key('ack', followup.id), ticket: { id: ticket.id, title: ticket.title } }])
   expect(overviewOf(runtime).flow.dropped).toBe(1)
 })
@@ -1480,7 +1482,7 @@ it('relays the status-request hint when a worker\'s turn ends with no text and n
   const agent = agents.get(sessionId)! as { status: string }
   agent.status = 'idle'
   ;(runtime as unknown as { ctx: Context }).ctx.emit('agent/status', { agent, status: 'idle' } as never)
-  await vi.waitFor(() => expect(runtime.store.tickets.get(ticket.id)!.assignments.at(-1)!.report).toMatchObject({ state: 'waiting' }))
+  await vi.waitFor(() =>{  expect(runtime.store.tickets.get(ticket.id)!.assignments.at(-1)!.report).toMatchObject({ state: 'waiting' }) })
   expect(relays(runtime.masterId).at(-1)).toMatchObject({ kind: 'worker_report', ticket: { ticket_id: ticket.id }, state: 'waiting',
     summary: expect.stringContaining('orchestrator_ticket_request_status') })
 })
@@ -1488,7 +1490,7 @@ it('relays the status-request hint when a worker\'s turn ends with no text and n
 it('fails a ticket at once on a worker error that is not passing, and relays it', async () => {
   const { ticket, sessionId } = await acceptedTicket()
   ;(runtime as unknown as { ctx: Context }).ctx.emit('agent/error', { agent: agents.get(sessionId), turn: 1, step: 1, error: new Error('Invalid tool schema') } as never)
-  await vi.waitFor(() => expect(runtime.store.tickets.get(ticket.id)!.assignments.at(-1)!.report).toMatchObject({ state: 'failed', summary: expect.stringContaining('Invalid tool schema') }))
+  await vi.waitFor(() =>{  expect(runtime.store.tickets.get(ticket.id)!.assignments.at(-1)!.report).toMatchObject({ state: 'failed', summary: expect.stringContaining('Invalid tool schema') }) })
   expect(relays(runtime.masterId).at(-1)).toMatchObject({ kind: 'worker_report', ticket: { ticket_id: ticket.id }, state: 'failed' })
 })
 
@@ -1582,7 +1584,7 @@ it('runs a launch that fails for a passing reason again on the launch backoff th
   for (const [index, error] of [Object.assign(new Error('Service Unavailable'), { status: 503 }), Object.assign(new Error('read ECONNRESET'), { code: 'ECONNRESET' })].entries()) {
     let tries = 0
     controller.resolveAgent.mockImplementation(async (id: string) => {
-      if (String(id).startsWith('worker-')) { tries++; throw error }
+      if (id.startsWith('worker-')) { tries++; throw error }
       return original(id)
     })
     const { ticket } = await acceptedTicket(feishu(String(30 + index), `@bot 修 ${index}`, { root_id: undefined }))
@@ -1636,7 +1638,7 @@ it('launches a queued Assignment once when the host resumes, and gives a failed 
   const launches = () => deliveries.mock.calls.filter(([call]) => call.sessionId === queued.sessionId).length
   ;(agents.get(next.sessionId)! as { status: string }).status = 'idle'
   await runtime.pump(); await runtime.idle()
-  await vi.waitFor(() => expect(runtime.store.tickets.get(queued.ticket.id)!.assignments.at(-1)).toMatchObject({ state: 'running' }))
+  await vi.waitFor(() =>{  expect(runtime.store.tickets.get(queued.ticket.id)!.assignments.at(-1)).toMatchObject({ state: 'running' }) })
   expect(launches()).toBe(1)
 })
 
@@ -1690,16 +1692,16 @@ it('selects its own preset again for a main Session or worker a person switched 
   }) }
   services.agentPresets = presets
   await (await restart()).ready
-  const emit = (sessionId: string, preset: string) => (runtime as unknown as { ctx: Context }).ctx.emit('agent-preset/selected', sessionId, preset)
+  const emit = (sessionId: string, preset: string) =>{  (runtime as unknown as { ctx: Context }).ctx.emit('agent-preset/selected', sessionId, preset) }
   // A person opened the blank main Session in DSH's Web UI, which selected the default preset for it.
   emit(runtime.masterId, 'standard')
-  await vi.waitFor(() => expect(presets.select).toHaveBeenCalledWith(agents.get(runtime.masterId), 'dsh-superagent-router'))
+  await vi.waitFor(() =>{  expect(presets.select).toHaveBeenCalledWith(agents.get(runtime.masterId), 'dsh-superagent-router') })
   // Its own preset, which that selection announces the same way, is left alone.
   presets.select.mockClear()
   emit(runtime.masterId, 'dsh-superagent-router'); await Promise.resolve()
   expect(presets.select).not.toHaveBeenCalled()
   emit(sessionId, 'standard')
-  await vi.waitFor(() => expect(presets.select).toHaveBeenCalledWith(agents.get(sessionId), 'dsh-superagent-worker'))
+  await vi.waitFor(() =>{  expect(presets.select).toHaveBeenCalledWith(agents.get(sessionId), 'dsh-superagent-worker') })
   // Another Session is not one of dsh-superagent's.
   presets.select.mockClear()
   emit('someone-else', 'standard'); emit('worker-nothing', 'standard'); await Promise.resolve()
@@ -1707,7 +1709,7 @@ it('selects its own preset again for a main Session or worker a person switched 
   // After its first turn the registry refuses any selection, which changes nothing and is not an error.
   started.add(runtime.masterId)
   emit(runtime.masterId, 'standard')
-  await vi.waitFor(() => expect(presets.select).toHaveBeenCalledTimes(1))
+  await vi.waitFor(() =>{  expect(presets.select).toHaveBeenCalledTimes(1) })
   await expect(presets.select.mock.results[0]!.value).rejects.toMatchObject({ code: 'agent-preset/locked' })
 })
 
@@ -1765,7 +1767,7 @@ it('ends the main Session\'s prompt with its Policy section, each rule on one li
   const rules = settings.policy.rules.map(rule => rule.id === 'copy'
     ? { ...rule, name: 'Copy\nfixes', instruction: 'Fix typos.\n- Keep the tone.\n\n## Not a heading' } : rule)
   await runtime.settings.save('policy', { ...settings.policy, rules }, runtime.store.blockRevision('policy'), 'panel')
-  const prompt = (sections.get(runtime.masterId)!.text as (context: object) => string)({})
+  const prompt = (sections.get(runtime.masterId)!.text)({})
   const policy = prompt.slice(prompt.indexOf('## Policy'))
   // Nothing follows the section, whose lines after its head are exactly the enabled rules.
   expect(policy.trimEnd().split('\n').slice(2)).toEqual(runtime.store.settings().policy.rules.filter(rule => rule.enabled)
@@ -1775,7 +1777,7 @@ it('ends the main Session\'s prompt with its Policy section, each rule on one li
 })
 
 it('keeps the Policy the main Session judges by in its prompt, after admission and the rest, as the latest save left it', async () => {
-  const prompt = () => (sections.get(runtime.masterId)!.text as (context: object) => string)({})
+  const prompt = () => (sections.get(runtime.masterId)!.text)({})
   const policy = () => { const text = prompt(), at = text.indexOf('## Policy'); return text.slice(at, text.indexOf('\n\n', at)) }
   const settings = runtime.store.settings()
   const line = (rule: { id: string; name: string; instruction: string }) => `- ${rule.name} (${rule.id}): ${rule.instruction}`

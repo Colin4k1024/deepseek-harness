@@ -75,7 +75,8 @@ export type DraftAction<V, M> = { type: 'edit'; value: V; meta: M | undefined; s
   | { type: 'revisionArrived'; saved: V; revision: number }
 /**
  * State machine for a settings draft.
- * Holds submitted values in `awaitingRevision` until the polled revision catches up, and rebases active edits onto newer remote revisions via `merge3`.
+ * Holds submitted values in `awaitingRevision` until the polled revision catches up, and rebases active edits onto newer remote revisions
+ * via `merge3`.
  */
 export function draftReducer<V, M>(state: DraftState<V, M>, action: DraftAction<V, M>): DraftState<V, M> {
   const { phase, draft, seen } = state
@@ -120,6 +121,7 @@ export function saveBarText(t: T, { phase, sent, notice }: DraftState<unknown, u
     case 'unstored': return { error: t('draftFailed', { error: notice.error }), status: '' }
     case 'merged': return { status: words.merged?.(notice.revision) ?? t('saveMerged') }
     case 'rebasing': return { status: t('saveRebasing') }
+    case 'restored': case undefined: break
   }
   if (phase === 'awaitingRevision') return { status: t(sent?.restarting ? 'savedRestarting' : 'saved') }
   return { status: phase === 'clean' ? t('saved') : words.editing ?? t(notice?.kind === 'restored' ? 'draftRestored' : 'draftKept') }
@@ -146,7 +148,7 @@ export function useDraft<V, M = undefined>({ key, saved, revision, save, reload 
     try { if (state.draft) sessionStorage.setItem(key, JSON.stringify(state.draft)); else sessionStorage.removeItem(key) }
     catch (failure) { dispatch({ type: 'refused', notice: { kind: 'unstored', error: errorText(failure) } }) }
   }, [key, state.draft])
-  const failed = (failure: unknown) => dispatch({ type: 'refused', notice: { kind: 'failed', error: errorText(failure) } })
+  const failed = (failure: unknown) => { dispatch({ type: 'refused', notice: { kind: 'failed', error: errorText(failure) } }) }
   const submit = async (event?: FormEvent) => {
     event?.preventDefault()
     const { draft } = state
@@ -158,7 +160,7 @@ export function useDraft<V, M = undefined>({ key, saved, revision, save, reload 
     } catch (failure) {
       const fields = failure instanceof ApiError ? failure.issues.map(issue => issue.path) : []
       if (failure instanceof ApiError && failure.status === 409) {
-        await reload().then(() => dispatch({ type: 'refused', notice: { kind: 'rebasing' } }), failed)
+        await reload().then(() => { dispatch({ type: 'refused', notice: { kind: 'rebasing' } }) }, failed)
       } else dispatch({ type: 'refused', notice: fields.length ? { kind: 'invalid', fields } : { kind: 'failed',
         error: errorText(failure) } })
       return
@@ -169,13 +171,18 @@ export function useDraft<V, M = undefined>({ key, saved, revision, save, reload 
   return { state, value: state.sent?.value ?? state.draft?.value ?? saved, meta: state.draft?.meta,
     revision: state.draft?.revision ?? revision ?? 0, dirty: state.draft !== undefined,
     busy: state.phase === 'saving' || state.phase === 'awaitingRevision', submit,
-    edit: (value: V, meta?: M) => dispatch({ type: 'edit', value, meta, saved, revision }), discard: () => dispatch({ type: 'discard' }) }
+    edit: (value: V, meta?: M) => { dispatch({ type: 'edit', value, meta, saved, revision }) }, discard: () => { dispatch({ type: 'discard' }) } }
 }
 
 /** Sticky save/discard bar for a settings block; transfers focus back to its parent block when hidden so keyboard navigation does not reset. */
 export function SaveBar({ state, dirty, busy, words, status, onDiscard, onSave }: {
-  state: DraftState<unknown, unknown>; dirty: boolean; busy: boolean; words?: DraftWords; status?: string | undefined
-  onDiscard: () => void; onSave?: () => void
+  state: DraftState<unknown, unknown>
+  dirty: boolean
+  busy: boolean
+  words?: DraftWords
+  status?: string | undefined
+  onDiscard: () => void
+  onSave?: () => void
 }) {
   const { t } = usePanel()
   const line = saveBarText(t, state, words)
@@ -192,7 +199,7 @@ export function SaveBar({ state, dirty, busy, words, status, onDiscard, onSave }
   if (!shown) return null
   const leave = (next: Element | null) => { if (next && !bar.current?.contains(next)) focused.current = false }
   return <div ref={bar} className="dt-savebar" onFocus={() => { focused.current = true }}
-    onBlur={event => leave(event.relatedTarget as Element | null)}>
+    onBlur={(event) => { leave(event.relatedTarget) }}>
     {line.error ? <p className="dt-error dt-clamp" role="alert">{line.error}</p>
       : <p className="dt-hint" aria-live="polite">{status ?? line.status}</p>}
     <Button variant="ghost" size="sm" disabled={!dirty || busy} onClick={onDiscard}>{t('discard')}</Button>

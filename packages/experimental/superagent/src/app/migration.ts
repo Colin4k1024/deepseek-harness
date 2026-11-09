@@ -15,7 +15,7 @@ import type { EffectKind, EffectPayloads } from './effects.ts'
 import { promptsNotice, settingsNotice, subscriptionNotice } from './notices.ts'
 import type { SettingsVersion, Store } from './store.ts'
 import { Versions } from './versions.ts'
-import { KV, type Key } from '../kv.ts'
+import { KV } from '../kv.ts'
 
 export const SCHEMA_VERSION = 11
 /** The oldest database schema version this build can open and migrate directly. */
@@ -49,12 +49,12 @@ export function migrateTo11(store: Store): void {
   for (const row of store.db.prepare("SELECT id, value FROM decision WHERE json_type(value, '$.mandate') = 'object'").all()) {
     step(`decision ${String(row.id)}`, () => {
       const decision = JSON.parse(String(row.value)) as Decision
-      store.decisions.save({ ...decision, mandate: { ...decision.mandate!, basis: basisOf(decision.mandate!.basis as unknown) } })
+      store.decisions.save({ ...decision, mandate: { ...decision.mandate!, basis: basisOf(decision.mandate!.basis) } })
     })
   }
   for (const thread of store.threads.list()) {
     const evaluating = thread.evaluating
-    if (evaluating) step(`thread ${thread.key}`, () => { store.threads.save({ ...thread, evaluating: { ...evaluating, basis: basisOf(evaluating.basis as unknown) } }) })
+    if (evaluating) step(`thread ${thread.key}`, () => { store.threads.save({ ...thread, evaluating: { ...evaluating, basis: basisOf(evaluating.basis) } }) })
   }
   step('the Threads\' activity times', () => { backfillThreadTimes(store) })
   // Worker-readable input keys are now prefixed with `ticket/` instead of `task/`; keep any key already written under `ticket/`.
@@ -75,7 +75,8 @@ export function migrateTo11(store: Store): void {
     ELSE value ->> '$.dropped.reason' END) WHERE value -> '$.dropped' IS NOT NULL`)
   step('the outbox', () => { outboxReceipts(store) })
   step('the current settings', () => { settingsAsVersions(store) })
-  // Sessions persist the prompt revisions each Session worked under in `KV.sessions.prompts` (`session-prompts:`), which authorizes reads; drop the old `prompt-version-read:` markers.
+  // Sessions persist the prompt revisions each Session worked under in `KV.sessions.prompts` (`session-prompts:`), which authorizes reads;
+  // drop the old `prompt-version-read:` markers.
   store.db.exec("DELETE FROM kv WHERE key LIKE 'prompt-version-read:%'")
   // Schema 6 tables stay in place: schema 7 imported them, but did not import every row.
   step('the Sources\' records', () => { migrateSourceRecords(store) })
@@ -133,7 +134,8 @@ function queueEarlierWork(store: Store): void {
 
 /**
  * Insert effects directly into the database during migration before `Effects` exists, preserving prior failure counts;
- * unlike `Effects.enqueue` (which upserts payload, increments generation, and resets attempts), `INSERT OR IGNORE` leaves an already-queued row for that `kind` and `key` untouched.
+ * unlike `Effects.enqueue` (which upserts payload, increments generation, and resets attempts), `INSERT OR IGNORE` leaves an already-queued
+ * row for that `kind` and `key` untouched.
  */
 function effectQueue(store: Store) {
   let seq = Number(store.db.prepare('SELECT IFNULL(MAX(seq), 0) AS seq FROM effect').get()?.seq ?? 0)
@@ -200,13 +202,21 @@ function migrateSettingsRecords(store: Store): void {
 interface Member { name?: string; feishuId?: string; github?: string }
 /**
  * Convert legacy flat settings (chat lists in Policy, top-level pause flag) or pre-schema-11 domain settings into current domain blocks:
- * strips fields replaced by rule instructions and prompts (Executor reviewers and branch prefix, rule `visual` flag, `autoMergeLineLimit`, Source `authority`, GitHub `mergeCli`), extracts `paused` to the top level, and splits cross-source `members` into per-source `policy.sources` entries.
+ * strips fields replaced by rule instructions and prompts (Executor reviewers and branch prefix, rule `visual` flag, `autoMergeLineLimit`,
+ * Source `authority`, GitHub `mergeCli`), extracts `paused` to the top level, and splits cross-source `members` into per-source
+ * `policy.sources` entries.
  */
 export function migrateSettings(value: unknown): unknown {
   if (!isObject(value)) return value
   if (!('members' in value || 'allowedChats' in value || 'admission' in value)) return withoutRemovedFields(value)
-  const old = value as { models?: { orchestrator?: unknown; worker?: unknown }; paused?: boolean; allowedChats?: string[]; members?: unknown[]
-    allowDirectMessages?: boolean; pollSeconds?: number; maxWorkers?: number; admission?: { mode?: string; chats?: string[]; timeoutSeconds?: number; rules?: unknown[] } }
+  const old = value as { models?: { orchestrator?: unknown; worker?: unknown }
+    paused?: boolean
+    allowedChats?: string[]
+    members?: unknown[]
+    allowDirectMessages?: boolean
+    pollSeconds?: number
+    maxWorkers?: number
+    admission?: { mode?: string; chats?: string[]; timeoutSeconds?: number; rules?: unknown[] } }
   const chats = new Map<string, 'mentions' | 'all'>()
   for (const chatId of old.allowedChats ?? []) chats.set(chatId, 'mentions')
   // Observed chats were active only when admission was enabled.
@@ -299,7 +309,8 @@ function normalize(config: unknown): PromptConfig {
  * threshold and cross-source member identities) unless an earlier migration already created it.
  */
 function migratePrompts(store: Store): void {
-  // Preserve original configs on legacy or unparseable revisions, falling back to the last readable config so sessions always have valid prompts.
+  // Preserve original configs on legacy or unparseable revisions, falling back to the last readable config so sessions always have valid
+  // prompts.
   const versions = store.keys('prompt-version:').map(name => store.get<PromptVersion & { config: unknown }>(name)!).sort((a, b) => a.revision - b.revision)
   let readable: PromptConfig = { ...teamDefaults, skills: {} }
   for (const version of versions) {
@@ -334,7 +345,8 @@ const CELLS: readonly string[] = ['listedUnaddressed', 'unlistedAddressed', 'unl
 /**
  * Upgrade a legacy mandate basis object to the current tagged union shape.
  * Current bases recorded `source` and `scope`; older ones recorded a Feishu chat directly (`chatId`) or schema 6's `legacyAuthority`.
- * A basis with neither an admission table cell nor `followup` came from a listed sender (`addressed` when it recorded `addressed`, `sender`, and `source`, else `listed`), which holds while the sender remains listed.
+ * A basis with neither an admission table cell nor `followup` came from a listed sender (`addressed` when it recorded `addressed`,
+ * `sender`, and `source`, else `listed`), which holds while the sender remains listed.
  */
 export function basisOf(stored: unknown): MandateBasis {
   // Missing or non-object bases default to a listed-sender basis (`via: 'listed'`).
@@ -371,7 +383,8 @@ export function ticketOf(old: Stored, answers = new Map<string, string[]>(), hum
   const triggerId = text(meta.sourceTriggerId) ?? ''
   const triggerIds = Array.isArray(meta.triggerIds) ? meta.triggerIds as string[] : triggerId ? [triggerId] : []
   const directory = text(meta.workspace)
-  // Remaining `meta` fields are obsolete: schema 6 task states stay in the `task` table, and accept fields live on `execution` and `mandate`.
+  // Remaining `meta` fields are obsolete: schema 6 task states stay in the `task` table, and accept fields live on `execution` and
+  // `mandate`.
   const execution: Execution | undefined = directory ? { name: text(meta.name) ?? basename(directory), directory,
     assignment: text(meta.assignment) ?? text(meta.legacyPrompt) ?? '' } : undefined
   const inputs = ticket.inputs.map((input): TicketInput => input.kind === 'trigger' ? { ...input, ...human(input.triggerId) ? { human: true } : {} }
@@ -380,7 +393,7 @@ export function ticketOf(old: Stored, answers = new Map<string, string[]>(), hum
         note: 'This ticket ended earlier and a follow-up resumed it under the same mandate. Inspect the worktree, git history and PR state before continuing; do not repeat completed external operations.' }) })
   const reported = [...new Set([...ticket.answers ?? [], ...answers.get(ticket.id) ?? []])]
   const ended = ticket.ended && { ...ticket.ended, outcome: ticket.ended.outcome ?? outcomeOf(ticket.ended) }
-  const mandate = { ...ticket.mandate, basis: basisOf(ticket.mandate.basis as unknown) }
+  const mandate = { ...ticket.mandate, basis: basisOf(ticket.mandate.basis) }
   const delivery = ticket.delivery ?? (text(meta.deliveryError) ? { error: meta.deliveryError as string, at: ticket.updatedAt } : undefined)
   const kept = execution ?? ticket.execution
   const follows = ticket.follows ?? followsOf(meta, ticket.channels, closed)
@@ -432,7 +445,7 @@ export function withoutCopies(old: Stored): Ticket {
   const { ended: _ended, ...rest } = ticket
   // Retain `ended.reason` only when it differs from `ended.outcome`, and drop duplicate end reasons from assignments stopped by that end.
   const { reason, ...end } = ended ?? {} as NonNullable<Ticket['ended']>
-  const once = ended && { ...end, ...reason && reason !== ended.outcome ? { reason } : {} } as NonNullable<Ticket['ended']>
+  const once = ended && { ...end, ...reason && reason !== ended.outcome ? { reason } : {} }
   for (const item of assignments) if (ended && item.endedReason === reason && item.endedAt === ended.at) delete item.endedReason
   return { ...rest, ...once ? { ended: once } : {}, assignments, ...ticket.execution ? { execution: execution as Execution } : {} }
 }
@@ -450,7 +463,10 @@ const SENTENCES: Readonly<Record<string, string>> = {
   'Implementation intent or target direction is not established, or a product/design decision is still required': 'directionUnsettled',
   'No enabled admission rule matched': 'noRuleMatched',
 }
-/** Parse a legacy reason string into a `Reason` when it matches a fixed sentence in `SENTENCES`, a parameterized sentence (`routed`, `startedTicket`, `observed`), or a snake_case gate/source code. */
+/**
+ * Parse a legacy reason string into a `Reason` when it matches a fixed sentence in `SENTENCES`, a parameterized sentence (`routed`,
+ * `startedTicket`, `observed`), or a snake_case gate/source code.
+ */
 function knownReason(text: string): Reason | undefined {
   if (SENTENCES[text]) return { code: SENTENCES[text] }
   const routed = /^Routed to ticket (\S+)$/.exec(text) ?? /^Already accepted as ticket (\S+)$/.exec(text)
@@ -500,7 +516,10 @@ function moveDismissals(store: Store): void {
 function dropPullEnds(store: Store): void {
   for (const name of store.keys('github-ended:')) store.delete(name)
 }
-/** Infer a ticket's `ended.outcome` when predating recorded outcomes (`stopped` for human stops, else matching `reason` or defaulting to `closed`). */
+/**
+ * Infer a ticket's `ended.outcome` when predating recorded outcomes (`stopped` for human stops, else matching `reason` or defaulting to
+ * `closed`).
+ */
 function outcomeOf(ended: Pick<NonNullable<Ticket['ended']>, 'by' | 'reason'>): NonNullable<Ticket['ended']>['outcome'] {
   if (ended.by === 'human') return 'stopped'
   return (['completed', 'merged', 'closed', 'dropped'] as const).find(outcome => outcome === ended.reason) ?? 'closed'
@@ -574,7 +593,7 @@ function feishuThreadLinks(store: Store): void {
  */
 function issueSourceRecords(store: Store): void {
   store.db.exec('UPDATE trigger SET value = json_set(value, \'$.source\', \'github\') WHERE value ->> \'$.source\' = \'github-issue\'')
-  const pending = store.get('github-issue-pending' as Key<Record<string, { number: number; at: string }>>) ?? {}
+  const pending = store.get('github-issue-pending') ?? {}
   const retries = { ...store.get(KV.github.retries) }
   for (const { number, at } of Object.values(pending)) {
     if (!(Date.now() - Date.parse(at) < POLL_HORIZON_MS)) continue
@@ -588,7 +607,7 @@ function issueSourceRecords(store: Store): void {
 /** Consolidate per-issue/PR notification and thread subscription cursors into a single cursor holding the later timestamp. */
 function githubCursors(store: Store): void {
   for (const name of [...store.keys('github-thread:'), ...store.keys('thread-since:github:')]) {
-    const at = store.get<string>(name as Key<string>)
+    const at = store.get<string>(name)
     const cursor = KV.github.cursor(Number(name.slice(name.lastIndexOf(':') + 1)))
     const current = store.get(cursor)
     if (at && !(current && current >= at)) store.set(cursor, at)
@@ -605,7 +624,8 @@ function assessmentTriggers(store: Store): void {
     if (triggerId) store.db.prepare("UPDATE effect SET value = ? WHERE kind = 'assessment' AND key = ?").run(named, row.key!)
     else store.db.prepare("DELETE FROM effect WHERE kind = 'assessment' AND key = ?").run(row.key!)
   }
-  // Re-enqueue active evaluations that predate delivery tracking so delivery starts their timeout deadline instead of leaving the thread stuck.
+  // Re-enqueue active evaluations that predate delivery tracking so delivery starts their timeout deadline instead of leaving the thread
+  // stuck.
   let seq = Number(store.db.prepare('SELECT COALESCE(MAX(seq), 0) AS seq FROM effect').get()?.seq ?? 0)
   for (const thread of store.threads.active()) {
     const evaluation = thread.evaluating

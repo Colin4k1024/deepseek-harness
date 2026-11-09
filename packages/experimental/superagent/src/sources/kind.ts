@@ -34,7 +34,10 @@ export interface SourcePolicyPart<P extends Record<string, unknown>> {
   explicit: Localized
   /** Fallback display labels for unlisted human or bot senders when raw sender IDs are not human-readable. */
   unnamed?: { person: Localized; bot: Localized }
-  /** Receiving scopes of the Policy's admission table under `config` (matching `scope().row`); kinds without `rows` use the table's defaults. */
+  /**
+   * Receiving scopes of the Policy's admission table under `config` (matching `scope().row`); kinds without `rows` use the table's
+   * defaults.
+   */
   rows?(config: Record<string, unknown>): AdmissionRowView[]
   /** Optional external roster sync (such as chat members); `ready` reports whether `part` names a target to refresh from. */
   sync?: { label: Localized; ready(part: P): boolean; run(host: SourceHost, part: P, signal: AbortSignal): Promise<P> }
@@ -54,10 +57,21 @@ export interface SourceChannel<C> {
   /** Returns the URL and label for `address`; `url` is empty when `links` lack the required deployment info. */
   link(address: Record<string, string>, links: ChannelLinks): ChannelLink
 }
-/** Normalized message returned by thread context readers; `bot` marks a non-human sender whose message can never authorize work on its own (at most an inferred candidate). */
+/**
+ * Normalized message returned by thread context readers; `bot` marks a non-human sender whose message can never authorize work on its own
+ * (at most an inferred candidate).
+ */
 export interface ContextMessage {
-  id: string; from: string; at: string; text: string
-  bot?: true; deleted?: true; reply_to?: string; url?: string; path?: string; line?: number
+  id: string
+  from: string
+  at: string
+  text: string
+  bot?: true
+  deleted?: true
+  reply_to?: string
+  url?: string
+  path?: string
+  line?: number
 }
 export type ContextPartName = 'thread' | 'root' | 'parent'
 export interface ContextPart { messages: ContextMessage[]; next?: string | undefined; body: Record<string, unknown>; status?: string }
@@ -65,7 +79,10 @@ export interface ContextPart { messages: ContextMessage[]; next?: string | undef
 export interface ThreadContext<C> {
   /** The ID of the Trigger's own message among the messages of its Thread. */
   messageId(trigger: Trigger): string
-  /** Reads a page of thread messages (`thread`, first page when `cursor` is omitted), the topic root (`root`), or the replied-to message (`parent`). */
+  /**
+   * Reads a page of thread messages (`thread`, first page when `cursor` is omitted), the topic root (`root`), or the replied-to message
+   * (`parent`).
+   */
   read(commands: Commands, trigger: Trigger, part: ContextPartName, cursor: string | undefined, config: C): Promise<ContextPart>
   /** Extracts image keys from message text that `image` can read; omitted for kinds without image support. */
   images?(text: string): string[]
@@ -94,7 +111,10 @@ export interface SourceKind<C extends Record<string, unknown> = Record<string, u
   fields: FieldSpec[]
   /** Health entry names owned by this kind under `health[...]`; no other kind or core loop may report them. */
   health: string[]
-  /** Listening rule for a trigger (or recorded Mandate basis) of this kind; kinds without `scope` listen to everything they produce and observe none of it. */
+  /**
+   * Listening rule for a trigger (or recorded Mandate basis) of this kind; kinds without `scope` listen to everything they produce and
+   * observe none of it.
+   */
   scope?(input: { meta: Record<string, unknown> }, config: C): ScopeResult
   /** Outbound reply adapter; kinds without `channel` produce no replies or channel checks. */
   channel?: SourceChannel<C>

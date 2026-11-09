@@ -53,7 +53,7 @@ async function watch(ctx: SourceContext, signal: AbortSignal): Promise<void> {
     }
     const running = new AbortController()
     const check = setInterval(() => { if (!enabled(ctx)) running.abort() }, 5000)
-    const stop = () => running.abort()
+    const stop = () => { running.abort() }
     signal.addEventListener('abort', stop, { once: true })
     const began = Date.now()
     try { await consume(ctx, running.signal) }
@@ -93,13 +93,13 @@ async function consume(ctx: SourceContext, signal: AbortSignal): Promise<void> {
       chats[String(trigger.meta.chatId)] = trigger.meta.direct === true
       ctx.state.set(KV.feishu.chats, chats)
       await receive(ctx, trigger)
-    }).catch((error) => { ctx.report('feishu', { state: 'error', detail: String(error) }) })
+    }).catch((error: unknown) => { ctx.report('feishu', { state: 'error', detail: String(error) }) })
   })
   try {
     await new Promise<void>((resolve, reject) => {
       child.once('error', reject)
       const exited = (code: number | null) => new Error(`Feishu event consumer exited (${code}, ready=${ready}): ${diagnostic}`)
-      child.once('close', code => signal.aborted ? resolve() : reject(exited(code)))
+      child.once('close', (code) => { signal.aborted ? resolve() : reject(exited(code)) })
     })
   } finally { clearTimeout(timeout); signal.removeEventListener('abort', stop); stdout.close(); stderr.close(); await chain }
 }
@@ -113,7 +113,10 @@ export async function refreshChatNames(ctx: SourceContext, signal?: AbortSignal)
   ctx.state.set(KV.sources.labels(SOURCE), names)
   return names
 }
-/** Rereads the chat list every minute independently of history backfill (whose rounds can take much longer), so newly joined chats appear within a minute. */
+/**
+ * Rereads the chat list every minute independently of history backfill (whose rounds can take much longer), so newly joined chats appear
+ * within a minute.
+ */
 async function chatNamesLoop(ctx: SourceContext, signal: AbortSignal): Promise<void> {
   await ctx.ready
   if (!available(ctx)) return

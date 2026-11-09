@@ -63,7 +63,7 @@ describe('worker shims', () => {
   })
   it('replaces the files it wrote under the project\'s earlier names', async () => {
     await writeEnvironment(testDeployment({ stateDir: dir }), ['old-cli', 'older-cli'])
-    const legacy = (file: string, name: string) => writeFileSync(file, readFileSync(file, 'utf8').replace('Written by dsh-superagent', `Written by ${name}`))
+    const legacy = (file: string, name: string) =>{  writeFileSync(file, readFileSync(file, 'utf8').replace('Written by dsh-superagent', `Written by ${name}`)) }
     legacy(join(workerBin(dir), 'old-cli'), 'dsh-tag'); legacy(join(workerBin(dir), 'older-cli'), 'dsh-freelancer'); legacy(workerGitConfig(dir), 'dsh-go')
     await writeEnvironment(testDeployment({ stateDir: dir }), [])
     expect(readdirSync(workerBin(dir)).sort()).toEqual(['gh', 'lark-cli'])
@@ -126,7 +126,7 @@ const subprocess = (config: string): SubprocessRuntime => ({
     child.stdout.on('data', (chunk) => { output.stdout += String(chunk) })
     child.stderr.on('data', (chunk) => { output.stderr += String(chunk) })
     const reader = (name: 'stdout' | 'stderr') => ({ readFrom: () => ({ text: output[name], nextOffset: 0, lossy: false }) })
-    const done = new Promise(resolve => child.on('close', code => resolve({ exitCode: code, signal: null })))
+    const done = new Promise(resolve => child.on('close', (code) =>{  resolve({ exitCode: code, signal: null }) }))
     return { done, collected: { stdout: reader('stdout'), stderr: reader('stderr') } }
   },
 }) as unknown as SubprocessRuntime

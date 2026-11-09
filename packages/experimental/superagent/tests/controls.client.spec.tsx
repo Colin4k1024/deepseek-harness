@@ -41,7 +41,7 @@ it('describes the management API in a module the panel can bundle, which imports
 it('closes the dialog on Escape and returns focus to the opener', async () => {
   function Harness() {
     const [open, setOpen] = useState(false)
-    return <><button type="button" onClick={() => setOpen(true)}>open</button><Modal open={open} onClose={() => setOpen(false)} title="Title" closeLabel="Close">body</Modal></>
+    return <><button type="button" onClick={() =>{  setOpen(true) }}>open</button><Modal open={open} onClose={() =>{  setOpen(false) }} title="Title" closeLabel="Close">body</Modal></>
   }
   const container = document.createElement('div'); document.body.append(container)
   const root = createRoot(container)
@@ -60,7 +60,7 @@ it('keeps the focus inside the dialog when its parent re-renders, and Tab and Sh
   let rerender = () => {}
   function Harness() {
     const [, setCount] = useState(0)
-    rerender = () => setCount(count => count + 1)
+    rerender = () =>{  setCount(count => count + 1) }
     // Pass a new inline onClose on each render (as polling parents do) to verify the effect does not reset focus.
     return <Modal open onClose={() => {}} title="Title" closeLabel="Close" footer={<button type="button">last</button>}><input aria-label="first field" /></Modal>
   }

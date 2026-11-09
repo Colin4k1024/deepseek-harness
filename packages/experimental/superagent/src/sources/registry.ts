@@ -8,7 +8,8 @@ import type { ChannelLink, ChannelLinks, SourceInstance, SourceKind, TriggerCont
 
 /**
  * Manages registered SourceKind plugins, validates their instance and policy configurations, and implements SourceScope for the Engine.
- * Claims each registered kind's health entries on HealthBoard and mediates access to source channels, links, environment variables, and thread context readers for Runtime, Settings, Outbox, and MasterAssessor.
+ * Claims each registered kind's health entries on HealthBoard and mediates access to source channels, links, environment variables, and
+ * thread context readers for Runtime, Settings, Outbox, and MasterAssessor.
  */
 export class SourceRegistry implements SourceScope {
   private readonly kinds = new Map<string, SourceKind>()
@@ -16,7 +17,10 @@ export class SourceRegistry implements SourceScope {
   constructor(private readonly settings: () => Settings, private readonly board: Pick<HealthBoard, 'claim'> = new HealthBoard(),
     private readonly registered: (kind: SourceKind) => () => void = () => () => {}) {}
 
-  /** Registers a SourceKind, claims its health entries on HealthBoard (rejecting `sync:` prefixes owned by Settings), and returns an unregister disposer. */
+  /**
+   * Registers a SourceKind, claims its health entries on HealthBoard (rejecting `sync:` prefixes owned by Settings), and returns an
+   * unregister disposer.
+   */
   register<C extends Record<string, unknown>>(kind: SourceKind<C>): () => void {
     if (this.kinds.has(kind.kind)) throw new Error(`Source kind already registered: ${kind.kind}`)
     const refused = (name: string) => new Error(`Source kind ${kind.kind} declares the health entry ${name}, which another part reports`)
@@ -29,8 +33,8 @@ export class SourceRegistry implements SourceScope {
       catch { release(); throw refused(name) }
     }
     for (const [name, entry] of entries) this.health.set(name, entry)
-    this.kinds.set(kind.kind, kind as unknown as SourceKind)
-    const unregistered = this.registered(kind as unknown as SourceKind)
+    this.kinds.set(kind.kind, kind)
+    const unregistered = this.registered(kind)
     return () => { this.kinds.delete(kind.kind); release(); unregistered() }
   }
   /**
@@ -41,7 +45,10 @@ export class SourceRegistry implements SourceScope {
     return new Map(names.flatMap((name) => { const entry = this.health.get(name); return entry ? [[name, entry] as const] : [] }))
   }
   kind(id: string): SourceKind | undefined { return this.kinds.get(id) }
-  /** Every registered kind's instance ordered by ID, followed by stored instances whose kind is not installed (with their config kept as stored). */
+  /**
+   * Every registered kind's instance ordered by ID, followed by stored instances whose kind is not installed (with their config kept as
+   * stored).
+   */
   instances(settings = this.settings()): (SourceInstance & { installed: boolean })[] {
     const installed = [...this.kinds.values()].sort((a, b) => a.kind.localeCompare(b.kind)).map(kind => ({ ...this.resolve(kind, settings.sources[kind.kind]), installed: true }))
     const orphaned = Object.entries(settings.sources).filter(([id]) => !this.kinds.has(id)).map(([id, stored]) => ({ id, kind: id, enabled: stored.enabled, config: stored.config, installed: false }))

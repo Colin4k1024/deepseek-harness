@@ -14,7 +14,7 @@ globalThis.IS_REACT_ACT_ENVIRONMENT = true
 export const translator = (dictionary: Record<string, string>): T => ((key: string, params?: Record<string, unknown>) => {
   const template = dictionary[key] ?? key
   return params ? template.replace(/\{(\w+)\}/g, (match, name: string) => name in params ? String(params[name]) : match) : template
-}) as T
+})
 function Panel({ t }: { t: T }) {
   return <App t={t} openSession={async (id) => { server.opened.push(id) }} deploymentForm={usePageForm(server.form)} />
 }
@@ -25,7 +25,7 @@ function unmount() {
   root = undefined
   container?.remove()
 }
-export const usePanel = () => usePanelServer(unmount)
+export const usePanel = () =>{  usePanelServer(unmount) }
 
 /** Flush pending fake-server responses and React state updates. */
 export async function settle() {
@@ -76,4 +76,4 @@ export function field<E extends HTMLElement>(label: string): E {
   if (!match) throw new Error(`No field ${label}`)
   return match as unknown as E
 }
-export const at = (route: object) => sessionStorage.setItem('dsh-superagent/route', JSON.stringify({ route, stack: [] }))
+export const at = (route: object) =>{  sessionStorage.setItem('dsh-superagent/route', JSON.stringify({ route, stack: [] })) }

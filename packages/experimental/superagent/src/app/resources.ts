@@ -73,8 +73,14 @@ export interface MainResourceHost extends ResourceHost {
   readonly settings: Pick<Settings, 'view' | 'block'>
 }
 interface Read {
-  host: ResourceHost; resource: string; rest: string; offset: number; limit?: number
-  sessionId: string; ticketId?: string; signal?: AbortSignal
+  host: ResourceHost
+  resource: string
+  rest: string
+  offset: number
+  limit?: number
+  sessionId: string
+  ticketId?: string
+  signal?: AbortSignal
 }
 type Route = readonly [name: string, read: (read: Read) => unknown]
 

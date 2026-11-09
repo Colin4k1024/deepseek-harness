@@ -17,11 +17,11 @@ export function TriggerStatus({ filter }: { filter: ThreadFilter }) {
     <StatusHead hint={t('triggerIntro')} />
     <div className="dt-filters">
       {THREAD_FILTERS.map(value => <Pill key={value} active={filter === value}
-        onClick={() => go(value)}>{t(`threadFilter.${value}`)}</Pill>)}
+        onClick={() => { go(value) }}>{t(`threadFilter.${value}`)}</Pill>)}
     </div>
     <LoadState error={error} loading={!data} />
     {data && (data.items.length ? <ul className="dt-list">{data.items.map(thread => <ThreadLine key={thread.key} thread={thread} />)}</ul>
       : <Hint>{t('threadsNone')}</Hint>)}
-    {data?.next_offset != null && <LoadMore onMore={() => setLimit(limit + 20)} />}
+    {data?.next_offset != null && <LoadMore onMore={() => { setLimit(limit + 20) }} />}
   </>
 }

@@ -31,7 +31,7 @@ function compact<Q extends object>(query: Q): Q | undefined {
 /** Validate and normalize a stored route, dropping unrecognized query filters or removed tabs (such as the legacy `policy` tab). */
 export function parseRoute(value: unknown): Route | undefined {
   const { page, id, query } = (value ?? {}) as { page?: unknown; id?: unknown; query?: Record<string, unknown> }
-  const text = (name: string) => typeof query?.[name] === 'string' ? query[name] as string : undefined
+  const text = (name: string) => typeof query?.[name] === 'string' ? query[name] : undefined
   const record = typeof id === 'string' && id ? id : undefined
   switch (page) {
     case 'overview': case 'source': return { page }

@@ -12,16 +12,28 @@ import { storeReads } from './store-read.ts'
 
 /** A Trigger's position on its thread timeline, ordered by timestamp and then `id` as tie-breaker. */
 export interface TimelinePlace { at: string; id: string }
-/** Why a message was dropped: its conversation can never receive it (`channelGone`), or its Source no longer listens to it (`channelIgnored`). */
+/**
+ * Why a message was dropped: its conversation can never receive it (`channelGone`), or its Source no longer listens to it
+ * (`channelIgnored`).
+ */
 export type DropReason = 'channelGone' | 'channelIgnored'
-/** Outbound message receipt tracked in the outbox from the moment it is queued (`pending`, `sent`, or `dropped`); delivery attempt counts live on its `reply` effect. */
+/**
+ * Outbound message receipt tracked in the outbox from the moment it is queued (`pending`, `sent`, or `dropped`); delivery attempt counts
+ * live on its `reply` effect.
+ */
 export interface Receipt extends OutboundMessage { status: ReplyStatus; dropped?: { at: string; reason: DropReason } }
 /** A dropped outbound message receipt, with the timestamp and reason it was dropped. */
 export type Dropped = Receipt & { dropped: { at: string; reason: DropReason } }
 /** Saved settings snapshot with the policy version and ticket notifications it produced (`internal` saves have no origin). */
 export interface SettingsVersion {
-  revision: number; savedAt: string; source: SettingsOrigin | 'internal'; block?: SettingsSave
-  policyVersion: string; policyChanged: boolean; notified: string[]; settings: Settings
+  revision: number
+  savedAt: string
+  source: SettingsOrigin | 'internal'
+  block?: SettingsSave
+  policyVersion: string
+  policyChanged: boolean
+  notified: string[]
+  settings: Settings
 }
 /**
  * Generated columns and partial indexes defining active working sets so passes scan only active rows.
@@ -46,14 +58,16 @@ export { SCHEMA_VERSION }
 /**
  * SQLite backing store implementing domain `Repositories`, view read queries, versioned settings, outbox receipts, and key-value state.
  * The Runtime opens it after locking the state directory and automatically migrates supported older schemas on startup.
- * The Engine mutates domain aggregates inside `atomic` transactions while Sources, views, and the Outbox read state or update their own records.
+ * The Engine mutates domain aggregates inside `atomic` transactions while Sources, views, and the Outbox read state or update their own
+ * records.
  */
 export class Store implements Repositories {
   readonly db: DatabaseSync
   /**
    * Opens or creates the SQLite database at `path`, migrating schema 10 to schema 11 in a single transaction.
    * @param report - Receives errors thrown by `afterCommit` callbacks without failing the committed transaction.
-   * @throws When the database schema is older than `OLDEST_SCHEMA` (10), newer than `SCHEMA_VERSION` (11), or when migration fails; in every case the database file is left unchanged and the SQLite handle is closed so a later attempt in the same process can open it.
+   * @throws When the database schema is older than `OLDEST_SCHEMA` (10), newer than `SCHEMA_VERSION` (11), or when migration fails; in
+   * every case the database file is left unchanged and the SQLite handle is closed so a later attempt in the same process can open it.
    */
   constructor(path: string, private readonly report: (error: unknown) => void = () => {}) {
     mkdirSync(dirname(path), { recursive: true, mode: 0o700 })
@@ -131,11 +145,15 @@ export class Store implements Repositories {
     for (const ref of trigger.threads) insert.run(threadKey(ref), trigger.id, trigger.at, trigger.human ? 1 : 0)
   }
   private depth = 0
-  /** Callbacks queued to run once the outermost transaction commits, indexed by savepoint level; rolling back a level discards its callbacks. */
+  /**
+   * Callbacks queued to run once the outermost transaction commits, indexed by savepoint level; rolling back a level discards its
+   * callbacks.
+   */
   private readonly committed: (() => void)[][] = []
   /**
    * Executes `operation` in a savepoint transaction (nested inside the current transaction if any); a failure rolls back its changes.
-   * Post-commit callbacks run only after the outermost transaction commits, and callback errors are reported without failing the committed transaction.
+   * Post-commit callbacks run only after the outermost transaction commits, and callback errors are reported without failing the committed
+   * transaction.
    */
   atomic<T>(operation: () => T): T {
     const level = this.depth++
@@ -154,7 +172,8 @@ export class Store implements Repositories {
   /**
    * Schedules `action` to run once the outermost transaction commits, or immediately if outside a transaction;
    * callbacks queued inside a transaction that rolls back are discarded and never run.
-   * Use `afterCommit` for immediate in-memory follow-ups to a committed write (such as refreshing health or cancelling an in-memory turn) that cannot wait for the effect queue and need not survive a restart; use `Effects` for durable side effects that must survive a crash.
+   * Use `afterCommit` for immediate in-memory follow-ups to a committed write (such as refreshing health or cancelling an in-memory turn)
+   * that cannot wait for the effect queue and need not survive a restart; use `Effects` for durable side effects that must survive a crash.
    */
   afterCommit(action: () => void): void {
     if (this.depth) this.committed[this.depth - 1]!.push(action)
@@ -200,10 +219,10 @@ export class Store implements Repositories {
 
   readonly triggers = {
     get: (id: string): Trigger | undefined => { const row = this.db.prepare('SELECT value FROM trigger WHERE id=?').get(id); return row ? JSON.parse(String(row.value)) as Trigger : undefined },
-    save: (trigger: Trigger): void => this.atomic(() => {
+    save: (trigger: Trigger): void => { this.atomic(() => {
       this.db.prepare('INSERT INTO trigger VALUES (?,?,?) ON CONFLICT(id) DO UPDATE SET value=excluded.value, at=excluded.at').run(trigger.id, JSON.stringify(trigger), trigger.at)
       this.indexThreads(trigger)
-    }),
+    }) },
     disposition: (id: string): TriggerDisposition | undefined => { const row = this.db.prepare('SELECT value FROM disposition WHERE id=?').get(id); return row ? JSON.parse(String(row.value)) as TriggerDisposition : undefined },
     saveDisposition: (id: string, value: TriggerDisposition): void => { this.db.prepare('INSERT INTO disposition VALUES (?,?) ON CONFLICT(id) DO UPDATE SET value=excluded.value').run(id, JSON.stringify(value)) },
   }
@@ -212,7 +231,10 @@ export class Store implements Repositories {
     save: (thread: Thread): void => { this.db.prepare('INSERT INTO thread VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').run(thread.key, JSON.stringify(thread)) },
     list: (): Thread[] => this.db.prepare('SELECT value FROM thread ORDER BY rowid').all().map(row => JSON.parse(String(row.value)) as Thread),
     active: (): Thread[] => this.values('SELECT value FROM thread WHERE active = 1 ORDER BY rowid'),
-    /** Updates human-facing thread metadata (`label`, `url`, and `facts`, where `null` removes a fact by ID); no-op if the thread does not exist. */
+    /**
+     * Updates human-facing thread metadata (`label`, `url`, and `facts`, where `null` removes a fact by ID); no-op if the thread does not
+     * exist.
+     */
     describe: (keyValue: string, patch: { label?: string; url?: string; facts?: Record<string, ThreadFact | null> }): void => {
       const thread = this.threads.get(keyValue)
       if (!thread) return
@@ -221,14 +243,17 @@ export class Store implements Repositories {
       const meta = { ...thread.meta, ...(patch.label === undefined ? {} : { label: patch.label }), ...(patch.url === undefined ? {} : { url: patch.url }), facts }
       if (JSON.stringify(meta) !== JSON.stringify(thread.meta)) this.threads.save({ ...thread, meta })
     },
-    /** Atomically sets or removes (`undefined`) source-specific metadata keys on a thread after re-reading it; no-op if the thread does not exist. */
-    patchMeta: (keyValue: string, patch: Record<string, unknown>): void => this.atomic(() => {
+    /**
+     * Atomically sets or removes (`undefined`) source-specific metadata keys on a thread after re-reading it; no-op if the thread does not
+     * exist.
+     */
+    patchMeta: (keyValue: string, patch: Record<string, unknown>): void => { this.atomic(() => {
       const thread = this.threads.get(keyValue)
       if (!thread) return
       const meta = { ...thread.meta }
       for (const [name, value] of Object.entries(patch)) { if (value === undefined) delete meta[name]; else meta[name] = value }
       if (JSON.stringify(meta) !== JSON.stringify(thread.meta)) this.threads.save({ ...thread, meta })
-    }),
+    }) },
   }
   readonly tickets = {
     get: (id: string): Ticket | undefined => { const row = this.db.prepare('SELECT value FROM ticket WHERE id=?').get(id); return row ? JSON.parse(String(row.value)) as Ticket : undefined },
@@ -255,7 +280,10 @@ export class Store implements Repositories {
     get: (id: string): Receipt | undefined => this.values<Receipt>('SELECT value FROM outbox WHERE id = ?', id)[0],
     /** Pending message receipts, oldest first. */
     waiting: (): Receipt[] => this.values("SELECT value FROM outbox WHERE value ->> '$.status' = 'pending' ORDER BY rowid"),
-    /** True if an earlier message for the same ticket and conversation is still pending with fewer than `failures` consecutive failed `reply` effect attempts. */
+    /**
+     * True if an earlier message for the same ticket and conversation is still pending with fewer than `failures` consecutive failed
+     * `reply` effect attempts.
+     */
     behind: (id: string, failures: number): boolean => !!this.db.prepare(`SELECT 1 FROM outbox earlier
       JOIN outbox message ON message.id = ? LEFT JOIN effect ON effect.kind = 'reply' AND effect.key = earlier.id
       WHERE earlier.pending = message.pending AND earlier.rowid < message.rowid AND IFNULL(effect.attempts, 0) < ? LIMIT 1`).get(id, failures),

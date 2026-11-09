@@ -25,8 +25,10 @@ function deliveryId(message: UserMessage): string | undefined {
 
 /**
  * Delivers messages to DSH agents at most once per request ID across active and restored Sessions.
- * Tracks delivered message IDs from live Session events, persisted history, and pending inboxes so retries from `Sessions` do not duplicate messages,
- * and marks delivered messages with `dsh-superagent`'s own source (`dsh-superagent`) rather than user RPCs so they are never mistaken for messages written by a person.
+ * Tracks delivered message IDs from live Session events, persisted history, and pending inboxes so retries from `Sessions` do not duplicate
+ * messages,
+ * and marks delivered messages with `dsh-superagent`'s own source (`dsh-superagent`) rather than user RPCs so they are never mistaken for
+ * messages written by a person.
  */
 export class AgentDelivery {
   private readonly seen = new WeakMap<Session, Seen>()
@@ -54,7 +56,7 @@ export class AgentDelivery {
         }
         offset += events.length
       }
-    })().catch((error) => { delete state.loaded; throw error })
+    })().catch((error: unknown) => { delete state.loaded; throw error })
     await state.loaded
     return state
   }
@@ -62,7 +64,10 @@ export class AgentDelivery {
     const id = messageId(requestId)
     return (await this.history(agent)).ids.has(id) || [...agent.inbox.nextTurn, ...agent.inbox.nextStep].some(message => deliveryId(message) === id)
   }
-  /** Delivers once to the selected inbox, or injects into history without waking the agent, and flushes Session persistence before acknowledging the producer. */
+  /**
+   * Delivers once to the selected inbox, or injects into history without waking the agent, and flushes Session persistence before
+   * acknowledging the producer.
+   */
   async send(agent: Agent, requestId: string, text: string, mode: 'queue' | 'steer' | { inject: string }, signal: AbortSignal, authorize?: () => void,
     accepted?: () => void): Promise<void> {
     signal.throwIfAborted()

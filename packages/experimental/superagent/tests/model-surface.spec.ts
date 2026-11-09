@@ -27,7 +27,9 @@ import { testMachine } from './fixtures/deployment.ts'
 type Role = 'orchestrator' | 'worker'
 interface Surface { where: string; owner: string; role: Role | 'both'; text: string }
 interface Tool {
-  name: string; description: string; parameters: unknown
+  name: string
+  description: string
+  parameters: unknown
   execute: (args: unknown, execution: { signal: AbortSignal }) => Promise<unknown>
 }
 type Section = (context: { signal?: AbortSignal }) => string
@@ -66,7 +68,10 @@ const feishu = (id: string, text: string, overrides: Record<string, unknown> = {
 const sentences = (text: string) => text.split(/(?<=[.!?])\s+|\n+/)
 const words = (count: number) => Array.from({ length: count }, () => 'word').join(' ')
 
-/** Start a configured Runtime on a fake DSH host (as in tests/runtime.spec.ts) that records registered tools, prompts, skills, and delivered messages per session. */
+/**
+ * Start a configured Runtime on a fake DSH host (as in tests/runtime.spec.ts) that records registered tools, prompts, skills, and delivered
+ * messages per session.
+ */
 async function start() {
   const directory = mkdtempSync(join(tmpdir(), 'model-surface-'))
   const AGENT = join(directory, 'agent-gh'), BOT = join(directory, 'lark-bot')
@@ -171,7 +176,7 @@ async function drive(host: Host) {
   expect(routed.results[2]!.reason).toMatch(/^Ignored from its card/)
   const a = routed.results[0]!.ticket!.ticket_id
   const answer = { trigger_id: request.id, purpose: 'answer', text: '是配置。' }
-  const refusal = await run(master, 'orchestrator_reply', answer).then(() => '', (error: Error) => error.message)
+  const refusal = await run(master, 'orchestrator_reply', answer).then(() => '', (error: unknown) => error.message)
   const proposal = feishu('5', '把副标题改成“浏览网页”', { mentions: [] })
   await runtime.receive(proposal)
   vi.spyOn(Commands.prototype, 'lark').mockResolvedValue({ items: [{ message_id: 'om_5', chat_id: CHAT }] })
@@ -212,9 +217,10 @@ async function drive(host: Host) {
   // Worker b's turn ends: it is idle, as DSH says when it emits the event.
   host.agents.get(workerB)!.status = 'idle'
   host.ctx.emit('agent/status', { agent: host.agents.get(workerB), status: 'idle' } as never)
-  await vi.waitFor(() => expect(latestAssignment(runtime.store.tickets.get(b)!)?.report?.state).toBe('waiting'))
+  await vi.waitFor(() =>{  expect(latestAssignment(runtime.store.tickets.get(b)!)?.report?.state).toBe('waiting') })
   runtime.engine.requestStatus(b)
-  // Resume runs once the status request reached the worker (whose Assignment is then busy rather than settled), so it gets the recovery note.
+  // Resume runs once the status request reached the worker (whose Assignment is then busy rather than settled), so it gets the recovery
+  // note.
   await runtime.idle()
   expect(runtime.store.tickets.get(b)!.undelivered).toEqual([])
   runtime.executor.resume()

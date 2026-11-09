@@ -30,8 +30,13 @@ export function feishu(id: string, text: string, overrides: Record<string, unkno
 
 type RegisteredTool = { name: string; execute: (args: unknown, execution: { signal: AbortSignal }) => Promise<unknown> }
 type FakeAgent = {
-  id: string; status: string; inbox: { nextTurn: UserMessage[]; nextStep: UserMessage[] }
-  cancel: Mock; inject: Mock<(message: UserMessage) => void>; steer: Mock<(message: UserMessage) => void>; followup: Mock<(message: UserMessage) => void>
+  id: string
+  status: string
+  inbox: { nextTurn: UserMessage[]; nextStep: UserMessage[] }
+  cancel: Mock
+  inject: Mock<(message: UserMessage) => void>
+  steer: Mock<(message: UserMessage) => void>
+  followup: Mock<(message: UserMessage) => void>
 }
 /** A text message, as DSH's job tools and subagents send their notices. */
 const notice = (id: string, text: string) => ({ id, role: 'user', content: [{ type: 'text', text }], source: { kind: 'tool-jobs', form: 'notice' } }) as unknown as UserMessage
@@ -124,7 +129,7 @@ export function subagentRuntime(agents: Map<string, FakeAgent>) {
   const spawn = (parent: string) => {
     if (closed.has(parent)) throw new Error('DRAINING: the Session admits no new subagents')
     const id = `child-${children.size + 1}`
-    children.set(id, { parent, live: true, settled: Promise.withResolvers<void>() })
+    children.set(id, { parent, live: true, settled: Promise.withResolvers() })
     agents.set(id, { id, status: 'running', session: { header: { parentSession: parent } } } as never)
     return id
   }

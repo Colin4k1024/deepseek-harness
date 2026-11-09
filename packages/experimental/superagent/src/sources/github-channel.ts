@@ -10,7 +10,10 @@ import { githubAddress, githubPage } from './github-trigger.ts'
 const CommentSchema = z.looseObject({
   id: z.number(), body: z.string().nullish(), in_reply_to_id: z.number().nullish(), user: z.looseObject({ login: z.string() }).nullish(),
 })
-/** True when an issue is permanently deleted (410) or locked (403); 404 is retried because it can indicate temporary permission loss on a private repo. */
+/**
+ * True when an issue is permanently deleted (410) or locked (403); 404 is retried because it can indicate temporary permission loss on a
+ * private repo.
+ */
 const gone = (error: unknown): boolean => error instanceof CliError
   && (error.code === 410 || (error.code === 403 && /locked/i.test(error.message)))
 const missing = (error: unknown): boolean => error instanceof CliError && (error.code === 404 || error.code === 410)

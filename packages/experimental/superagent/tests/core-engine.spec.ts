@@ -58,8 +58,8 @@ function harness(policyOverrides: Partial<Policy> = {}, { emit, prepareTicket }:
   }
   const pump = () => { engine.evaluateDue(); settle() }
   /** Simulate the worker's Session taking the delivered Trigger Inputs it has not yet read into a step. */
-  const read = (ticketId: string) => engine.inputsRead(ticketId, repo.tickets.get(ticketId)!.inputs.flatMap(input =>
-    input.kind === 'trigger' && input.readAt === null ? [input.id] : []))
+  const read = (ticketId: string) =>{  engine.inputsRead(ticketId, repo.tickets.get(ticketId)!.inputs.flatMap(input =>
+    input.kind === 'trigger' && input.readAt === null ? [input.id] : [])) }
   const decide = (candidate: Candidate, outcome: Outcome) => engine.decide(candidate.triggers[0]!.id, { ...outcome, evalId: candidate.evalId })
   return { repo, engine, outbox, withdrawn, requests, assessor, executor, delivered, settle, pump, read, decide,
     setVersion: (value: string) => { version = value }, setPaused: (value: boolean) => { paused = value }, tick: (seconds: number) => { clock += seconds } }
@@ -154,7 +154,7 @@ describe('eval', () => {
   it('starts every pending eval in one step, so a second pump starts none of them again', () => {
     const h = harness()
     for (const [id, thread] of [['1', 'A'], ['2', 'B']] as const) h.engine.receive(trigger(id, { threads: [{ source: 'chat', id: thread }] }))
-    expect(h.engine.evaluateDue()).toBeUndefined()
+    h.engine.evaluateDue()
     h.engine.evaluateDue()
     expect(h.requests.map(candidate => candidate.thread.key)).toEqual(['chat:A', 'chat:B'])
   })
@@ -280,10 +280,10 @@ describe('subscription fan-out', () => {
     expect(h.repo.threads.get('chat:t2')!.subscriptions).toEqual([second])
     expect(events.filter(event => event.type === 'thread.unsubscribed').map(event => event.data))
       .toEqual([{ threadKey: 'chat:t2', ticketId: first, by: 'executor', reason: 'about another fix' }])
-    expect(() => h.engine.markUnrelated(first, 'chat:t2', 'again')).toThrow(new UserError('notFollowing'))
-    expect(() => h.engine.markUnrelated(first, 'chat:t1', 'its own')).toThrow(new UserError('sourceThread'))
+    expect(() =>{  h.engine.markUnrelated(first, 'chat:t2', 'again') }).toThrow(new UserError('notFollowing'))
+    expect(() =>{  h.engine.markUnrelated(first, 'chat:t1', 'its own') }).toThrow(new UserError('sourceThread'))
     h.engine.bindThread(first, { source: 'gh', id: 'pr-9' }, true)
-    expect(() => h.engine.markUnrelated(first, 'gh:pr-9', 'its PR')).toThrow(new UserError('followedThread'))
+    expect(() =>{  h.engine.markUnrelated(first, 'gh:pr-9', 'its PR') }).toThrow(new UserError('followedThread'))
   })
 })
 describe('resume and stop', () => {
@@ -1384,7 +1384,7 @@ describe('model-surface review', () => {
   })
 })
 describe('follow-up review: turn ends', () => {
-  const merge = (h: ReturnType<typeof harness>) => h.engine.threadClosed({ source: 'gh', id: 'pr-9' }, 'merged', '2026-09-23T00:00:01Z')
+  const merge = (h: ReturnType<typeof harness>) =>{  h.engine.threadClosed({ source: 'gh', id: 'pr-9' }, 'merged', '2026-09-23T00:00:01Z') }
   it('lets a merge send to Eval only the messages its worker had no turn to read after its ready report', () => {
     const h = harness()
     const ticketId = accepted(h).ticketId!

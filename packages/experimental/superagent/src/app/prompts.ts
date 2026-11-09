@@ -18,7 +18,7 @@ const TEAM_HEADINGS: Record<TeamSection, string> = { communication: 'Communicati
 export const SKILL_NAME = /^[a-z][a-z0-9-]*$/
 /** Prefix prepended to skill names when registering them in DSH Sessions. */
 export const SKILL_PREFIX = 'dsh-superagent-'
-const SkillNameSchema = z.string().regex(SKILL_NAME).refine(name => !(Object.keys(sourceSkills) as string[]).includes(name),
+const SkillNameSchema = z.string().regex(SKILL_NAME).refine(name => !(Object.keys(sourceSkills)).includes(name),
   'This name belongs to a built-in skill')
 /** The built-in parts a team may override, by key: both roles' parts, the Source skills, and the generated parts' templates. */
 const PART_KEYS = ['runtime/shared', 'runtime/orchestrator', 'runtime/worker', 'runtime/subscriptions', 'runtime/replies',
@@ -36,7 +36,11 @@ export const PromptConfigSchema = z.object({ communication: z.string(), scope: z
   skills: z.record(SkillNameSchema, z.string()), overrides: z.record(z.string(), OverrideSchema).optional()
     .describe('Text in place of a built-in part, by its key in prompts/defaults; a part not named follows its built-in text.') }).strict()
 export type PromptConfig = z.infer<typeof PromptConfigSchema>
-export interface PromptVersion { revision: number; previousRevision: number | null; savedAt: string; source: string; config: PromptConfig
+export interface PromptVersion { revision: number
+  previousRevision: number | null
+  savedAt: string
+  source: string
+  config: PromptConfig
   /** Original unmigrated config preserved when differences cannot be compared across schema versions. */
   legacy?: { config: unknown } }
 export const defaultPrompts = (): PromptConfig => ({ ...teamDefaults, skills: {} })
@@ -129,8 +133,10 @@ export interface DefaultChange { part: string; base?: string; previous?: string;
  */
 export class PromptConflict extends Error {}
 /**
- * Stores numbered prompt configurations in `Store` via `Versions` and composes role system prompts and skills with the execution environment.
- * `Sessions` reads the composed prompts and skills for orchestrator and worker runs, while management routes and tools validate, preview, and save revisions through it.
+ * Stores numbered prompt configurations in `Store` via `Versions` and composes role system prompts and skills with the execution
+ * environment.
+ * `Sessions` reads the composed prompts and skills for orchestrator and worker runs, while management routes and tools validate, preview,
+ * and save revisions through it.
  */
 export class Prompts {
   private readonly versions: Versions<PromptVersion>
@@ -142,7 +148,10 @@ export class Prompts {
   compose(config: PromptConfig, role: Role, variables = this.environment()): string {
     return composePrompt(config, role, environmentSection(config, variables), role === 'orchestrator' ? policySection(this.store.settings(), config) : undefined)
   }
-  /** Returns skills to register in every Session: built-in Source skills (`feishu` only when a Feishu bot is configured) followed by team skills. */
+  /**
+   * Returns skills to register in every Session: built-in Source skills (`feishu` only when a Feishu bot is configured) followed by team
+   * skills.
+   */
   skills(config: PromptConfig): [string, string][] {
     return [...this.feishu() ? ['feishu'] : [], 'github', ...Object.keys(config.skills)].map(name => [name, composeSkill(config, name)])
   }

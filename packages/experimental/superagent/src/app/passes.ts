@@ -16,7 +16,8 @@ const now = (): string => new Date().toISOString()
 
 /**
  * Schedules and serializes orchestration passes that kick due `Effects` and advance `Engine` evaluations.
- * `Runtime` manages its lifecycle, while sources, tools, `Settings`, and HTTP routes trigger immediate passes when new work arrives or state changes.
+ * `Runtime` manages its lifecycle, while sources, tools, `Settings`, and HTTP routes trigger immediate passes when new work arrives or
+ * state changes.
  * Updates the runtime `HealthEntry` when a pass fails and clears the error once a subsequent pass succeeds.
  */
 export class Passes {

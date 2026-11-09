@@ -8,7 +8,10 @@ import { DecisionLine, Earlier, TicketLine, automatedRuns } from './rows.tsx'
 import { actorName, errorText, readableMarkers, reasonLabel, valueLabel, when, type T } from './text.ts'
 import { ActionLink, ClampText, ConfirmButton, Hint, LoadState, PageHead, Section, When } from './widgets.tsx'
 
-/** Disposition tags for a Trigger; omits `ignore` (the common case) and suppresses fanout tags when every target Ticket is already listed in `subscribed`. */
+/**
+ * Disposition tags for a Trigger; omits `ignore` (the common case) and suppresses fanout tags when every target Ticket is already listed in
+ * `subscribed`.
+ */
 function triggerTags(t: T, trigger: TriggerRow, subscribed?: Set<string>): ReactNode {
   const d = trigger.disposition
   const tags: ReactNode[] = []
@@ -26,7 +29,10 @@ function triggerTags(t: T, trigger: TriggerRow, subscribed?: Set<string>): React
 }
 
 function TriggerItem({ trigger, earlier, target, subscribed, requeue }: {
-  trigger: TriggerRow; earlier: TriggerRow[]; target: string | undefined; subscribed: Set<string>
+  trigger: TriggerRow
+  earlier: TriggerRow[]
+  target: string | undefined
+  subscribed: Set<string>
   requeue: { busy: boolean; run: () => void } | undefined
 }) {
   const { t, navigate } = usePanel()
@@ -46,7 +52,7 @@ function TriggerItem({ trigger, earlier, target, subscribed, requeue }: {
     <div className="dt-event-foot">
       {triggerTags(t, trigger, subscribed)}
       {ticketId && !subscribed.has(ticketId) && <button type="button" className="dt-textlink dt-icon-link"
-        onClick={() => navigate({ page: 'execution', id: ticketId })}>{t('openTicket')}</button>}
+        onClick={() => { navigate({ page: 'execution', id: ticketId }) }}>{t('openTicket')}</button>}
       {requeue && <button type="button" className="dt-textlink dt-icon-link dt-reveal" disabled={requeue.busy} aria-busy={requeue.busy}
         onClick={requeue.run}>
         <Icon name="refresh" size={13} />{t('requeue')}
@@ -143,13 +149,13 @@ export function ThreadPage({ id, target }: { id: string; target?: string | undef
     </Section>}
     {data.decisions.length > 0 && <DisclosureRow icon={<Icon name="decision" />} title={t('threadDecisions',
       { count: data.decisions.length })} open={decisionsOpen}
-    onToggle={() => setDecisionsOpen(!decisionsOpen)}>
+    onToggle={() => { setDecisionsOpen(!decisionsOpen) }}>
       <div className="dt-disclosure-body"><ul className="dt-list">{data.decisions.map(decision => <DecisionLine key={decision.id}
         decision={decision} />)}</ul></div>
     </DisclosureRow>}
     {data.correlated.length > 0 && <Section title={t('term.correlation')}>
       <ul className="dt-plain-list">{data.correlated.map(item => <li key={item.key}>
-        <button type="button" className="dt-textlink" onClick={() => navigate({ page: 'trigger', id: item.key })}>{readableMarkers(t,
+        <button type="button" className="dt-textlink" onClick={() => { navigate({ page: 'trigger', id: item.key }) }}>{readableMarkers(t,
           item.title)}</button>
       </li>)}</ul>
     </Section>}

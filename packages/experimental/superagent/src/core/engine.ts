@@ -108,7 +108,8 @@ export class Engine {
    */
   attach(ticketId: string, triggerId: string, note?: string): Ticket {
     return this.repo.atomic(() => {
-      // A message this ticket's worker handed back is not its work: attached here, no worker would decide it, and it could not be handed back again.
+      // A message this ticket's worker handed back is not its work: attached here, no worker would decide it, and it could not be handed
+      // back again.
       const handedBack = this.repo.triggers.disposition(triggerId)?.handbacks?.some(item => item.ticketId === ticketId)
       if (handedBack) throw new UserError('handedBackHere')
       const trigger = this.tickets.attachable(ticketId, triggerId)
@@ -193,7 +194,10 @@ export class Engine {
   turnEnded(ticketId: string, assignmentId: string): void {
     this.repo.atomic(() => { this.assignments.turnEnded(ticketId, assignmentId) })
   }
-  /** The Executor's fact that delivering Inputs to the Assignment that runs the ticket failed; the ticket shows it until a delivery succeeds. */
+  /**
+   * The Executor's fact that delivering Inputs to the Assignment that runs the ticket failed; the ticket shows it until a delivery
+   * succeeds.
+   */
   deliveryFailed(ticketId: string, assignmentId: string, error: string): void {
     this.repo.atomic(() => { this.assignments.deliveryFailed(ticketId, assignmentId, error) })
   }
@@ -221,7 +225,8 @@ export class Engine {
   note(ticketId: string, text: string): Ticket { return this.repo.atomic(() => this.tickets.note(ticketId, text)) }
   /**
    * An Executor's hand-back of a message that reached its ticket but asks for more than it: see `Evals.handback`.
-   * @returns whether it was queued for Eval: false while another ticket still decides it, and for one this ticket did not decide (see `Evals.handback`).
+   * @returns whether it was queued for Eval: false while another ticket still decides it, and for one this ticket did not decide (see
+   * `Evals.handback`).
    * @throws UserError when the ticket or trigger is unknown, the trigger did not reach the ticket, or the ticket already handed it back.
    */
   handback(ticketId: string, triggerId: string, reason: string): boolean {

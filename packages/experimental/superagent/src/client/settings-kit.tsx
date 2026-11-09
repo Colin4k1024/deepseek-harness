@@ -73,7 +73,7 @@ export function ModelField({ id, value, onChange }: { id: string; value: RoleMod
   const { t, call } = usePanel()
   const [catalog, setCatalog] = useState<ApiResponse<'GET models'>>()
   const [error, setError] = useState<string>()
-  useEffect(() => { call('GET models').then(setCatalog, failure => setError(errorText(failure))) }, [call])
+  useEffect(() => { call('GET models').then(setCatalog, (failure: unknown) => { setError(errorText(failure)) }) }, [call])
   const current = { provider: value?.provider ?? '', model: value?.model ?? '', effort: value?.reasoningEffort ?? '' }
   const set = (next: Partial<typeof current>) => {
     const { provider, model, effort } = { ...current, ...next }
@@ -83,7 +83,7 @@ export function ModelField({ id, value, onChange }: { id: string; value: RoleMod
   const fallback = catalog?.default
   const input = (name: keyof typeof current, label: string, placeholder: string) => <Field label={label}>
     <Input list={`${id}-${name}s`} spellCheck={false} placeholder={placeholder} value={current[name]}
-      onChange={event => set({ [name]: event.target.value })} />
+      onChange={(event) => { set({ [name]: event.target.value }) }} />
   </Field>
   return <div className="dt-model">
     <Hint>{fallback ? t('defaultModel', { model: `${fallback.provider} / ${fallback.model}${fallback.reasoningEffort
@@ -128,7 +128,7 @@ export function ConfigHistory({ blocks, versions, focus }: { blocks: string[]; v
   const [data, setData] = useState<HistoryView>()
   const [error, setError] = useState<string>()
   const revisions = JSON.stringify([Object.values(settings.blocks).map(block => block.revision), sources.map(source => source.revision)])
-  useEffect(() => { if (open) call('GET policy/history').then(setData, failure => setError(errorText(failure))) }, [open, call, revisions])
+  useEffect(() => { if (open) call('GET policy/history').then(setData, (failure: unknown) => { setError(errorText(failure)) }) }, [open, call, revisions])
   const listed = (block: string | undefined) => block ? blocks.some(item => item === block || (item.endsWith(':')
     && block.startsWith(item))) : blocks.includes('policy')
   const items = data?.items.filter(item => (versions && item.policyChanged) || listed(item.block)) ?? []
@@ -136,7 +136,7 @@ export function ConfigHistory({ blocks, versions, focus }: { blocks: string[]; v
   const target = focus ? items.filter(item => item.policyChanged && item.policyVersion.startsWith(focus)).at(-1) : undefined
   const scroll = (element: HTMLLIElement | null) => { if (element
     && !element.dataset.scrolled) { element.dataset.scrolled = '1'; element.scrollIntoView?.({ block: 'center' }) } }
-  return <DisclosureRow icon={<Icon name="history" />} title={t('configHistory')} open={open} onToggle={() => setOpen(!open)}>
+  return <DisclosureRow icon={<Icon name="history" />} title={t('configHistory')} open={open} onToggle={() => { setOpen(!open) }}>
     <div className="dt-disclosure-body">
       {error && <p className="dt-error">{error}</p>}
       {data && <>
@@ -165,8 +165,11 @@ type Column = Extract<FieldSpec, { type: 'rows' }>['columns'][number]
 const ROWS_SHOWN = 6
 const byName = ([, a]: [string, string], [, b]: [string, string]) => a.localeCompare(b)
 function RowsField({ field, value, saved, onChange, labels, refreshLabels }: {
-  field: Extract<FieldSpec, { type: 'rows' }>; value: unknown; saved: unknown; onChange: (next: unknown) => void; labels: Record<string,
-    string>
+  field: Extract<FieldSpec, { type: 'rows' }>
+  value: unknown
+  saved: unknown
+  onChange: (next: unknown) => void
+  labels: Record<string, string>
   refreshLabels: (() => Promise<string[]>) | undefined
 }) {
   const { t, notify } = usePanel()
@@ -179,7 +182,7 @@ function RowsField({ field, value, saved, onChange, labels, refreshLabels }: {
   })
   const label = localized(t, field.label), hint = localized(t, field.hint)
   const rows = Array.isArray(value) ? value as Row[] : []
-  const set = (index: number, row: Row) => onChange(rows.map((item, position) => position === index ? row : item))
+  const set = (index: number, row: Row) => { onChange(rows.map((item, position) => position === index ? row : item)) }
   const key = field.columns[0]!
   const savedKeys = new Set((Array.isArray(saved) ? saved as Row[] : []).map(row => row[key.key]))
   const choose = key.type === 'text' && key.choose && Object.keys(labels).length ? localized(t, key.choose) : ''
@@ -191,27 +194,27 @@ function RowsField({ field, value, saved, onChange, labels, refreshLabels }: {
   const named = field.columns[1]?.type === 'text' ? field.columns[1] : undefined
   const rowName = (row: Row) => (named && row[named.key]) || labels[row[key.key] ?? ''] || row[key.key] || ''
   const cell = (row: Row, index: number, column: Column) => {
-    const id = row[key.key] ?? '', change = (next: string) => set(index, { ...row, [column.key]: next })
+    const id = row[key.key] ?? '', change = (next: string) => { set(index, { ...row, [column.key]: next }) }
     if (column === key && (savedKeys.has(id) || (!choose && labels[id]))) {
       return <span key={column.key} className={labels[id] ? 'dt-row-label' : 'dt-row-label dt-mono'} title={id}>{labels[id] ?? id}</span>
     }
     if (column === key && choose) {
       return <select key={column.key} className="dt-select" aria-label={choose} required value={id}
-        onChange={event => change(event.target.value)}>
+        onChange={(event) => { change(event.target.value) }}>
         <option value="" disabled>{choose}</option>
         {choices(id).map(([option, name]) => <option key={option} value={option}>{name}</option>)}
       </select>
     }
     if (column.type === 'select') {
       return <select key={column.key} className="dt-select" aria-label={localized(t, column.label)} value={row[column.key] ?? ''}
-        onChange={event => change(event.target.value)}>
+        onChange={(event) => { change(event.target.value) }}>
         {column.options.map(option => <option key={option.value} value={option.value}>{localized(t, option.label)}</option>)}
       </select>
     }
     return <Input key={column.key} className={column.optional ? undefined : 'dt-mono'} aria-label={localized(t, column.label)}
       placeholder={localized(t, column.label)}
       required={!column.optional} pattern={column.pattern} spellCheck={false} value={row[column.key] ?? ''}
-      onChange={event => change(event.target.value)} />
+      onChange={(event) => { change(event.target.value) }} />
   }
   return <div className="dt-field">
     <div className="dt-subhead">
@@ -225,7 +228,7 @@ function RowsField({ field, value, saved, onChange, labels, refreshLabels }: {
       </span>
     </div>
     {rows.length > ROWS_SHOWN && <button type="button" className="dt-textlink dt-rows-summary" aria-expanded={open}
-      onClick={() => setOpen(!open)}>
+      onClick={() => { setOpen(!open) }}>
       {open ? t('collapse') : rows.map(rowName).join(t('listSeparator'))}
     </button>}
     {(rows.length <= ROWS_SHOWN || open) && <ul className="dt-rows"
@@ -233,12 +236,16 @@ function RowsField({ field, value, saved, onChange, labels, refreshLabels }: {
         {field.columns.map(column => cell(row, index, column))}
         <Button variant="ghost" size="sm" icon={<Icon name="trash" />} aria-label={t('removeRow', { name: labels[row[key.key] ?? '']
         || row[key.key] || label })}
-        onClick={() => onChange(rows.filter((_, position) => position !== index))} />
+        onClick={() => { onChange(rows.filter((_, position) => position !== index)) }} />
       </li>)}</ul>}
   </div>
 }
 export function SourceField({ field, value, saved, fact, onChange, labels, refreshLabels }: {
-  field: FieldSpec; value: unknown; saved: unknown; fact: Localized | string | undefined; onChange: (next: unknown) => void
+  field: FieldSpec
+  value: unknown
+  saved: unknown
+  fact: Localized | string | undefined
+  onChange: (next: unknown) => void
   labels: Record<string, string>
   refreshLabels?: () => Promise<string[]>
 }) {
@@ -252,24 +259,24 @@ export function SourceField({ field, value, saved, fact, onChange, labels, refre
     </Field>
     case 'number': return <Field label={label} hint={hint}>
       <Input type="number" min={field.min} max={field.max} required value={String(value ?? '')}
-        onChange={event => onChange(event.target.value === '' ? '' : Number(event.target.value))} />
+        onChange={(event) => { onChange(event.target.value === '' ? '' : Number(event.target.value)) }} />
     </Field>
     case 'text': return <Field label={label} hint={hint} note={localized(t, fact)}>
       {field.choose && Object.keys(labels).length
-        ? <select className="dt-select" value={String(value ?? '')} onChange={event => onChange(event.target.value)}>
+        ? <select className="dt-select" value={String(value ?? '')} onChange={(event) => { onChange(event.target.value) }}>
           <option value="">{localized(t, field.choose)}</option>
           {value && !labels[String(value)] ? <option value={String(value)}>{String(value)}</option> : null}
           {Object.entries(labels).sort(byName).map(([option, name]) => <option key={option} value={option}>{name}</option>)}
         </select>
         : <Input value={String(value ?? '')} readOnly={field.readonly} pattern={field.pattern} spellCheck={false}
-          onChange={event => onChange(event.target.value)} />}
+          onChange={(event) => { onChange(event.target.value) }} />}
     </Field>
     case 'fact': return <div className="dt-field">
       <span className="dt-field-head">{label}{hint && <InfoTip text={hint} />}</span>
       <span className="dt-mono">{localized(t, fact) || t('empty')}</span>
       {field.settings && <small>
         <button type="button" className="dt-textlink"
-          onClick={() => navigate(settingsRoute(field.settings!))}>{t(`openSettingsOf.${field.settings}`)}</button>
+          onClick={() => { navigate(settingsRoute(field.settings!)) }}>{t(`openSettingsOf.${field.settings}`)}</button>
       </small>}
     </div>
     case 'rows': return <RowsField field={field} value={value} saved={saved} onChange={onChange} labels={labels}

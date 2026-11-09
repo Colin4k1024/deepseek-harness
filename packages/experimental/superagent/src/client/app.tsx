@@ -20,7 +20,8 @@ import { TriggerStatus } from './trigger.tsx'
 import { When } from './widgets.tsx'
 
 export interface AppProps {
-  t: T; openSession: (sessionId: string) => Promise<void>
+  t: T
+  openSession: (sessionId: string) => Promise<void>
   deploymentForm: DeploymentForm
 }
 
@@ -119,7 +120,7 @@ function Header({ masterId }: { masterId: string | undefined }) {
     if (!text) { show(); return }
     const request = ++latest.current
     call('GET search', { query: { q: text } }).then((value) => { if (request === latest.current) setResult({ query: text, value }) },
-      (failure) => { if (request === latest.current) notify(errorText(failure)) })
+      (failure: unknown) => { if (request === latest.current) notify(errorText(failure)) })
   }
   return <header className="dt-head">
     <div className="dt-head-title"><h1 className="dt-title">{t('title')}</h1></div>
@@ -130,11 +131,11 @@ function Header({ masterId }: { masterId: string | undefined }) {
         {result && <SearchResults result={result.value} query={result.query} onClose={() => { show() }} />}
       </form>
       <Button variant="ghost" size="sm" icon={<Icon name="question" />} aria-label={t('glossary')} title={t('glossary')} aria-haspopup="dialog"
-        onClick={() => setGlossary(true)} />
+        onClick={() => { setGlossary(true) }} />
       <Button variant="outline" size="sm" icon={<Icon name="session" size={14} />} disabled={!masterId}
-        onClick={() => { if (masterId) openSession(masterId).catch(failure => notify(errorText(failure))) }}>{t('openMaster')}</Button>
+        onClick={() => { if (masterId) openSession(masterId).catch((failure: unknown) => { notify(errorText(failure)) }) }}>{t('openMaster')}</Button>
     </div>
-    <Glossary open={glossary} onClose={() => setGlossary(false)} />
+    <Glossary open={glossary} onClose={() => { setGlossary(false) }} />
   </header>
 }
 
@@ -174,14 +175,14 @@ export function App({ t, openSession, deploymentForm }: AppProps) {
   const [location, setLocation] = useState(initialLocation)
   useEffect(() => { remember(location) }, [location])
   // Preserve the last opened settings group across navigation so the Settings tab reopens at it.
-  const move = useCallback((next: (current: Location) => Pick<Location, 'route' | 'stack'>) =>
-    setLocation(current => ({ ...next(current), group: lastSettingsGroup(current) })), [])
+  const move = useCallback((next: (current: Location) => Pick<Location, 'route' | 'stack'>) =>{
+    setLocation(current => ({ ...next(current), group: lastSettingsGroup(current) })) }, [])
   /** Navigates to `route`; `replace` swaps the current entry (filters, paging) instead of pushing a back step. */
-  const navigate = useCallback((route: Route, replace = false) => move(current => ({ route,
-    stack: replace ? current.stack : [...current.stack, current.route].slice(-20) })), [move])
-  const back = useCallback(() => move(current => ({ route: current.stack.at(-1) ?? HOME, stack: current.stack.slice(0, -1) })), [move])
-  const openTab = useCallback((tab: Tab) => move(current => ({ stack: [], route: tab === 'settings'
-    ? settingsRoute(lastSettingsGroup(current)) : { page: tab, id: undefined } })), [move])
+  const navigate = useCallback((route: Route, replace = false) => { move(current => ({ route,
+    stack: replace ? current.stack : [...current.stack, current.route].slice(-20) })) }, [move])
+  const back = useCallback(() => { move(current => ({ route: current.stack.at(-1) ?? HOME, stack: current.stack.slice(0, -1) })) }, [move])
+  const openTab = useCallback((tab: Tab) => { move(current => ({ stack: [], route: tab === 'settings'
+    ? settingsRoute(lastSettingsGroup(current)) : { page: tab, id: undefined } })) }, [move])
   return <PanelProvider t={t} openSession={openSession} navigate={navigate} back={back} backLabel={routeLabel(t, location.stack.at(-1) ?? HOME)}>
     <Pages route={location.route} openTab={openTab} deploymentForm={deploymentForm} />
   </PanelProvider>

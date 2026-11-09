@@ -26,8 +26,8 @@ const engine = () => new Engine({ repo: store, scope: sources, policy: () => set
   outbox: { send: () => {}, status: () => undefined, withdraw: () => {} } })
 const comment = (id: string, at: string): Trigger => ({ id, source: 'github', threads: [{ source: 'github', id: '7' }], actor: { source: 'github', id: 'alice' },
   human: true, at, text: `comment ${id}`, meta: {} })
-const saveThread = () => store.threads.save({ key: 'github:7', ref: { source: 'github', id: '7' }, createdAt: '', subscriptions: [], correlated: [], pending: [],
-  meta: {} })
+const saveThread = () =>{  store.threads.save({ key: 'github:7', ref: { source: 'github', id: '7' }, createdAt: '', subscriptions: [], correlated: [], pending: [],
+  meta: {} }) }
 const ids = (detail: ReturnType<typeof threadDetail>) => detail!.timeline.map(item => item.id)
 
 it('pages a thread by time and then id, so a Trigger of the same second as a page\'s oldest one shows on the next page', () => {

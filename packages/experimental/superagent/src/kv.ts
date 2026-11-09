@@ -15,7 +15,7 @@ export type Family<V, A extends unknown[]> = ((...name: A) => Key<V>) & { readon
 export const record = <V>(key: string) => key as Key<V>
 /** Define a KV key family whose keys join `prefix` and name parts with `:` (or a custom `format`). */
 export function family<V, A extends unknown[] = [string]>(prefix: string, format = (...name: A) => name.join(':')): Family<V, A> {
-  return Object.assign((...name: A) => `${prefix}${format(...name)}` as Key<V>, { prefix })
+  return Object.assign((...name: A) => `${prefix}${format(...name)}`, { prefix })
 }
 
 export const KV = {

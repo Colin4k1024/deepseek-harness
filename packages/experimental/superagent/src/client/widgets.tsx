@@ -22,7 +22,13 @@ export function SetupMessage({ problem, lead }: { problem: Pick<SetupProblem, 'c
   </>
 }
 export function Section({ title, count, children, action, hint, badge, icon }: {
-  title: string; count?: number | string; children: ReactNode; action?: ReactNode; hint?: string; badge?: ReactNode; icon?: IconName
+  title: string
+  count?: number | string
+  children: ReactNode
+  action?: ReactNode
+  hint?: string
+  badge?: ReactNode
+  icon?: IconName
 }) {
   return <section className="dt-section">
     <h2 className="dt-section-title">
@@ -68,21 +74,26 @@ export function ClampText({ text }: { text: string }) {
   const long = text.length > 480 || text.split('\n').length > 8
   return <>
     <div className={long && !open ? 'dt-event-text dt-clamp-8' : 'dt-event-text'}><Inlines parts={linkify(text)} /></div>
-    {long && <MoreToggle open={open} onToggle={() => setOpen(!open)} />}
+    {long && <MoreToggle open={open} onToggle={() => { setOpen(!open) }} />}
   </>
 }
 
 export function ConfirmButton({ label, title, message, onConfirm, variant = 'ghost', icon }: {
-  label: string; title: string; message: string; onConfirm: () => Promise<unknown>; variant?: 'ghost' | 'outline'; icon?: IconName
+  label: string
+  title: string
+  message: string
+  onConfirm: () => Promise<unknown>
+  variant?: 'ghost' | 'outline'
+  icon?: IconName
 }) {
   const { t } = usePanel()
   const [open, setOpen] = useState(false)
   const confirm = useAction(onConfirm)
   return <>
-    <Button variant={variant} size="sm" icon={icon && <Icon name={icon} size={14} />} onClick={() => setOpen(true)}>{label}</Button>
-    <Modal open={open} onClose={() => setOpen(false)} title={title} closeLabel={t('close')} description={message}
+    <Button variant={variant} size="sm" icon={icon && <Icon name={icon} size={14} />} onClick={() => { setOpen(true) }}>{label}</Button>
+    <Modal open={open} onClose={() => { setOpen(false) }} title={title} closeLabel={t('close')} description={message}
       footer={<>
-        <Button variant="ghost" onClick={() => setOpen(false)}>{t('cancel')}</Button>
+        <Button variant="ghost" onClick={() => { setOpen(false) }}>{t('cancel')}</Button>
         <Button variant="primary" disabled={confirm.busy}
           onClick={() => { void confirm.run().then((done) => { if (done) setOpen(false) }) }}>{t('confirm')}</Button>
       </>} />
@@ -92,7 +103,7 @@ export function SessionButton({ sessionId, label,
   variant = 'ghost' }: { sessionId: string; label?: string; variant?: 'ghost' | 'outline' }) {
   const { t, openSession, notify } = usePanel()
   return <Button variant={variant} size="sm" icon={<Icon name="session" size={14} />}
-    onClick={() => { openSession(sessionId).catch(error => notify(errorText(error))) }}>{label ?? t('openSession')}</Button>
+    onClick={() => { openSession(sessionId).catch((error: unknown) => { notify(errorText(error)) }) }}>{label ?? t('openSession')}</Button>
 }
 export function ExternalLink({ href, children, icon = 'external' }: { href: string; children: ReactNode; icon?: IconName }) {
   return <a className="dt-inline-link dt-icon-link" href={href} {...external}><Icon name={icon} size={13} />{children}</a>
@@ -120,7 +131,7 @@ export function StatusHead({ hint, settings }: { hint: string; settings?: Settin
   return <div className="dt-status-head">
     <h2 className="dt-status-title">{t('statusTitle')}<InfoTip text={hint} /></h2>
     {settings && <Button variant="ghost" size="sm" icon={<Icon name="settings" />}
-      onClick={() => navigate(settingsRoute(settings))}>{t('tab.settings')}</Button>}
+      onClick={() => { navigate(settingsRoute(settings)) }}>{t('tab.settings')}</Button>}
   </div>
 }
 export function PageHead({ title, children }: { title: ReactNode; children?: ReactNode }) {

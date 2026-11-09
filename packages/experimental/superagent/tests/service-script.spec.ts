@@ -12,7 +12,7 @@ let root: string
 let server: Server | undefined
 let sleepers: ChildProcess[] = []
 const control = (profile: string) => join(root, '.artifacts', 'control', 'profiles', profile)
-const program = (name: string, body: string) => writeFileSync(join(root, 'bin', name), `#!/bin/sh\n${body}\n`, { mode: 0o755 })
+const program = (name: string, body: string) =>{  writeFileSync(join(root, 'bin', name), `#!/bin/sh\n${body}\n`, { mode: 0o755 }) }
 /** Spawn a dummy process whose PID can be listed by the fake ps binary; ignoreInterrupt simulates a hung graceful stop. */
 function sleeper(ignoreInterrupt = false): number {
   const [program, args] = ignoreInterrupt ? ['sh', ['-c', 'trap "" INT; exec sleep 60']] as const : ['sleep', ['60']] as const
@@ -21,9 +21,12 @@ function sleeper(ignoreInterrupt = false): number {
   return child.pid!
 }
 const service = (pid: number, profile = 'superagent') => `${pid} node node /opt/my tools/dsh --profile ${profile} --no-open`
-/** Write active process lines (`pid ucomm args`) for the fake ps binary. Entries prefixed with `after:<pid> ` appear only after that PID exits. */
-const processes = (...lines: string[]) => writeFileSync(join(root, 'ps.txt'), lines.map(line => `${line}\n`).join(''))
-const started = (...lines: string[]) => writeFileSync(join(root, 'ps-started.txt'), lines.map(line => `${line}\n`).join(''))
+/**
+ * Write active process lines (`pid ucomm args`) for the fake ps binary. Entries prefixed with `after:<pid> ` appear only after that PID
+ * exits.
+ */
+const processes = (...lines: string[]) =>{  writeFileSync(join(root, 'ps.txt'), lines.map(line => `${line}\n`).join('')) }
+const started = (...lines: string[]) =>{  writeFileSync(join(root, 'ps-started.txt'), lines.map(line => `${line}\n`).join('')) }
 beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), 'service script '))
   mkdirSync(join(root, 'scripts')); mkdirSync(join(root, 'bin'))
@@ -51,7 +54,7 @@ function run(...args: string[]): Promise<{ code: number; stdout: string; stderr:
   return new Promise(resolve => execFile('python3', [join(root, 'scripts', 'dsh-superagent'), ...args],
     { env: { ...process.env, PATH: `${join(root, 'bin')}:${process.env.PATH}`, DSH_SUPERAGENT_PROFILE: '', DSH_SUPERAGENT_URL: '' },
       timeout: 20_000 },
-    (error, stdout, stderr) => resolve({ code: typeof error?.code === 'number' ? error.code : 0, stdout, stderr })))
+    (error, stdout, stderr) =>{  resolve({ code: typeof error?.code === 'number' ? error.code : 0, stdout, stderr }) }))
 }
 const READY = { health: { runtime: { state: 'ready', detail: '' } }, setup: { problem: null, feishuProblem: null } }
 /** Start a mock HTTP server that returns 503 until tmux launches the service (unless always is true). */
@@ -61,7 +64,7 @@ async function answering(state: unknown = READY, always = false): Promise<string
     response.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(state))
   })
   await new Promise<void>(resolve => server!.listen(0, '127.0.0.1', resolve))
-  return `http://127.0.0.1:${(server!.address() as AddressInfo).port}`
+  return `http://127.0.0.1:${(server.address() as AddressInfo).port}`
 }
 const status = async (profile: string, url = 'http://127.0.0.1:9') =>
   JSON.parse((await run('status', '--profile', profile, '--url', url)).stdout) as { pids: number[]; manually_stopped: boolean }

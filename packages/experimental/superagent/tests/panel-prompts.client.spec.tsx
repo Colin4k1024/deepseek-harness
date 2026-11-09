@@ -114,7 +114,7 @@ const builtInItem = (name: string) => all('.dt-prompt-nav .dt-nav-item').find(it
 it('edits a built-in part as an override of its built-in text, marks it changed, and resets it to the built-in text', async () => {
   at({ page: 'settings', query: { group: 'prompts' } })
   await mount()
-  const shared = builtInParts()['runtime/shared']!
+  const shared = builtInParts()['runtime/shared']
   await click(builtInItem(zh['promptPart.runtime/shared']))
   expect(field<HTMLTextAreaElement>(zh.promptBody).value).toBe(shared.text)
   expect(text()).toContain(zh['promptReadBy.both'])
@@ -142,7 +142,7 @@ it('says which placeholders a template keeps', async () => {
 })
 
 it('marks an override whose built-in text an upgrade changed, shows how it changed, and keeps the team\'s text or takes the new one', async () => {
-  const dispatch = builtInParts()['runtime/dispatch']!
+  const dispatch = builtInParts()['runtime/dispatch']
   const overrides = { 'runtime/dispatch': { text: '## dispatch\nOur routing.', base: builtInBase('## dispatch\nThe old routing.') } }
   server.prompts.revision = 1; server.prompts.current = promptVersion(1, { ...defaultPrompts(), overrides })
   server.prompts.defaultChanged = [{ part: 'runtime/dispatch', base: overrides['runtime/dispatch'].base, previous: '## dispatch\nThe old routing.' }]
@@ -171,7 +171,7 @@ it('marks an override whose built-in text an upgrade changed, shows how it chang
 })
 
 it('shows the team\'s text against the new default when the default it was edited from is not known, or is another one', async () => {
-  const dispatch = builtInParts()['runtime/dispatch']!
+  const dispatch = builtInParts()['runtime/dispatch']
   // The override was restored from an older version: its base is not the one the changed default was found for.
   const overrides = { 'runtime/dispatch': { text: '## dispatch\nOur routing.', base: 'restored' } }
   server.prompts.revision = 1; server.prompts.current = promptVersion(1, { ...defaultPrompts(), overrides })

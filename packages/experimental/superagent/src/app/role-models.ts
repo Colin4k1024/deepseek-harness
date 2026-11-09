@@ -38,7 +38,7 @@ export async function initializeRoleModel(ctx: Context, agent: Agent, model: Rol
         if (session === agent.session && (event.type === 'request/header' || event.type === 'model/selection')) initial = false
       }),
     ]
-    return () => disposers.forEach(dispose => dispose())
+    return () => { disposers.forEach(dispose => dispose()) }
   })
   await ctx.sessionPersistence.flush()
 }

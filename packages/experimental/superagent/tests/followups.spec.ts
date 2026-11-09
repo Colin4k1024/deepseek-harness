@@ -1,4 +1,7 @@
-/** Follow-up routing: human messages on subscribed threads go directly to the ticket worker and notify the main session without starting an Eval. */
+/**
+ * Follow-up routing: human messages on subscribed threads go directly to the ticket worker and notify the main session without starting an
+ * Eval.
+ */
 import { afterEach, expect, it, vi } from 'vitest'
 import { CHAT, feishu, startRuntime, type Host } from './fixtures/host.ts'
 import { repliedTo } from '../src/app/links.ts'
@@ -58,8 +61,8 @@ it('leaves a delivered follow-up to its ticket\'s worker: the main Session may s
     const decides = /its worker decides whether it belongs there/
     // A guest's follow-up stays inferred, so its stop does not stop the work; the main Session cannot route or requeue it.
     const guest = await settle('4', '别做了', 'ou_guest')
-    expect(await h!.route({ kind: 'stop', ticket_id: ticket.id, trigger_id: guest })).toMatchObject({ decision: 'ignore' })
-    await expect(h!.route({ kind: 'accept', trigger_id: guest, title: 'More', worktree_name: 'more', acknowledgement: 'ok' }))
+    expect(await h.route({ kind: 'stop', ticket_id: ticket.id, trigger_id: guest })).toMatchObject({ decision: 'ignore' })
+    await expect(h.route({ kind: 'accept', trigger_id: guest, title: 'More', worktree_name: 'more', acknowledgement: 'ok' }))
       .rejects.toThrow(decides)
     await expect(master('orchestrator_trigger_requeue', { trigger_id: guest })).rejects.toThrow(decides)
     // A person may still send it to Eval from the panel.
@@ -68,23 +71,23 @@ it('leaves a delivered follow-up to its ticket\'s worker: the main Session may s
     expect(h.candidates()).toContain(guest)
     // Alice's follow-ups carry her authority once the worker hands them back: one goes to the other ticket, one becomes new work.
     const attach = await settle('5', '这个其实是另一件事的')
-    await expect(h!.route({ kind: 'attach', ticket_id: other.ticket.id, trigger_id: attach })).rejects.toThrow(decides)
+    await expect(h.route({ kind: 'attach', ticket_id: other.ticket.id, trigger_id: attach })).rejects.toThrow(decides)
     await h.runTool(sessionId, 'orchestrator_trigger_handback', { trigger_id: attach, reason: 'It is about the other request.' })
-    expect(await h!.route({ kind: 'attach', ticket_id: other.ticket.id, trigger_id: attach }))
+    expect(await h.route({ kind: 'attach', ticket_id: other.ticket.id, trigger_id: attach }))
       .toMatchObject({ ticket: expect.objectContaining({ ticket_id: other.ticket.id }) })
     const work = await settle('6', '另外把导出按钮也加上')
     const request = { trigger_id: work, title: '导出按钮', worktree_name: 'export', acknowledgement: '收到，加导出按钮。' }
-    await expect(h!.route({ kind: 'accept', ...request })).rejects.toThrow(decides)
+    await expect(h.route({ kind: 'accept', ...request })).rejects.toThrow(decides)
     // The attach subscribed the other ticket to this thread, so its worker decides the message too; it is new work once both
     // hand it back.
     await h.runTool(sessionId, 'orchestrator_trigger_handback', { trigger_id: work, reason: 'It asks for an export button.' })
-    await expect(h!.route({ kind: 'accept', ...request })).rejects.toThrow(decides)
+    await expect(h.route({ kind: 'accept', ...request })).rejects.toThrow(decides)
     await h.runTool(other.sessionId, 'orchestrator_trigger_handback', { trigger_id: work, reason: 'Not this ticket either.' })
-    const accepted = await h!.route({ kind: 'accept', ...request })
+    const accepted = await h.route({ kind: 'accept', ...request })
     expect(h.runtime.store.tickets.get((accepted.ticket as { ticket_id: string }).ticket_id)!.mandate).toMatchObject({ strength: 'explicit' })
     // A stop on a person's request needs no hand-back.
     const stop = await settle('7', '先停一下')
-    expect(await h!.route({ kind: 'stop', ticket_id: ticket.id, trigger_id: stop })).toMatchObject({ decision: 'stop' })
+    expect(await h.route({ kind: 'stop', ticket_id: ticket.id, trigger_id: stop })).toMatchObject({ decision: 'stop' })
     expect(h.runtime.store.tickets.get(ticket.id)!.ended).toMatchObject({ by: 'human', outcome: 'stopped' })
   })
 
@@ -289,7 +292,7 @@ it('leaves a follow-up to its ticket\'s worker after the main Session drops the 
   const master = (name: string, args: Record<string, unknown>) => h!.runTool(h!.runtime.masterId, name, args)
   expect(await master('orchestrator_thread_unsubscribe', { thread: THREAD })).toEqual({ removed: true, thread: THREAD })
   // The worker has the message and still decides it, so the main Session cannot open a second ticket for it.
-  await expect(h!.route({ kind: 'accept', trigger_id: request.id, title: '导出按钮', worktree_name: 'export',
+  await expect(h.route({ kind: 'accept', trigger_id: request.id, title: '导出按钮', worktree_name: 'export',
     acknowledgement: '收到，加导出按钮。' })).rejects.toThrow(/its worker decides whether it belongs there/)
   expect(h.runtime.store.tickets.list().map(item => item.id)).toEqual([ticket.id])
 })

@@ -74,9 +74,11 @@ export interface SettingsHost {
 }
 
 /**
- * Validates and persists block-scoped settings in `Store`, enforces origin guards, and manages source policy synchronization and label refreshes.
+ * Validates and persists block-scoped settings in `Store`, enforces origin guards, and manages source policy synchronization and label
+ * refreshes.
  * `Runtime`, management HTTP routes, and main-Session tools read and save settings through it.
- * Notifies `Engine` when the policy version changes, notifies the main Session via `Sessions`, and triggers `Setup` restarts or `Passes` runs when saved settings take effect.
+ * Notifies `Engine` when the policy version changes, notifies the main Session via `Sessions`, and triggers `Setup` restarts or `Passes`
+ * runs when saved settings take effect.
  * Tracks per-source synchronization status in `HealthBoard` and retries failed syncs with exponential backoff.
  */
 export class Settings {
@@ -107,7 +109,8 @@ export class Settings {
   current(): SettingsValue { return this.host.store.settings() }
   /**
    * Returns an overview of all settings blocks with their current block revisions: full values for `pause`, `eval`, and
-   * `executor`; rule summaries and allowed-sender counts for `policy`; and instance status switches for `sources` (with `read: 'settings/<block>'` paths for full block reads).
+   * `executor`; rule summaries and allowed-sender counts for `policy`; and instance status switches for `sources` (with `read:
+   * 'settings/<block>'` paths for full block reads).
    */
   view() {
     const { store, sources } = this.host
@@ -140,10 +143,14 @@ export class Settings {
    * Validates and saves one settings block against its `revision`; a no-op save records no new revision, a changed policy
    * version notifies affected open tickets, and changing a setup-read field (`SETUP_FIELDS`, such as an account CLI) or any
    * change saved while waiting for setup (`!this.host.setup.configured()`) restarts `dsh-superagent` so setup runs again.
-   * @param origin - Caller origin; restricts execution-environment and account-CLI changes to `'panel'` (a guardrail against prompt-injected tool calls, not an OS security boundary, since agents run shell commands; `origin` has no default so no caller receives panel privileges implicitly).
-   * @returns Save outcome with the block's current `revision`, whether `policy_changed`, whether `restarting`, and `context_delivery` status (`'injected'` or `'pending'`).
+   * @param origin - Caller origin; restricts execution-environment and account-CLI changes to `'panel'` (a guardrail against
+   * prompt-injected tool calls, not an OS security boundary, since agents run shell commands; `origin` has no default so no caller receives
+   * panel privileges implicitly).
+   * @returns Save outcome with the block's current `revision`, whether `policy_changed`, whether `restarting`, and `context_delivery`
+   * status (`'injected'` or `'pending'`).
    * @throws SettingsConflict when `block`'s revision changed before or during validation checks.
-   * @throws UserError | z.ZodError when `block` is unknown, the source is not installed, `value` is invalid (such as an `executor` block carrying `paused`, which only `pause` sets), a non-panel `origin` changes panel-only fields, or a role-model or account check fails.
+   * @throws UserError | z.ZodError when `block` is unknown, the source is not installed, `value` is invalid (such as an `executor` block
+   * carrying `paused`, which only `pause` sets), a non-panel `origin` changes panel-only fields, or a role-model or account check fails.
    */
   async save(block: SettingsBlock, value: unknown, revision: number, origin: SettingsOrigin) {
     const { store, sources, engine, sessions } = this.host
@@ -226,7 +233,8 @@ export class Settings {
    * Synchronizes source `id`'s policy section from its external source of truth, saves it as a `'policy'` revision when
    * changed, and records the outcome in the `sync:<id>` health entry (scheduling exponential-backoff retries via `retrySync` on failure).
    * @returns The synchronized policy section for `id`.
-   * @throws UserError (`nothingToSync`) when `id` cannot sync now, `SettingsConflict` if the `'policy'` block changed during synchronization, or the underlying sync error on failure.
+   * @throws UserError (`nothingToSync`) when `id` cannot sync now, `SettingsConflict` if the `'policy'` block changed during
+   * synchronization, or the underlying sync error on failure.
    */
   async sync(id: string) {
     const { store, sources } = this.host

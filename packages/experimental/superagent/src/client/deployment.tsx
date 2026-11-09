@@ -51,7 +51,7 @@ export function DeploymentPage({ setup, form, accounts: showAccounts }: { setup:
       : !editable ? t('deploymentReadOnly') : undefined
   const limit = (key: typeof MACHINE_LIMITS[number], label: string) => <Field label={label}>
     <Input type="number" min={LIMITS[key].min} max={LIMITS[key].max} step={1} value={draft.value[key]} disabled={!editable}
-      onChange={event => draft.edit({ ...draft.value, [key]: event.target.value })} />
+      onChange={(event) => { draft.edit({ ...draft.value, [key]: event.target.value }) }} />
   </Field>
   const feishu = accounts?.feishu ? accounts.feishu.name || accounts.feishu.botId
     : setup.feishuProblem ? setupText(t, setup.feishuProblem) : t('deploymentFeishuNone')

@@ -8,7 +8,8 @@ import type { Deployment } from '../deployment.ts'
 const exec = promisify(execFile)
 const TIMEOUT_MS = 90_000
 /**
- * Error thrown by Commands when a CLI invocation fails, capturing stderr diagnostics, API error codes, and exit status without echoing command arguments.
+ * Error thrown by Commands when a CLI invocation fails, capturing stderr diagnostics, API error codes, and exit status without echoing
+ * command arguments.
  * Source channels and pollers inspect its code to distinguish deleted conversations from retryable failures.
  */
 export class CliError extends Error {
@@ -54,7 +55,8 @@ function membership(error: unknown): unknown {
 }
 /**
  * Executes gh, lark-cli, and git subprocesses with deployment account credentials, timeouts, and abort signals.
- * Restricts GitHub API calls to the configured repository and translates CLI failures into CliError instances for Sources, MasterAssessor, Outbox, and Settings.
+ * Restricts GitHub API calls to the configured repository and translates CLI failures into CliError instances for Sources, MasterAssessor,
+ * Outbox, and Settings.
  */
 export class Commands {
   /**
@@ -72,7 +74,10 @@ export class Commands {
       return stdout
     } catch (error) { throw commandError(error, program) }
   }
-  /** Runs the agent's GitHub CLI and parses its JSON output; callers should prefer `api`, which is restricted to the configured repository and validates output. */
+  /**
+   * Runs the agent's GitHub CLI and parses its JSON output; callers should prefer `api`, which is restricted to the configured repository
+   * and validates output.
+   */
   async gh<T>(args: string[]): Promise<T> { return JSON.parse(await this.run(this.deployment.github.cli, args)) as T }
   /**
    * Calls the GitHub API on a path within the configured repository, validating JSON output when a schema is provided

@@ -29,7 +29,7 @@ it('refuses a save of a block that another save changed during its model or acco
   await expect(slow).rejects.toThrow(SettingsConflict)
   expect(store.settings().executor).toMatchObject({ maxWorkers: 2, model: executor.model })
   // An account check that a save of the same Source outruns is refused the same way.
-  const accounts = deferred<void>()
+  const accounts = deferred()
   vi.spyOn(Setup.prototype, 'checkAccounts').mockImplementationOnce(() => accounts.promise)
   const github = settings.block('source:github')
   const value = github.value as { enabled: boolean; config: Record<string, unknown> }
@@ -45,7 +45,7 @@ it('refuses a Policy sync that a Policy save outran, reports it on sync:feishu, 
   h = await startRuntime()
   const { settings, store } = h.runtime
   const members = deferred<unknown>()
-  vi.mocked(Commands.prototype.lark).mockImplementationOnce(() => members.promise as never)
+  vi.mocked(Commands.prototype.lark).mockImplementationOnce(() => members.promise)
   const syncing = settings.sync('feishu')
   const policy = store.settings().policy
   const rules = [{ id: 'docs', name: 'Docs', enabled: true, instruction: 'Fix docs' }]
@@ -61,7 +61,7 @@ it('syncs a Policy part again after a failed sync, a minute later and then after
   h = await startRuntime()
   const { settings } = h.runtime
   // The syncs the Runtime runs as it starts finish first.
-  await vi.waitFor(() => expect(h!.runtime.health['sync:feishu']).toMatchObject({ state: 'ready' }))
+  await vi.waitFor(() =>{  expect(h!.runtime.health['sync:feishu']).toMatchObject({ state: 'ready' }) })
   await h.runtime.idle()
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
   try {
@@ -78,7 +78,7 @@ it('syncs a Policy part again after a failed sync, a minute later and then after
     await vi.advanceTimersByTimeAsync(60_000)
     expect(calls()).toBe(before + 1)
     await vi.advanceTimersByTimeAsync(60_000)
-    await vi.waitFor(() => expect(h!.runtime.health['sync:feishu']).toMatchObject({ state: 'ready' }))
+    await vi.waitFor(() =>{  expect(h!.runtime.health['sync:feishu']).toMatchObject({ state: 'ready' }) })
     expect(calls()).toBe(before + 2)
     // A success ends the retries.
     await vi.advanceTimersByTimeAsync(3_600_000)

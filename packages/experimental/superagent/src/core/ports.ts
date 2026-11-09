@@ -6,7 +6,10 @@ import type { Reason } from './reasons.ts'
 /** Gate admission result: either inadmissible with a reason code, or admissible with strength and MandateBasis. */
 export type GateResult = { admissible: false; reason: string } | { admissible: true; strength: Strength; basis: MandateBasis }
 
-/** Whether a Source receives a Trigger; `observed` when it also receives messages not addressed to the agent, and `row` the receiving scope the Policy's admission table names, such as a chat. */
+/**
+ * Whether a Source receives a Trigger; `observed` when it also receives messages not addressed to the agent, and `row` the receiving scope
+ * the Policy's admission table names, such as a chat.
+ */
 export type ScopeResult = { listened: true; observed: boolean; row?: string } | { listened: false; reason: string }
 /** Source configuration as the domain sees it: listening scope per trigger or per recorded Mandate basis. */
 export interface SourceScope {
@@ -41,8 +44,15 @@ export type AssessmentOutcome =
   | { kind: 'ignore'; reason: string | Reason; audit?: Record<string, unknown> }
   | { kind: 'unavailable'; reason: string | Reason; audit?: Record<string, unknown> }
   /** An accept: `rules` the assessment matched, `name` the ticket's requested short name, and `note` a routing note for its worker. */
-  | { kind: 'accept'; title: string; scope: string; reason: string | Reason; acknowledgement?: string; rules?: string[]; audit?: Record<string, unknown>
-    name?: string; note?: string }
+  | { kind: 'accept'
+    title: string
+    scope: string
+    reason: string | Reason
+    acknowledgement?: string
+    rules?: string[]
+    audit?: Record<string, unknown>
+    name?: string
+    note?: string }
   | { kind: 'stop'; ticketId: string; reason: string | Reason; audit?: Record<string, unknown> }
 
 /** Semantic judgement. `request` queues the assessment, idempotently per `evalId`; the outcome returns through `Engine.decide`. */

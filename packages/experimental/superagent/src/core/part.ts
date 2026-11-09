@@ -18,8 +18,10 @@ export interface EngineOptions {
 }
 
 /**
- * Base class for Intake, Evals, Tickets, Assignments, and Replies providing shared access to repositories, policy, clock, and event emission.
- * Each subclass mutates its own domain aggregates and delegates cross-aggregate changes to sibling parts within the transaction opened by Engine.
+ * Base class for Intake, Evals, Tickets, Assignments, and Replies providing shared access to repositories, policy, clock, and event
+ * emission.
+ * Each subclass mutates its own domain aggregates and delegates cross-aggregate changes to sibling parts within the transaction opened by
+ * Engine.
  */
 export abstract class EnginePart {
   protected readonly repo: Repositories

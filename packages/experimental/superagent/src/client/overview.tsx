@@ -15,12 +15,12 @@ function ProblemLine({ problem, onChanged }: { problem: Problem; onChanged: () =
     className="dt-row dt-link dt-att dt-att-error">
     <div className="dt-row-main">
       <div className="dt-att-what">{route ? <button type="button" className="dt-open dt-open-wrap"
-        onClick={() => navigate(route)}>{title}</button> : title}</div>
+        onClick={() => { navigate(route) }}>{title}</button> : title}</div>
       {detail}{hint && <Hint>{hint}</Hint>}{actions && <div className="dt-row-meta dt-row-buttons">{actions}</div>}
     </div>
   </li>
   const go = (label: string, route: Route) => <Button variant="outline" size="sm" icon={<Icon name="settings"
-    size={14} />} onClick={() => navigate(route)}>{label}</Button>
+    size={14} />} onClick={() => { navigate(route) }}>{label}</Button>
   const raw = (text: string | undefined) => text && <p className="dt-error dt-clamp dt-mono">{text}</p>
   const worded = (text: string) => <p className="dt-error">{text}</p>
   switch (problem.kind) {
@@ -65,11 +65,11 @@ export function OverviewPage() {
   if (!data) return <LoadState error={error} loading />
   const stat = (label: string, value: ReactNode, route?: Route) => <span className="dt-stat">
     <span className="dt-stat-label">{label}</span>
-    {route ? <button type="button" className="dt-textlink dt-stat-value" onClick={() => navigate(route)}>{value}</button> : <span
+    {route ? <button type="button" className="dt-textlink dt-stat-value" onClick={() => { navigate(route) }}>{value}</button> : <span
       className="dt-stat-value">{value}</span>}
   </span>
   const more = (route: Route) => <button type="button" className="dt-textlink dt-more-link"
-    onClick={() => navigate(route)}>{t('details')}</button>
+    onClick={() => { navigate(route) }}>{t('details')}</button>
   return <>
     {error && <LoadState error={error} loading={false} />}
     <Section title={t('pendingTickets')} count={data.person.length}>

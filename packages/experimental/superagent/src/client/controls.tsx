@@ -83,7 +83,11 @@ function walk<V extends string>(event: KeyboardEvent, values: readonly V[], valu
 interface TabItem<V extends string> { value: V; label: string; id: string; panelId: string }
 /** Page-level tab bar that re-emits `onChange` when clicking the active tab so callers can reset to the tab root. */
 export function SegmentedTabs<V extends string>({ items, value, onChange, label, className }: {
-  items: readonly TabItem<V>[]; value: V; onChange: (next: V) => void; label: string; className?: string
+  items: readonly TabItem<V>[]
+  value: V
+  onChange: (next: V) => void
+  label: string
+  className?: string
 }) {
   const list = useRef<HTMLDivElement>(null)
   const [more, setMore] = useState<'start' | 'end' | 'both'>()
@@ -103,15 +107,19 @@ export function SegmentedTabs<V extends string>({ items, value, onChange, label,
     return () => { observer.disconnect() }
   }, [measure, items.length])
   return <div ref={list} role="tablist" aria-label={label} className={cx('dt-tabs', className)} data-more={more} onScroll={measure}
-    style={{ gridTemplateColumns: `repeat(${items.length}, minmax(0, 1fr))` }} onKeyDown={event => walk(event,
-      items.map(item => item.value), value, onChange)}>
+    style={{ gridTemplateColumns: `repeat(${items.length}, minmax(0, 1fr))` }} onKeyDown={(event) => { walk(event,
+      items.map(item => item.value), value, onChange) }}>
     {items.map(item => <button key={item.value} type="button" role="tab" id={item.id} aria-controls={item.panelId}
       aria-selected={item.value === value}
-      tabIndex={item.value === value ? 0 : -1} className="dt-tab" onClick={() => onChange(item.value)}>{item.label}</button>)}
+      tabIndex={item.value === value ? 0 : -1} className="dt-tab" onClick={() => { onChange(item.value) }}>{item.label}</button>)}
   </div>
 }
 export function SegmentedControl<V extends string>({ options, value, onChange, label, disabled, className }: {
-  options: readonly { value: V; label: string; title?: string }[]; value: V; onChange: (next: V) => void; label: string; disabled?: boolean
+  options: readonly { value: V; label: string; title?: string }[]
+  value: V
+  onChange: (next: V) => void
+  label: string
+  disabled?: boolean
   className?: string
 }) {
   return <div role="tablist" aria-label={label} className={cx('dt-segmented', className)}
@@ -132,7 +140,7 @@ export function Input({ icon, className, ...rest }: { icon?: ReactNode; classNam
 export function Switch({ checked, onChange, label,
   className }: { checked: boolean; onChange: (next: boolean) => void; label: string; className?: string }) {
   return <button type="button" role="switch" aria-checked={checked} aria-label={label} className={cx('dt-switch', className)}
-    onClick={() => onChange(!checked)}>
+    onClick={() => { onChange(!checked) }}>
     <span className="dt-switch-thumb" />
   </button>
 }
@@ -152,7 +160,12 @@ export function Dot({ state, label }: { state: DotState; label?: string }) {
 }
 
 export function DisclosureRow({ icon, title, open, onToggle, collapsedContent, children }: {
-  icon: ReactNode; title: ReactNode; open: boolean; onToggle: () => void; collapsedContent?: ReactNode; children?: ReactNode
+  icon: ReactNode
+  title: ReactNode
+  open: boolean
+  onToggle: () => void
+  collapsedContent?: ReactNode
+  children?: ReactNode
 }) {
   return <div className="dt-disclosure" data-open={open || undefined}>
     <div className="dt-disclosure-row" role="button" tabIndex={0} aria-expanded={open} data-disclosure-row onClick={onToggle}
@@ -181,7 +194,13 @@ function trapTab(event: globalThis.KeyboardEvent, dialog: HTMLElement) {
 }
 /** Accessible modal dialog with focus trapping, Escape/backdrop dismissal, and focus restoration. */
 export function Modal({ open, onClose, title, closeLabel, description, footer, className, children }: {
-  open: boolean; onClose: () => void; title: string; closeLabel: string; description?: string; footer?: ReactNode; className?: string
+  open: boolean
+  onClose: () => void
+  title: string
+  closeLabel: string
+  description?: string
+  footer?: ReactNode
+  className?: string
   children?: ReactNode
 }) {
   const dialog = useRef<HTMLDivElement>(null)
@@ -231,13 +250,13 @@ export function InfoTip({ text, icon = 'question', warn }: { text: string; icon?
   }, [open])
   useEffect(() => {
     if (!open) return
-    const close = () => setOpen(false)
+    const close = () => { setOpen(false) }
     window.addEventListener('scroll', close, true); window.addEventListener('resize', close)
     return () => { window.removeEventListener('scroll', close, true); window.removeEventListener('resize', close) }
   }, [open])
   return <>
     <button ref={anchor} type="button" className={warn ? 'dt-info dt-info-warn' : 'dt-info'} aria-label={text}
-      onMouseEnter={() => setOpen(true)} onMouseLeave={() => setOpen(false)} onBlur={() => setOpen(false)}
+      onMouseEnter={() => { setOpen(true) }} onMouseLeave={() => { setOpen(false) }} onBlur={() => { setOpen(false) }}
       onFocus={(event) => { if (event.currentTarget.matches(':focus-visible')) setOpen(true) }}
       onKeyDown={(event) => { if (event.key === 'Escape') setOpen(false) }}
       onPointerUp={(event) => { if (event.pointerType === 'touch') setOpen(!open) }}

@@ -43,8 +43,8 @@ function PromptsEditor({ view, reload }: { view: PromptsView; reload: () => Prom
   const exists = isPart(selection) ? view.parts.some(part => part.key === partKey(selection)) : sectionText(config, selection) !== undefined
   const selected = exists ? selection : 'communication'
   const changed = changedSections(config, saved)
-  const edit = (next: PromptConfig, note: PromptNote = {}) => draft.edit(next, { from: note.from ?? draft.meta?.from,
-    selection: note.selection ?? selected })
+  const edit = (next: PromptConfig, note: PromptNote = {}) => { draft.edit(next, { from: note.from ?? draft.meta?.from,
+    selection: note.selection ?? selected }) }
   const open = (name: string) => { select(name); setTab('edit') }
   const words: DraftWords = { merged: revision => t('promptConflict', { revision }),
     conflict: (revision, paths) => t('promptConflictParts', { revision, parts: paths.map(([name, item]) => sectionLabel(t, view,
@@ -56,26 +56,30 @@ function PromptsEditor({ view, reload }: { view: PromptsView; reload: () => Prom
   const removed = view.defaultChanged.filter(item => item.removed).map(item => item.part)
   return <div className="dt-form">
     <div className="dt-subtabs" role="tablist" aria-label={t('promptViews')}>{tabs.map(item => <button key={item.value} type="button"
-      role="tab" className="dt-subtab" aria-selected={tab === item.value} onClick={() => setTab(item.value)}>{item.label}</button>)}</div>
+      role="tab" className="dt-subtab" aria-selected={tab === item.value} onClick={() => { setTab(item.value) }}>{item.label}</button>)}</div>
     {removed.length > 0 && <Hint>{t('promptRemovedParts', { parts: removed.join(t('listSeparator')) })}</Hint>}
     {tab === 'edit' && <PromptSections config={config} view={view} changed={changed} selected={selected} onSelect={select} onEdit={edit} />}
     {tab === 'full' && <FullPrompt config={config} view={view} dirty={draft.dirty} revision={draft.revision} onEdit={open} />}
     {tab === 'history' && <PromptHistory key={view.revision} view={view} from={draft.meta?.from}
-      onLoad={(next, from) => edit(withOverrides(next, view.parts), { from })} />}
+      onLoad={(next, from) => { edit(withOverrides(next, view.parts), { from }) }} />}
     <SaveBar {...draft} words={words} onSave={() => { void draft.submit() }}
-      onDiscard={() => { draft.discard(); reload().catch(failure => notify(errorText(failure))) }} />
+      onDiscard={() => { draft.discard(); reload().catch((failure: unknown) => { notify(errorText(failure)) }) }} />
   </div>
 }
 
 function PromptSections({ config, view, changed, selected, onSelect, onEdit }: {
-  config: PromptConfig; view: PromptsView; changed: string[]; selected: string; onSelect: (name: string) => void
+  config: PromptConfig
+  view: PromptsView
+  changed: string[]
+  selected: string
+  onSelect: (name: string) => void
   onEdit: (next: PromptConfig, note?: PromptNote) => void
 }) {
   const { t } = usePanel()
   const [name, setName] = useState('')
   const [invalid, setInvalid] = useState(false)
   const item = (section: string, children: ReactNode) => <button key={section} type="button" className="dt-nav-item"
-    aria-current={section === selected ? 'true' : undefined} onClick={() => onSelect(section)}>{children}</button>
+    aria-current={section === selected ? 'true' : undefined} onClick={() => { onSelect(section) }}>{children}</button>
   const unsaved = (section: string) => changed.includes(section) && <span className="dt-changed-dot" aria-label={t('unsaved')} />
   const add = (event: FormEvent) => {
     event.preventDefault()
@@ -117,7 +121,11 @@ const updated = (config: PromptConfig, part: BuiltInPart): boolean => {
   return !!override?.base && override.base !== part.base
 }
 function TeamEditor({ config, view, selected, onSelect, onEdit }: {
-  config: PromptConfig; view: PromptsView; selected: string; onSelect: (name: string) => void; onEdit: (next: PromptConfig, note?: PromptNote) => void
+  config: PromptConfig
+  view: PromptsView
+  selected: string
+  onSelect: (name: string) => void
+  onEdit: (next: PromptConfig, note?: PromptNote) => void
 }) {
   const { t } = usePanel()
   const text = sectionText(config, selected) ?? ''
@@ -128,13 +136,13 @@ function TeamEditor({ config, view, selected, onSelect, onEdit }: {
         ? <Button variant="outline" size="sm" icon={<Icon name="trash" />} onClick={() => { onEdit(withoutSkill(config, selected),
           { selection: 'communication' }); onSelect('communication') }}>{t('remove')}</Button>
         : <Button variant="outline" size="sm" icon={<Icon name="refresh" />} disabled={fallback === text}
-          onClick={() => onEdit(withSection(config, selected, fallback ?? ''), { from: { reset: selected } })}>
+          onClick={() => { onEdit(withSection(config, selected, fallback ?? ''), { from: { reset: selected } }) }}>
           {t('promptResetSection')}
         </Button>}
       </span></div>
     <Hint>{t(isSkill(selected) ? 'promptReadBy.skill' : 'promptReadBy.both')}</Hint>
     <textarea className="dt-textarea dt-mono dt-editor" spellCheck={false} aria-label={t('promptBody')} value={text}
-      onChange={event => onEdit(withSection(config, selected, event.target.value))} />
+      onChange={(event) => { onEdit(withSection(config, selected, event.target.value)) }} />
   </div>
 }
 /**
@@ -142,11 +150,14 @@ function TeamEditor({ config, view, selected, onSelect, onEdit }: {
  * keeps; an override whose built-in text changed since shows the change and offers to keep the team's text or take the new one.
  */
 function BuiltInEditor({ config, view, part, onEdit }: {
-  config: PromptConfig; view: PromptsView; part: BuiltInPart; onEdit: (next: PromptConfig, note?: PromptNote) => void
+  config: PromptConfig
+  view: PromptsView
+  part: BuiltInPart
+  onEdit: (next: PromptConfig, note?: PromptNote) => void
 }) {
   const { t } = usePanel()
   const name = `part/${part.key}`
-  const reset = () => onEdit(withOverride(config, part, undefined), { from: { reset: name } })
+  const reset = () => { onEdit(withOverride(config, part, undefined), { from: { reset: name } }) }
   // The built-in text the override was edited from, when this installation kept that one.
   const base = config.overrides?.[part.key]?.base
   const previous = view.defaultChanged.find(item => item.part === part.key && item.base === base)?.previous
@@ -164,13 +175,13 @@ function BuiltInEditor({ config, view, part, onEdit }: {
       {previous !== undefined ? <><Hint>{t('promptDefaultUpdatedKnown')}</Hint><Diff lines={lineDiff(previous, part.text)} /></>
         : <><Hint>{t('promptDefaultUpdatedUnknown')}</Hint><Diff lines={lineDiff(partText(config, part), part.text)} /></>}
       <span className="dt-actions">
-        <Button variant="outline" size="sm" onClick={() => onEdit(withOverride(config, part, partText(config, part), true))}>
+        <Button variant="outline" size="sm" onClick={() => { onEdit(withOverride(config, part, partText(config, part), true)) }}>
           {t('promptKeepMine')}</Button>
         <Button variant="outline" size="sm" onClick={reset}>{t('promptTakeDefault')}</Button>
       </span>
     </section>}
     <textarea className="dt-textarea dt-mono dt-editor" spellCheck={false} aria-label={t('promptBody')} value={partText(config, part)}
-      onChange={event => onEdit(withOverride(config, part, event.target.value))} />
+      onChange={(event) => { onEdit(withOverride(config, part, event.target.value)) }} />
   </div>
 }
 
@@ -178,7 +189,11 @@ type Preview = ApiResponse<'POST prompts/preview'>
 type Target = 'orchestrator' | 'worker' | `skill/${string}`
 const KIND_LABEL = { team: 'promptPartTeam', fixed: 'promptPartFixed', generated: 'promptPartGenerated' } as const
 function FullPrompt({ config, view, dirty, revision, onEdit }: {
-  config: PromptConfig; view: PromptsView; dirty: boolean; revision: number; onEdit: (name: string) => void
+  config: PromptConfig
+  view: PromptsView
+  dirty: boolean
+  revision: number
+  onEdit: (name: string) => void
 }) {
   const { t, call, notify } = usePanel()
   const [target, setTarget] = useState<Target>('orchestrator')
@@ -189,7 +204,7 @@ function FullPrompt({ config, view, dirty, revision, onEdit }: {
   useEffect(() => {
     let active = true
     call('POST prompts/preview', { body: config }).then((value) => { if (active) { setPreview({ config, value }); setError(undefined) } },
-      (failure: Error) => { if (active) setError(failure) })
+      (failure: unknown) => { if (active) setError(failure instanceof Error ? failure : new Error(String(failure))) })
     return () => { active = false }
   }, [call, config])
   if (!preview || error) return <LoadState loading error={error} />
@@ -203,7 +218,7 @@ function FullPrompt({ config, view, dirty, revision, onEdit }: {
   return <>
     <div className="dt-subhead">
       <select className="dt-select dt-inline-select" aria-label={t('promptPreviewTarget')} value={target}
-        onChange={event => setTarget(event.target.value as Target)}>
+        onChange={(event) => { setTarget(event.target.value as Target) }}>
         <option value="orchestrator">{valueLabel(t, 'promptRole', 'orchestrator')}</option>
         <option value="worker">{valueLabel(t, 'promptRole', 'worker')}</option>
         {Object.keys(preview.value.skills).map(name => <option key={name} value={`skill/${name}`}>{sectionLabel(t, view,
@@ -215,7 +230,7 @@ function FullPrompt({ config, view, dirty, revision, onEdit }: {
         ? [{ value: 'saved' as const, label: t('promptCompareSaved') }] : [], { value: 'default' as const,
         label: t('promptCompareDefault') }]} onChange={setCompare} />
       <Button variant="outline" size="sm" icon={<Icon name="copy" />} onClick={() => {
-        void navigator.clipboard.writeText(parts.map(part => part.text).join('\n\n')).then(() => notify(t('copied')))
+        void navigator.clipboard.writeText(parts.map(part => part.text).join('\n\n')).then(() => { notify(t('copied')) })
       }}>{t('promptCopyAll')}</Button>
     </div>
     {parts.map((part) => {
@@ -236,7 +251,7 @@ function FullPrompt({ config, view, dirty, revision, onEdit }: {
         <div className="dt-preview-head"><b>{sectionLabel(t, view, entry ? `part/${entry.key}` : part.name)}</b><span>{t(KIND_LABEL[kind])}</span>
           {edited && <span className="dt-changed-tag">{t('promptChanged')}</span>}
           {(kind === 'team' || entry) && <button type="button" className="dt-textlink"
-            onClick={() => onEdit(entry ? `part/${entry.key}` : part.name)}>{t('promptEditSource')}</button>}
+            onClick={() => { onEdit(entry ? `part/${entry.key}` : part.name) }}>{t('promptEditSource')}</button>}
         </div>
         {/* When comparing against saved, show only changes from this draft and fold the parts it leaves as they were. */}
         {base !== undefined && base !== part.text ? <Diff lines={lineDiff(base, part.text)} />
@@ -255,7 +270,9 @@ function Diff({ lines }: { lines: DiffLine[] }) {
 }
 
 function PromptHistory({ view, from, onLoad }: {
-  view: PromptsView; from: Origin | undefined; onLoad: (config: PromptConfig, from: Origin) => void
+  view: PromptsView
+  from: Origin | undefined
+  onLoad: (config: PromptConfig, from: Origin) => void
 }) {
   const { t, call } = usePanel()
   const [older, setOlder] = useState<Pick<PromptsView, 'revisions' | 'next_offset'>>()
@@ -284,7 +301,7 @@ function PromptHistory({ view, from, onLoad }: {
       {next !== null && <Button variant="outline" size="sm" icon={<Icon name="chevron-down" />} disabled={more.busy}
         onClick={() => { void more.run(next) }}>{t('promptOlder')}</Button>}
       <Button variant="outline" size="sm" icon={<Icon name="refresh" />}
-        onClick={() => onLoad(view.defaults, 'defaults')}>{t('promptDefaults')}</Button>
+        onClick={() => { onLoad(view.defaults, 'defaults') }}>{t('promptDefaults')}</Button>
     </div>
     <div className="dt-field"><span>{t('promptSessions')}</span>
       {view.sessions.length ? <ul className="dt-changes dt-mono">{view.sessions.map(item => <li

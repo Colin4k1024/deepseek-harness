@@ -65,14 +65,18 @@ const messages = (t: T): ApiMessages => ({
 function Toast({ text, onDone, holdMs = 3000 }: { text: string; onDone: () => void; holdMs?: number }) {
   const done = useRef(onDone)
   done.current = onDone
-  useEffect(() => { const timer = setTimeout(() => done.current(), holdMs + 1000); return () => clearTimeout(timer) }, [holdMs])
+  useEffect(() => { const timer = setTimeout(() => { done.current() }, holdMs + 1000); return () => { clearTimeout(timer) } }, [holdMs])
   return createPortal(<div className="dt-toast" role="status" style={{ ['--dt-toast-hold' as string]: `${holdMs}ms` }}>{text}</div>,
     document.body)
 }
 const stay = () => {}
 const noSession = async () => {}
 export function PanelProvider({ t, interval = 5000, openSession = noSession, navigate = stay, back = stay, backLabel = '', children }: {
-  t: T; interval?: number; openSession?: (sessionId: string) => Promise<void>; navigate?: PanelContext['navigate']; back?: () => void
+  t: T
+  interval?: number
+  openSession?: (sessionId: string) => Promise<void>
+  navigate?: PanelContext['navigate']
+  back?: () => void
   backLabel?: string
   children: ReactNode
 }) {
@@ -81,11 +85,11 @@ export function PanelProvider({ t, interval = 5000, openSession = noSession, nav
   copy.current = t
   const call = useMemo(() => caller(() => messages(copy.current)), [])
   const [toast, setToast] = useState<{ text: string; id: number }>()
-  const notify = useCallback((text: string) => setToast({ text, id: Date.now() }), [])
+  const notify = useCallback((text: string) => { setToast({ text, id: Date.now() }) }, [])
   // Poll at 1s during a restart until the server goes down and answers again, or time out after 30s if the restart completed between polls.
   const [restarting, setRestarting] = useState<{ down: boolean }>()
   const [restarts, setRestarts] = useState(0)
-  const restart = useCallback(() => setRestarting({ down: false }), [])
+  const restart = useCallback(() => { setRestarting({ down: false }) }, [])
   const { data: state, error, reload } = usePoll(() => call('GET state'), [call], restarting ? 1000 : interval)
   if (restarting && !!error !== restarting.down) {
     setRestarting(error ? { down: true } : undefined)
@@ -93,8 +97,8 @@ export function PanelProvider({ t, interval = 5000, openSession = noSession, nav
   }
   useEffect(() => {
     if (!restarting) return
-    const timer = setTimeout(() => setRestarting(undefined), 30_000)
-    return () => clearTimeout(timer)
+    const timer = setTimeout(() => { setRestarting(undefined) }, 30_000)
+    return () => { clearTimeout(timer) }
   }, [restarting])
   const context = useMemo(() => ({ t, call, navigate, back, backLabel, openSession, notify, restart }), [t, call, navigate, back, backLabel,
     openSession, notify, restart])
@@ -103,6 +107,6 @@ export function PanelProvider({ t, interval = 5000, openSession = noSession, nav
   return <Panel.Provider value={context}><PanelState.Provider value={data}>
     <style>{STYLES}</style>
     {children}
-    {toast && <Toast key={toast.id} text={toast.text} onDone={() => setToast(undefined)} />}
+    {toast && <Toast key={toast.id} text={toast.text} onDone={() => { setToast(undefined) }} />}
   </PanelState.Provider></Panel.Provider>
 }

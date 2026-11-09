@@ -1,6 +1,7 @@
 /**
  * Signals that an effect cannot run right now, such as when processing is paused or all worker slots are full.
- * Effects reschedules the row after the initial retry delay without incrementing its failure count, and DshExecutor throws it from launch and delivery handlers.
+ * Effects reschedules the row after the initial retry delay without incrementing its failure count, and DshExecutor throws it from launch
+ * and delivery handlers.
  */
 export class Later extends Error {}
 /** Consecutive failures before an effect kind reports an error, matching the Sources poll failure threshold. */
@@ -31,17 +32,24 @@ interface Handler<K extends EffectKind> {
   retry: readonly [number, number]
   /** Effects run one at a time in queue order, and a failed one holds back later rows of the same kind. */
   ordered: boolean
-  /** When true, repeated failures do not mark the effect kind's health entry as `error` (used when failures are already surfaced on a ticket). */
+  /**
+   * When true, repeated failures do not mark the effect kind's health entry as `error` (used when failures are already surfaced on a
+   * ticket).
+   */
   quiet: boolean
 }
 type Options<K extends EffectKind> = Partial<Pick<Handler<K>, 'limit' | 'retry' | 'ordered' | 'quiet'>>
-/** `seq` preserves the row's queue position; `generation` increments on payload updates so a running attempt does not delete a newer payload. */
+/**
+ * `seq` preserves the row's queue position; `generation` increments on payload updates so a running attempt does not delete a newer
+ * payload.
+ */
 interface Row { key: string; value: string; seq: number; generation: number; attempts: number; due: number }
 type Task = { kind: EffectKind; key: string; done: Promise<void> }
 
 /**
  * Durable SQLite-backed queue that persists side effects inside command transactions and dispatches them after commit.
- * Coordinates per-kind handlers, concurrency limits, exponential backoff, and health reporting for MasterAssessor, DshExecutor, Sessions, and Outbox.
+ * Coordinates per-kind handlers, concurrency limits, exponential backoff, and health reporting for MasterAssessor, DshExecutor, Sessions,
+ * and Outbox.
  */
 export class Effects {
   private readonly handlers = new Map<EffectKind, Handler<never>>()
@@ -57,7 +65,10 @@ export class Effects {
   constructor(private readonly store: Store, private readonly board: Pick<HealthBoard, 'claim'>, private readonly now = () => Date.now()) {
     this.seq = Number(store.db.prepare('SELECT IFNULL(MAX(seq), 0) AS seq FROM effect').get()?.seq ?? 0)
   }
-  /** Upserts an effect in the caller's transaction, coalescing with any waiting row of the same kind and key while keeping its queue position. */
+  /**
+   * Upserts an effect in the caller's transaction, coalescing with any waiting row of the same kind and key while keeping its queue
+   * position.
+   */
   enqueue<K extends EffectKind>(kind: K, key: string, payload: EffectPayloads[K]): void {
     this.store.db.prepare(`INSERT INTO effect (kind, key, value, seq, due, since) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(kind, key) DO UPDATE
       SET value = excluded.value, generation = generation + 1, attempts = 0, error = '', due = excluded.due`)
@@ -68,7 +79,7 @@ export class Effects {
     if (this.handlers.has(kind)) throw new Error(`The ${kind} effects already have a handler`)
     this.health.set(kind, this.board.claim(kind))
     const { limit = () => 1, retry = [2000, 60_000], ordered = false, quiet = false } = options
-    this.handlers.set(kind, { run, limit: ordered ? () => Math.min(1, limit()) : limit, retry, ordered, quiet } as unknown as Handler<never>)
+    this.handlers.set(kind, { run, limit: ordered ? () => Math.min(1, limit()) : limit, retry, ordered, quiet })
     this.report(kind)
     this.kick()
   }

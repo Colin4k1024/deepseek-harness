@@ -35,9 +35,15 @@ function brief(ticket: Ticket) {
   const { preview: _preview, ...card } = ticketCard(ticket)
   return card
 }
-/** Creates a one-off receipt notice with a unique `name` key so repeated occurrences of the same event are each delivered instead of coalescing. */
+/**
+ * Creates a one-off receipt notice with a unique `name` key so repeated occurrences of the same event are each delivered instead of
+ * coalescing.
+ */
 export const receiptNotice = (value: Record<string, unknown>, summary: string): Notice => [key('receipt', randomUUID()), value, summary]
-/** Builds a notice that a person removed a thread's subscriptions at `at`; a later removal of the same thread replaces an unsent waiting notice. */
+/**
+ * Builds a notice that a person removed a thread's subscriptions at `at`; a later removal of the same thread replaces an unsent waiting
+ * notice.
+ */
 export const subscriptionNotice = (thread: string, at?: string): Notice => [`subscription:${thread}`,
   { subscription_changes: [{ thread, removed: true }], ...at ? { at } : {} }, `Removed the subscriptions on thread ${thread}`]
 
@@ -104,7 +110,10 @@ export function followupRelay(message: { trigger_id: string },
   return { id: `followup:${message.trigger_id}`, text: JSON.stringify({ kind: 'follow_up', ...message, delivered_to: tickets,
     note: FOLLOWUP_NOTE }) }
 }
-/** Formats a worker report relay for the main Session (truncating summaries over 600 characters behind `ticket/<id>/result`); `replyTo` names the human question trigger it answers. */
+/**
+ * Formats a worker report relay for the main Session (truncating summaries over 600 characters behind `ticket/<id>/result`); `replyTo`
+ * names the human question trigger it answers.
+ */
 export function resultRelay(ticket: Ticket, state: string, text: string, replyTo?: string): Relay {
   const id = key('worker-result', ticket.id, ticket.updatedAt, text)
   const summary = text.length > 600 ? { summary: text.slice(0, 600), chars: text.length } : { summary: text }

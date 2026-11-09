@@ -111,7 +111,7 @@ function busyThread(count: number) {
   return thread
 }
 /** The Triggers the timeline shows, oldest first, by their number. */
-const shown = () => all('.dt-event .dt-event-text').map(item => Number(item.textContent!.replace('message m', ''))).reverse()
+const shown = () => all('.dt-event .dt-event-text').map(item => Number(item.textContent.replace('message m', ''))).reverse()
 const range = (from: number, to: number) => Array.from({ length: to - from + 1 }, (_, n) => from + n)
 
 it('reads back the Triggers between the newest page and the earlier ones it shows, once more arrive than a page holds', async () => {

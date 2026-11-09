@@ -53,7 +53,7 @@ export function sourceContextOf(deps: SourceContextDeps, kind: { kind: string; h
     threads: {
       get: key => store.threads.get(key),
       subscribed: source => store.read.subscribedThreads(source),
-      describe: (key, description) => store.threads.describe(key, description),
+      describe: (key, description) => { store.threads.describe(key, description) },
       patch: (key, meta) => { store.threads.patchMeta(key, meta) },
     },
     tickets: {

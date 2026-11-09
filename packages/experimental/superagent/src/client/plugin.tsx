@@ -46,7 +46,10 @@ function Mounted({ ctx, t }: { ctx: ClientContext; t: T }) {
 }
 
 export const inject = ['slots', 'locale', 'sessions', 'uiWorkspace']
-/** Registers the panel, sidebar icon, and Plugin Manager config view; `configForms` is optional (without it, machine settings are read-only). */
+/**
+ * Registers the panel, sidebar icon, and Plugin Manager config view; `configForms` is optional (without it, machine settings are
+ * read-only).
+ */
 export function apply(ctx: ClientContext): void {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'dsh-superagent: dictionaries')
   const t = ctx.locale.bind(NS)

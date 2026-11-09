@@ -24,7 +24,8 @@ function budgetFailure(value: unknown): boolean {
 
 /**
  * Tracks which managed sessions are currently blocked on model budget retries by observing session lifecycle and retry events.
- * `Sessions` feeds session events into it and mirrors the aggregated retry state into the `models` health entry, while `resources` and views attach per-session retry status to ticket cards.
+ * `Sessions` feeds session events into it and mirrors the aggregated retry state into the `models` health entry, while `resources` and
+ * views attach per-session retry status to ticket cards.
  */
 export class RetryHealth {
   private readonly sessions = new Map<string, State>()

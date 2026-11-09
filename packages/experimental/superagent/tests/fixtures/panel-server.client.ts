@@ -84,14 +84,19 @@ export const MACHINE = { stateDir: '/srv/dsh-superagent', promptMaxChars: 100000
 
 type Settings = ReturnType<typeof SettingsSchema.parse>
 export interface PanelServer {
-  joined?: Record<string, string>; joining?: Record<string, string>
+  joined?: Record<string, string>
+  joining?: Record<string, string>
   joinError?: string
-  settings: Settings; revisions: Record<string, number>
+  settings: Settings
+  revisions: Record<string, number>
   prompts: PromptsView
-  tickets: { open: TicketRow[]; ended: TicketRow[] }; ticketDetails: Record<string, TicketPageView>
+  tickets: { open: TicketRow[]; ended: TicketRow[] }
+  ticketDetails: Record<string, TicketPageView>
   threads: ThreadRow[]
   threadPages: (key: string, query: { before?: string; around?: string }) => ThreadPageView | undefined
-  person: TicketRow[]; search: Pick<ApiResponse<'GET search'>, 'items' | 'threads'>; history: HistoryView
+  person: TicketRow[]
+  search: Pick<ApiResponse<'GET search'>, 'items' | 'threads'>
+  history: HistoryView
   requests: { path: string; method: string; body?: unknown }[]
   /** Requests with undeclared query params or invalid body presence; asserted empty after each test. */
   misuse: string[]
@@ -192,7 +197,8 @@ const overviewView = (): ApiResponse<'GET overview'> => {
         .map(thread => ({ kind: 'eval-overdue' as const, thread })),
       { kind: 'eval-unavailable' as const, decisionId: 'u1', thread: threadSummary(), reason: [{ code: 'timeout' }], triggerId: 'e3' },
       ...server.settings.paused ? [{ kind: 'executor-paused' as const }] : [],
-      // As on the host, every entry in error that is not a Source's own, a Policy sync, or the individually listed unavailable Evals is a runtime-error.
+      // As on the host, every entry in error that is not a Source's own, a Policy sync, or the individually listed unavailable Evals is a
+      // runtime-error.
       ...Object.entries(server.health).filter(([name, item]) => item.state === 'error' && !KINDS.some(kind => kind.health.includes(name))
         && !name.startsWith('sync:') && name !== 'evals')
         .map(([name, item]) => ({ kind: 'runtime-error' as const, name, detail: item.detail })),
@@ -381,7 +387,7 @@ const ROUTES: { [K in keyof Api]: Route<K> } = {
     if (body.baseRevision !== revision) return refuse(409,
       `Prompt version changed to ${revision}; compare the latest version before saving`)
     // As the host does: a template keeps its placeholders, and no overrides are stored as none.
-    const { overrides = {}, ...config } = body.config as PromptsView['current']['config']
+    const { overrides = {}, ...config } = body.config
     for (const [part, override] of Object.entries(overrides)) {
       if (!builtInPart(part)) return refuse(400, 'refused', { code: 'unknownPromptPart', values: { part } })
       const missing = (builtInPart(part)?.placeholders ?? []).filter(placeholder => !override.text.includes(placeholder))

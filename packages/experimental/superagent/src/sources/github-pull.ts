@@ -29,7 +29,8 @@ export const ticketBranch = (ticket: Pick<Ticket, 'execution'>, ref: string): bo
 const AUTO_MERGE_ON: ThreadFact = { label: { zh: '自动合并', en: 'Auto-merge' }, value: { zh: '已开启', en: 'on' } }
 
 /**
- * Validates and binds an open PR to a ticket when the PR is either the ticket's origin PR or an agent-authored PR on the ticket's branch, enforcing that one PR binds to at most one open ticket.
+ * Validates and binds an open PR to a ticket when the PR is either the ticket's origin PR or an agent-authored PR on the ticket's branch,
+ * enforcing that one PR binds to at most one open ticket.
  * Returns an error message when binding is rejected, or undefined when the PR is bound or when the PR is not open (which is not an error).
  */
 export function claimPull(ctx: SourceContext, ticketId: string, pr: Pull): string | undefined {

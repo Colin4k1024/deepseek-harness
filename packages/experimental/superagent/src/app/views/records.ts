@@ -152,7 +152,10 @@ function latestOnThread(view: Snapshot, thread: Thread) {
   if (!trigger) return undefined
   return { actor: view.actor(trigger.actor, trigger.human), human: trigger.human, at: trigger.at, preview: preview(trigger.text, 120) }
 }
-/** Thread lifecycle stage in priority order: poll error, evaluating, queued, subscribed by open ticket, dormant (ended tickets only), or unsubscribed. */
+/**
+ * Thread lifecycle stage in priority order: poll error, evaluating, queued, subscribed by open ticket, dormant (ended tickets only), or
+ * unsubscribed.
+ */
 export type ThreadStage = 'error' | 'evaluating' | 'queued' | 'subscribed' | 'dormant' | 'unsubscribed'
 function threadStage(thread: Thread, pending: number, tickets: { state: string }[]): ThreadStage {
   if (attribute(thread.meta.pollError)) return 'error'

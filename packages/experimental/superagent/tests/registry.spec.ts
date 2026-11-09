@@ -87,10 +87,10 @@ describe('Source registry', () => {
     const first = context(githubKind)
     first.report('github', { state: 'ready', detail: 'ok' })
     expect(board.all.github).toEqual({ state: 'ready', detail: 'ok' })
-    expect(() => first.report('probe', { state: 'ready', detail: '' })).toThrow('has no health entry probe')
+    expect(() =>{  first.report('probe', { state: 'ready', detail: '' }) }).toThrow('has no health entry probe')
     // A report sent after its kind unregisters (such as from an exiting CLI listener) is ignored and does not affect a later registration.
     unregister()
-    expect(() => first.report('github', { state: 'error', detail: 'WARN exiting' })).not.toThrow()
+    expect(() =>{  first.report('github', { state: 'error', detail: 'WARN exiting' }) }).not.toThrow()
     expect(board.all.github).toBeUndefined()
     sources.register(githubKind)
     first.report('github', { state: 'error', detail: 'late' })

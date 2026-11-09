@@ -59,10 +59,10 @@ function views() {
 }
 const at = new Date().toISOString()
 /** A live ticket with no Assignment, as a follow-up's owner needs one. */
-const live = (id: string) => store.tickets.save({ id, title: id, decisionId: 'd', channels: [], undelivered: [], createdAt: at,
+const live = (id: string) =>{  store.tickets.save({ id, title: id, decisionId: 'd', channels: [], undelivered: [], createdAt: at,
   updatedAt: at,
   mandate: { strength: 'explicit', policyVersion: 'v', basis: { via: 'listed' }, actor: { source: 'feishu', id: 'ou_alice' }, scope: '' },
-  origin: { triggerId: 'e0', triggerIds: ['e0'] }, assignments: [], inputs: [] })
+  origin: { triggerId: 'e0', triggerIds: ['e0'] }, assignments: [], inputs: [] }) }
 const message = (id: string, actor: { source: string; id: string }, human = true) => ({ id, source: actor.source,
   threads: [{ source: 'feishu', id: 'oc_1:om_root' }], actor, human, at, text: `message ${id}`, meta: {} })
 

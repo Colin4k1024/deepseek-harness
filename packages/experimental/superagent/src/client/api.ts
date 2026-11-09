@@ -23,7 +23,10 @@ export class ApiError extends Error {
   get missing() { return this.status === 404 && !this.details.unreachable }
 }
 export interface ApiMessages {
-  offline: string; notRunning: string; serverError: (status: number) => string; requestFailed: (status: number) => string
+  offline: string
+  notRunning: string
+  serverError: (status: number) => string
+  requestFailed: (status: number) => string
   setup: (problem: SetupProblem) => string
   user: (failure: UserFailure) => string
 }
@@ -42,11 +45,15 @@ async function api<T>(messages: ApiMessages, path: string, method: string, body?
   let value: unknown
   try { value = text ? JSON.parse(text) : {} } catch { value = undefined }
   if (!response.ok) {
-    const failure = (value ?? {}) as { error?: unknown; issues?: unknown; setup?: SetupProblem; code?: unknown
+    const failure = (value ?? {}) as { error?: unknown
+      issues?: unknown
+      setup?: SetupProblem
+      code?: unknown
       values?: Record<string, string> }
     const issues = Array.isArray(failure.issues) ? failure.issues as { path: string; message: string }[] : []
     const user = isUserError(failure.code) ? { code: failure.code, values: failure.values ?? {} } : undefined
-    // dsh-superagent always responds with a body; an empty 404 comes from the DSH web server when dsh-superagent routes are unmounted during startup or restart.
+    // dsh-superagent always responds with a body; an empty 404 comes from the DSH web server when dsh-superagent routes are unmounted
+    // during startup or restart.
     const { status } = response
     const message = failure.setup ? messages.setup(failure.setup) : user ? messages.user(user)
       : typeof failure.error === 'string' ? failure.error : !text && status === 404 ? messages.notRunning

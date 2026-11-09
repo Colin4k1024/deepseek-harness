@@ -1,4 +1,7 @@
-/** Host and context interfaces connecting Source plugins to the application; also imported by the web panel, so it must not import Node-only modules. */
+/**
+ * Host and context interfaces connecting Source plugins to the application; also imported by the web panel, so it must not import Node-only
+ * modules.
+ */
 import type { ReceiveResult, OutboundMessage, Thread, ThreadFact, ThreadRef, Ticket, Trigger } from '../core/index.ts'
 import type { Commands } from '../infra/commands.ts'
 import type { Deployment } from '../deployment.ts'
@@ -38,7 +41,10 @@ export interface SourceContext {
   readonly problem?: SetupProblem | undefined
   /** Returns a Source's configuration while enabled, or undefined while disabled or uninstalled. */
   config<C extends Record<string, unknown>>(kind: string): C | undefined
-  /** Ingests a trigger into the Engine and schedules the next evaluation pass; callers should await completion before advancing read cursors. */
+  /**
+   * Ingests a trigger into the Engine and schedules the next evaluation pass; callers should await completion before advancing read
+   * cursors.
+   */
   receive(trigger: Trigger): ReceiveResult | Promise<ReceiveResult>
   atomic<T>(work: () => T): T
   /** Source-scoped KV records (such as read cursors); setting `undefined` removes an entry. */
@@ -54,9 +60,15 @@ export interface SourceContext {
     get(id: string): Ticket | undefined
     /** Open tickets, newest first. */
     open(): Ticket[]
-    /** Binds an open ticket to follow a Source Thread (`own` when opened by the ticket) so the Thread's close, not a ready report, ends the ticket. */
+    /**
+     * Binds an open ticket to follow a Source Thread (`own` when opened by the ticket) so the Thread's close, not a ready report, ends the
+     * ticket.
+     */
     bindThread(id: string, thread: ThreadRef, own: boolean): void
-    /** Reports that a followed Thread closed at `at`; each open ticket following it ends once no `own` Thread remains open and no resumed work is still running. */
+    /**
+     * Reports that a followed Thread closed at `at`; each open ticket following it ends once no `own` Thread remains open and no resumed
+     * work is still running.
+     */
     threadClosed(thread: ThreadRef, outcome: 'merged' | 'closed', at: string): void
   }
   triggers: { get(id: string): Trigger | undefined; /** The newest Trigger on a Thread. */ latest(thread: string): Trigger | undefined }

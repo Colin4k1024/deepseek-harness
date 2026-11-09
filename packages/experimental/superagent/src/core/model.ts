@@ -147,7 +147,10 @@ export interface Evaluation {
   startedAt: string
   /** Timestamp when the candidate reached the assessor's Session; it cannot expire before, and its deadline counts from then. */
   delivered?: string
-  /** Expiration timestamp, counted from delivery (or from start until delivered); a processing pause shifts it forward by the pause duration. */
+  /**
+   * Expiration timestamp, counted from delivery (or from start until delivered); a processing pause shifts it forward by the pause
+   * duration.
+   */
   deadline: string
   /** Timestamp when processing pause began; resuming shifts `deadline` forward by the pause duration; cleared on resume. */
   pausedAt?: string
@@ -234,7 +237,12 @@ export interface Assignment {
 
 export type TicketInput =
   /** A Trigger on one of its Threads, or attached to it; `human` when a person wrote it. */
-  | { id: string; kind: 'trigger'; triggerId: string; at: string; note?: string; human?: true
+  | { id: string
+    kind: 'trigger'
+    triggerId: string
+    at: string
+    note?: string
+    human?: true
     /** It reached the ticket only on a Thread its Executor follows for context. */
     context?: true
     /**
