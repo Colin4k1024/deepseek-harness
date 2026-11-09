@@ -1,6 +1,7 @@
 /** Read-only Store queries for views, tools, and Source polling. */
 import type { DatabaseSync, SQLInputValue } from 'node:sqlite'
 import type { Decision, Thread, Trigger } from '../core/index.ts'
+import { required } from '../core/required.ts'
 import type { Dropped, Receipt, TimelinePlace } from './store.ts'
 
 export function storeReads(db: DatabaseSync) {
@@ -25,9 +26,9 @@ export function storeReads(db: DatabaseSync) {
         )
         .all(since, since))
         result[String(row.source)] = {
-          received: Number(row.received ?? 0),
-          filtered: Number(row.filtered ?? 0),
-          lastAt: String(row.last ?? ''),
+          received: Number(row.received),
+          filtered: Number(row.filtered),
+          lastAt: String(row.last),
         }
       return result
     },
@@ -48,7 +49,7 @@ export function storeReads(db: DatabaseSync) {
           "SELECT COUNT(DISTINCT d.id) AS n FROM decision d, json_each(json_extract(d.value, '$.triggerIds')) j JOIN trigger t ON t.id = j.value WHERE json_extract(d.value, '$.kind') IN ('accept', 'reopen') AND t.at >= ?",
         )
         .get(since)
-      return { judged: Number(judged?.n ?? 0), accepted: Number(accepted?.n ?? 0) }
+      return { judged: Number(required(judged).n), accepted: Number(required(accepted).n) }
     },
     triggers: (options: { source?: string; filtered?: boolean }, offset = 0, limit = 50): { items: Trigger[]; more: boolean } => {
       const where = [
@@ -153,7 +154,7 @@ export function storeReads(db: DatabaseSync) {
         .map(row => ({ ...(JSON.parse(String(row.value)) as Receipt), attempts: Number(row.attempts), error: String(row.error) })),
     droppedReplies: (limit = 20): Dropped[] =>
       values('SELECT value FROM outbox WHERE dropped IS NOT NULL ORDER BY dropped DESC LIMIT ?', limit),
-    droppedSince: (since: string): number => Number(db.prepare('SELECT COUNT(*) AS n FROM outbox WHERE dropped >= ?').get(since)?.n ?? 0),
+    droppedSince: (since: string): number => Number(required(db.prepare('SELECT COUNT(*) AS n FROM outbox WHERE dropped >= ?').get(since)).n),
     subscribedThreads: (source?: string): Thread[] =>
       source
         ? values('SELECT value FROM thread WHERE subscribed = ? ORDER BY rowid', source)

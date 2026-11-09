@@ -61,8 +61,11 @@ export const feishuKind: SourceKind<FeishuConfig> = {
   },
   // A reply goes only to a chat the Source still receives.
   channel: {
-    allowed: (address, config) =>
-      feishuKind.scope?.({ meta: { chatId: address.chatId ?? '', direct: address.direct === 'true' } }, config).listened ?? false,
+    allowed: (address, config) => {
+      const scope = feishuKind.scope?.bind(feishuKind)
+      if (scope === undefined) throw new Error('Feishu Source has no listening rule')
+      return scope({ meta: { chatId: address.chatId ?? '', direct: address.direct === 'true' } }, config).listened
+    },
     send: sendFeishu, link: feishuLink,
   },
   threadContext: feishuThreadContext,

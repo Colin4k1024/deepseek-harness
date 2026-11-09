@@ -107,6 +107,8 @@ it('counts triggers per Source and lists them newest first, optionally only the 
   expect(store.read.triggerStats('2026-09-22T12:00:00Z')).toEqual({ feishu: { received: 2, filtered: 1, lastAt: '2026-09-23T01:00:00Z' }, github: { received: 0, filtered: 0, lastAt: '2026-09-22T00:00:00Z' } })
   expect(store.read.triggers({ source: 'feishu' }, 0, 2)).toEqual({ items: [expect.objectContaining({ id: 'dropped' }), expect.objectContaining({ id: 'kept' })], more: true })
   expect(store.read.triggers({ filtered: true }).items.map(item => item.id)).toEqual(['dropped'])
+  expect(store.read.triggers({}).items.map(item => item.id)).toEqual(['dropped', 'kept', 'gh', 'old'])
+  expect(store.read.decisions({ kinds: [], since: '' }, 0, 2)).toEqual({ items: [], more: false })
   store.close()
 })
 

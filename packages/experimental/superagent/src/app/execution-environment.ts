@@ -3,6 +3,7 @@
  * credentials.
  */
 import { join } from 'node:path'
+import { required } from '../core/required.ts'
 import type { Ticket, Trigger } from '../core/index.ts'
 import type { Deployment } from '../deployment.ts'
 import type { Settings } from '../policy.ts'
@@ -65,7 +66,7 @@ export function environmentOf(input: {
   }
   const result: Variable[] = EXECUTOR_VARIABLES.filter(spec => !spec.ticket || ticket).map(spec => ({
     key: spec.key,
-    value: executor[spec.key] ?? '',
+    value: required(executor[spec.key]),
     description: spec.description,
     owner: 'executor',
   }))

@@ -2,7 +2,7 @@ import { expect, it } from 'vitest'
 import { masterPrompt, workerPrompt } from '../src/app/context.ts'
 import { composePrompt, defaultPrompts } from '../src/app/prompts.ts'
 import { bundledSkills, promptFile } from '../src/app/skill-files.ts'
-import { TICKET_STATES, decisionCard, decisionDetails, ticketCard, ticketDetails, triggerCard, threadCard } from '../src/app/cards.ts'
+import { TICKET_STATES, assignmentLine, decisionCard, decisionDetails, relatedTickets, ticketCard, ticketDetails, threadCard, triggerCard } from '../src/app/cards.ts'
 import { key, said, type Decision, type Thread, type Ticket, type Trigger } from '../src/core/index.ts'
 
 /**
@@ -196,3 +196,24 @@ it('keeps what a model reads in a preview as written: code, angle brackets and l
   expect(triggerCard({ ...trigger,
     text }).preview).toBe('Fix `Map<string, T>` typing, see [the issue](https://github.com/acme/widgets/issues/7) **now**')
 })
+
+it('omits empty optional card fields and orders ended tickets after open ones', () => {
+  expect(triggerCard(trigger, { filtered: { code: 'not_a_member' }, fanout: [], at: '' })).toMatchObject({
+    disposition: { filtered: 'not_a_member', delivered_to: [] },
+  })
+  expect(triggerCard(trigger, { fanout: [], at: '' })).toMatchObject({ disposition: { delivered_to: [] } })
+  expect(triggerCard(trigger, { fanout: [], at: '' }).disposition).not.toHaveProperty('filtered')
+  const reopened: Ticket = { ...ticket, inputs: [{ id: 'reopen-1', kind: 'reopen', decisionId: 'd2', at: '1' }] }
+  expect(ticketDetails(reopened, [], []).inputs.items[0]).toMatchObject({ kind: 'reopen', decision_id: 'd2' })
+  const assignment = { ...ticket.assignments[0]!, endedReason: 'hostRestarted' as const }
+  expect(assignmentLine(reopened, assignment)).toMatchObject({ ended_reason: 'dsh-superagent restarted' })
+  expect(threadCard({ ...threadFixture, meta: { url: 'https://example.com' } }, 'Title')).toMatchObject({ url: 'https://example.com' })
+  expect(decisionCard({ ...decisionFixture, ticketId: undefined })).not.toHaveProperty('ticket_id')
+  const ended: Ticket = { ...ticket, ended: { at: '2', by: 'executor', outcome: 'dropped' } }
+  expect(relatedTickets([ended, ticket, { ...ticket, id: 'ticket-2', createdAt: '2026-09-10T00:00:00Z' }]).related_tickets.map(item => item.ticket_id))
+    .toEqual(['ticket-2', 'ticket-1', 'ticket-1'])
+})
+
+const threadFixture: Thread = { key: 'github:42', ref: { source: 'github', id: '42' }, createdAt: '', subscriptions: [], correlated: [], pending: [], meta: {} }
+const decisionFixture: Decision = { id: 'd1', evalId: 'e1', threadKey: 'github:42', triggerIds: ['request-1'], policyVersion: 'v1', at: 'a', kind: 'accept', reason: [said('r')],
+  strength: 'explicit', ticketId: 'ticket-1', audit: { matches: [] } }

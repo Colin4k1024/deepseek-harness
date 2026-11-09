@@ -23,10 +23,12 @@ async function fixture() {
 }
 it('keeps prompt variables and initial routing on the role model without saving the host default', async () => {
   const { ctx, agent, request, record, flush } = await fixture()
-  await initializeRoleModel(ctx, agent, { provider: 'worker-provider', model: 'worker-model' })
+  await initializeRoleModel(ctx, agent, { provider: 'worker-provider', model: 'worker-model', reasoningEffort: 'high' })
+  const unrelated = agent.session.append('turn/end', { turn: 0, reason: { kind: 'completed' } })
+  ctx.emit('session/event', agent.session, unrelated)
   expect((await ctx.systemPrompt.assemble()).variables).toMatchObject({ provider: 'worker-provider', model: 'worker-model' })
   const selected = await request()
-  expect(selected).toEqual({ provider: 'worker-provider', model: 'worker-model' })
+  expect(selected).toEqual({ provider: 'worker-provider', model: 'worker-model', reasoningEffort: ReasoningEffortId('high') })
   expect(agent.session.snapshotEvents().some(event => event.type === 'model/selection')).toBe(true)
   expect(flush).toHaveBeenCalledOnce()
   record(selected)

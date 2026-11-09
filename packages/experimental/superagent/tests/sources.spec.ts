@@ -5,7 +5,7 @@ import { backfillChat, consumerRetry, feishuKind, feishuTriggerId, feishuRef, fe
 import { KV } from '../src/kv.ts'
 import { apply as applyFeishu, pollThreads as pollFeishuThreads } from '../src/sources/feishu.ts'
 import { runFeishu } from '../src/sources/feishu-loops.ts'
-import { commentTrigger, githubAddress, githubChannel, issueTrigger, type GithubComment, type GithubIssue } from '../src/sources/github-trigger.ts'
+import { CommentSchema, commentTrigger, githubAddress, githubChannel, issueTrigger, reviewPlace, type GithubComment, type GithubIssue } from '../src/sources/github-trigger.ts'
 import { claimPull, observePull, pullEndNotices, pullOf, ticketBranch, type Pull } from '../src/sources/github-pull.ts'
 import { ciCounts, ciFact, ciSummary } from '../src/sources/github-read.ts'
 import { apply as applyGithub, githubKind, pollFailure, pollRound } from '../src/sources/github.ts'
@@ -24,6 +24,22 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 const MEMBER = 'ou_alice'
+it('describes Feishu listening rules and the bot variable without inventing a chat or name', () => {
+  if (!feishuKind.channel || !feishuKind.policy || !feishuKind.environment) throw new Error('Feishu kind is incomplete')
+  const config = feishuKind.schema.parse({ otherChats: 'mentions', directMessages: false })
+  expect(feishuKind.policy.rows(config).find(row => row.id === 'other')).toMatchObject({
+    note: { zh: '仅 @', en: '@ only' }, cells: { unlistedAddressed: true },
+  })
+  expect(feishuKind.channel.allowed({ direct: 'false' }, feishuKind.schema.parse({}))).toBe(false)
+  const deployment = testDeployment()
+  const values = feishuKind.environment.values({
+    deployment: { ...deployment, feishu: deployment.feishu ? { ...deployment.feishu, name: '' } : undefined }, config,
+  })
+  expect(values).toMatchObject({ DSH_SUPERAGENT_FEISHU_BOT: 'ou_bot', DSH_SUPERAGENT_FEISHU_CHAT: '' })
+  expect(feishuKind.environment.values({ deployment: testDeployment({ feishu: undefined }), config })).toMatchObject({
+    DSH_SUPERAGENT_FEISHU_BOT: '', DSH_SUPERAGENT_FEISHU_CHAT: '',
+  })
+})
 function host(overrides: Partial<SourceContextDeps> = {}) {
   const store = new Store(join(mkdtempSync(join(tmpdir(), 'sources-')), 'db.sqlite'))
   const settings = SettingsSchema.parse({
@@ -383,6 +399,19 @@ describe('github source', () => {
     expect(commentTrigger({ id: 9, body: '@Agent-Bot please fix', user: { login: 'alice', type: 'User' } }, { number: 7, isPr: true }, 'conversation', 'agent-bot')).toMatchObject({ human: true, addressed: 'mention' })
     expect(commentTrigger({ id: 10, body: 'mail@agent-bot.example', user: { login: 'alice', type: 'User' } }, { number: 7, isPr: true }, 'conversation', 'agent-bot')).not.toHaveProperty('addressed')
     expect(commentTrigger({ id: 11, body: 'pushed', user: { login: 'Agent-Bot', type: 'User' } }, { number: 7, isPr: true }, 'conversation', 'agent-bot').human).toBe(false)
+    // GitHub reports a deleted account as null, and an undecided review may name no commit.
+    expect(commentTrigger(CommentSchema.parse({ id: 12, body: 'who is this?', user: null, created_at: '2026-09-01T00:00:00Z' }),
+      { number: 7, isPr: false }, 'conversation', 'agent-bot')).toMatchObject({ actor: { id: 'ghost' }, human: true })
+    expect(review({ state: 'APPROVED' })).toBe('APPROVED review of commit unknown')
+    expect(reviewPlace({ id: 13, user: { login: 'carol', type: 'User' }, path: 'src/render.ts' })).toBe('src/render.ts')
+    const originalLine = commentTrigger({ id: 14, user: { login: 'carol', type: 'User' }, path: 'src/render.ts', original_line: 42 },
+      { number: 7, isPr: true }, 'inline', 'agent-bot')
+    expect(originalLine).toMatchObject({ text: 'src/render.ts:42', meta: { path: 'src/render.ts', line: 42 } })
+    const noLine = commentTrigger({ id: 15, user: { login: 'carol', type: 'User' }, path: 'src/render.ts' },
+      { number: 7, isPr: true }, 'inline', 'agent-bot')
+    expect(noLine).toMatchObject({ text: 'src/render.ts', meta: { path: 'src/render.ts', line: null } })
+    expect(issueTrigger({ number: 8, title: 'No body', body: null, user: { login: 'alice', type: 'User' },
+      created_at: '2026-09-01T00:00:00Z', html_url: 'https://github.com/acme/widgets/issues/8' }, 'agent-bot').text).toBe('No body\n\n')
   })
   it('reads the address of an Issue, a PR or a review comment of the repository, and nothing else', () => {
     expect(githubAddress('https://api.github.com/repos/acme/widgets/pulls/9', 'acme/widgets')).toEqual({ number: 9, pr: true })

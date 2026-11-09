@@ -18,7 +18,7 @@ import { Store } from '../src/app/store.ts'
 import { Commands } from '../src/infra/commands.ts'
 import { inputMessage } from '../src/executor/dsh.ts'
 import { credentialHelper, workerGitConfig } from '../src/infra/environment.ts'
-import { IM_WORDS, NOTE_WORDS, checkedImText } from '../src/infra/text.ts'
+import { IM_WORDS, NOTE_WORDS, checkedImText, fill } from '../src/infra/text.ts'
 import { SettingsSchema } from '../src/policy.ts'
 import { feishuKind, feishuTrigger } from '../src/sources/feishu.ts'
 import { githubKind } from '../src/sources/github.ts'
@@ -388,6 +388,7 @@ it('names only registered tools, schema options, environment variables and gloss
 it('enforces the word limits the text states', async () => {
   expect(checkedImText(words(IM_WORDS))).toBe(words(IM_WORDS))
   expect(() => checkedImText(words(IM_WORDS + 1))).toThrow(`maximum is ${IM_WORDS}`)
+  expect(fill('Keep {missing} and {present}.', { present: 'value' })).toBe('Keep  and value.')
   const attach = (note: string) =>
     host.run(host.runtime.masterId, 'orchestrator_route', {
       decisions: [{ kind: 'attach', ticket_id: 'unknown', trigger_id: 'unknown', note }],

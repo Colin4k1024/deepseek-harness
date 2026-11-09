@@ -28,6 +28,10 @@ it('saves this machine\'s settings in the Deployment settings through DSH\'s con
   expect(document.querySelector('.dt-toast')?.textContent).toBe(zh.saved)
   expect(text()).not.toContain(zh.savedRestarting)
   expect(field<HTMLInputElement>(zh.deploymentContextTimeout).value).toBe('20000')
+  // Clearing a limit removes the machine's override rather than saving zero.
+  await type(field<HTMLInputElement>(zh.deploymentPromptMaxChars), '')
+  await click(zh.save)
+  expect(mutations.at(-1)).toEqual({ revision: 2, ops: [{ op: 'unset', path: ['promptMaxChars'] }] })
 })
 
 it('keeps a refused Deployment change as a draft, and shows the settings read-only without a writable form', async () => {
@@ -81,11 +85,15 @@ it('renders the Deployment page with the derived accounts in the Plugin Manager,
   await render('summary')
   expect(container.textContent).toBe('')
   server.form = fakeForm().form
+  server.setup = { ...server.setup, accounts: { ...server.setup.accounts!, feishu: { ...server.setup.accounts!.feishu!, name: '' } } }
   await render('page')
-  for (const fact of ['acme/widgets', '@agent-bot', 'Widgets Bot', '账号在 dsh-superagent 面板的来源设置里修改。']) expect(text()).toContain(fact)
+  for (const fact of ['acme/widgets', '@agent-bot', 'ou_bot', '账号在 dsh-superagent 面板的来源设置里修改。']) expect(text()).toContain(fact)
   server.setup = { ...server.setup, problem: problemOf('repositoryUnset'), accounts: null }
   await render('page')
   expect(text()).toContain('部署检查未通过：GitHub 来源没有设置监听的仓库。')
+  server.setup = { ...server.setup, problem: null, feishuProblem: problemOf('feishuNoBot') }
+  await render('page')
+  expect(text()).toContain('飞书机器人接口没有返回机器人的 open_id。')
   expect(field<HTMLInputElement>(zh.deploymentPromptMaxChars).disabled).toBe(false)
   server.down = true
   await render('page')
@@ -98,6 +106,11 @@ it('tells a dsh-superagent that is starting from a browser that cannot write on 
   at({ page: 'settings', query: { group: 'deployment' } })
   await mount()
   const limit = () => field<HTMLInputElement>(zh.deploymentPromptMaxChars)
+  expect(limit().disabled).toBe(false)
+  await act(async () => { publish({ status: 'loading' }) })
+  expect(text()).toContain(zh.loading)
+  expect(limit().disabled).toBe(true)
+  await act(async () => { publish({ status: 'ready' }) })
   expect(limit().disabled).toBe(false)
   // While dsh-superagent restarts, DSH stops serving its entry; the values come back editable once it is served again.
   await act(async () => { publish({ status: 'unavailable' }) })

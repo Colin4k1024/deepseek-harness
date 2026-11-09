@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join, relative } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { Store } from '../src/app/store.ts'
-import { Prompts, builtInBase, composePrompt, defaultPrompts, policySection, promptParts, type PromptConfig } from '../src/app/prompts.ts'
+import { Prompts, builtInBase, composePrompt, composeSkill, defaultPrompts, policySection, promptParts, type PromptConfig } from '../src/app/prompts.ts'
 import { USER_ERRORS, UserError } from '../src/core/index.ts'
 import { KV } from '../src/kv.ts'
 import { SettingsSchema, policyVersion } from '../src/policy.ts'
@@ -20,6 +20,15 @@ function withStore(body: (store: Store, dir: string) => void): void {
   const dir = mkdtempSync(join(tmpdir(), 'prompts-')); const store = new Store(join(dir, 'db'))
   try { body(store, dir) } finally { store.close(); rmSync(dir, { recursive: true, force: true }) }
 }
+
+it('resolves revision zero from defaults only before the first save persists a baseline', () => {
+  withStore((store) => {
+    const prompts = promptsOf(store)
+    expect(prompts.version(0)).toMatchObject({ revision: 0, config: defaultPrompts() })
+    store.set(KV.prompts.revision, 1)
+    expect(() => prompts.version(0)).toThrow(new UserError('unknownPromptRevision', { revision: '0' }))
+  })
+})
 
 it('saves team sections and skills as versions that survive a restart, with history and rollback', () => {
   const dir = mkdtempSync(join(tmpdir(), 'prompt-config-'))
@@ -120,6 +129,7 @@ it('registers the built-in Source skills, Feishu only with a Feishu bot, before 
     expect(skills[1]![1]).toContain('## CLI usage')
     expect(skills[2]![1]).toBe('Tag releases.')
     expect(new Prompts(store, () => 100000, variables, () => false).skills(config).map(([name]) => name)).toEqual(['github', 'release'])
+    expect(composeSkill(config, 'missing')).toBe('')
   })
 })
 
@@ -209,6 +219,8 @@ describe('overrides of built-in parts', () => {
       expect(() => prompts.validate(config)).toThrow(new UserError('unknownPromptPart', { part: 'runtime/retired' }))
       store.set(KV.prompts.version(1), { revision: 1, previousRevision: 0, savedAt: '', source: 'panel', config }); store.set(KV.prompts.revision, 1)
       expect(prompts.defaultChanged(config)).toEqual([{ part: 'runtime/retired', base: 'b', removed: true }])
+      expect(prompts.defaultChanged({ ...config, overrides: { runtime_retired: { text: 'Old.' } } }))
+        .toEqual([{ part: 'runtime_retired', removed: true }])
       expect(prompts.validate(config)).toEqual(defaultPrompts())
       expect(USER_ERRORS.unknownPromptPart[0]).toBe('refused')
     })

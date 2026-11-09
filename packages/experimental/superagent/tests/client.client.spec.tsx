@@ -137,11 +137,43 @@ it('polls one request at a time, keeps the data while new dependencies load, and
   await act(async () => { calls[3]!.done(['a', 'b']) })
   await act(async () => { await vi.advanceTimersByTimeAsync(5000) })
   expect(calls).toHaveLength(4)
+  await act(async () => { document.dispatchEvent(new Event('visibilitychange')) })
+  expect(calls).toHaveLength(4)
   hidden.mockRestore()
   await act(async () => { document.dispatchEvent(new Event('visibilitychange')) })
   expect(calls).toHaveLength(5)
   act(() => { root.unmount() })
   vi.useRealTimers()
+})
+
+it('wraps a rejected value that is not an Error so the panel can show it', async () => {
+  let failure: Error | undefined
+  function Harness() {
+    const { error } = usePoll(vi.fn(async () => { throw 'offline' }), [])
+    failure = error
+    return null
+  }
+  const container = document.createElement('div')
+  const root = createRoot(container)
+  await act(async () => { root.render(<Harness />) })
+  await act(async () => { await Promise.resolve() })
+  expect(failure).toEqual(new Error('offline'))
+  act(() => { root.unmount() })
+  container.remove()
+})
+
+it('ignores a poll failure that settles after the page unmounts', async () => {
+  let fail: ((reason: string) => void) | undefined
+  function Harness() {
+    usePoll(() => new Promise((_done, reject) => { fail = reject }), [])
+    return null
+  }
+  const container = document.createElement('div')
+  const root = createRoot(container)
+  await act(async () => { root.render(<Harness />) })
+  act(() => { root.unmount() })
+  await act(async () => { fail?.('late') })
+  container.remove()
 })
 
 it('tells a dsh-superagent that does not answer from a record it does not have, and words each failure by what failed', async () => {
@@ -152,18 +184,21 @@ it('tells a dsh-superagent that does not answer from a record it does not have, 
     vi.stubGlobal('fetch', vi.fn(answer))
     const error = await call('GET tickets/:id', { id: 't1' }).then(() => undefined, (thrown: unknown) => thrown)
     expect(error).toBeInstanceOf(ApiError)
-    const { message, status, missing, details } = error as ApiError
-    return { message, status, missing, unreachable: !!details.unreachable }
+    const typed = error as ApiError
+    return { message: typed.message, status: typed.status, missing: typed.missing,
+      unreachable: !!typed.details.unreachable, issues: typed.issues }
   }
   expect(await failure(async () => { throw new TypeError('Failed to fetch') })).toEqual({ message: 'offline', status: 0, missing: false,
-    unreachable: true })
+    unreachable: true, issues: [] })
   // DSH's web server answers an empty 404 while dsh-superagent's routes are unregistered.
   expect(await failure(async () => new Response(null, { status: 404 }))).toEqual({ message: 'not running', status: 404, missing: false,
-    unreachable: true })
+    unreachable: true, issues: [] })
   expect(await failure(async () => new Response(null, { status: 502 }))).toEqual({ message: 'server 502', status: 502, missing: false,
-    unreachable: true })
+    unreachable: true, issues: [] })
   expect(await failure(async () => new Response('<html>Bad request</html>', { status: 400 }))).toEqual({ message: 'request 400',
-    status: 400, missing: false, unreachable: false })
+    status: 400, missing: false, unreachable: false, issues: [] })
+  expect(await failure(async () => Response.json({ issues: [{ path: 'title', message: 'empty' }] }, { status: 400 }))).toEqual({
+    message: 'request 400', status: 400, missing: false, unreachable: false, issues: [{ path: 'title', message: 'empty' }] })
   expect(await failure(async () => Response.json({ error: 'Unknown ticket', code: 'unknownTicket' }, { status: 404 }))).toEqual({
-    message: 'user unknownTicket', status: 404, missing: true, unreachable: false })
+    message: 'user unknownTicket', status: 404, missing: true, unreachable: false, issues: [] })
 })

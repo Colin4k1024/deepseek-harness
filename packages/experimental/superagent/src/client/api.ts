@@ -87,7 +87,7 @@ export function usePoll<T>(load: () => Promise<T>, deps: readonly unknown[], int
   const [state, setState] = useState<{ data?: T; error?: Error }>({})
   const loader = useRef(load)
   loader.current = load
-  const refresh = useRef<() => Promise<void>>(async () => {})
+  const refresh = useRef<() => Promise<void>>(Promise.resolve.bind(Promise))
   useEffect(() => {
     let active = true
     let timer: ReturnType<typeof setTimeout> | undefined

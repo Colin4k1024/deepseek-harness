@@ -164,6 +164,8 @@ it('lets a worker follow a related thread for context, which the main Session he
   master.inject.mockClear(); h.deliveries.mockClear()
   expect(await h.runTool(sessionId, 'orchestrator_thread_follow', { thread: 'github:7',
     reason: 'The issue it fixes.' })).toEqual({ followed: true, thread: 'github:7' })
+  expect(await h.runTool(sessionId, 'orchestrator_thread_follow', { thread: 'github:7',
+    reason: 'Already followed.' })).toEqual({ followed: false, thread: 'github:7' })
   await h.runtime.idle()
   expect(h.runtime.store.threads.get('github:7')).toMatchObject({ subscriptions: [ticket.id], context: [ticket.id] })
   const text = (message: unknown) => (message as { content: { text: string }[] }).content[0]!.text

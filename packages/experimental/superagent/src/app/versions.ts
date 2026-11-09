@@ -1,4 +1,5 @@
 /** Versioned record storage backed by numbered snapshots and a current-revision pointer in the Store KV table. */
+import { required } from '../core/required.ts'
 import type { Family, Key } from '../kv.ts'
 import type { Store } from './store.ts'
 
@@ -29,6 +30,6 @@ export class Versions<V extends { revision: number }> {
   /** Stores a snapshot without advancing the current revision pointer (e.g., to record an initial built-in baseline). */
   keep(version: V): void { this.store.set(this.family(version.revision), version) }
   list(limit = Infinity): V[] {
-    return this.store.keys(this.family).flatMap(name => this.store.get(name) ?? []).sort((a, b) => b.revision - a.revision).slice(0, limit)
+    return this.store.keys(this.family).map(name => required(this.store.get(name))).sort((a, b) => b.revision - a.revision).slice(0, limit)
   }
 }

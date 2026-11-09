@@ -1002,7 +1002,8 @@ it('retries only a failed, blocked or undelivered ticket with a new assignment, 
   expect(runtime.store.decisions.get('unavailable-1')).toMatchObject({ dismissed: true })
   const { dismissed: _dismissed, ...clearedDecision } = runtime.store.decisions.get('unavailable-1')!
   runtime.store.decisions.save(clearedDecision)
-  expect(unjudged()).toHaveLength(1)
+  runtime.store.decisions.save({ ...clearedDecision, id: 'unavailable-empty', triggerIds: [], at: new Date().toISOString() })
+  expect(unjudged().at(-1)).toMatchObject({ decisionId: 'unavailable-empty', triggerId: '' })
   // A later judgement on the same Thread resolves it.
   runtime.store.decisions.save({ ...accepted, id: 'ignore-2', kind: 'ignore', reason: [said('context only')], at: new Date().toISOString() })
   expect(unjudged()).toEqual([])
@@ -1237,6 +1238,7 @@ it('pauses and resumes processing as its own action, a setting outside every blo
   const revision = runtime.store.blockRevision('executor')
   expect(await runtime.settings.pause(true, 'panel')).toEqual({ paused: true })
   expect(runtime.store.settings().paused).toBe(true)
+  expect(overviewOf(runtime).problems).toContainEqual({ kind: 'executor-paused' })
   expect(runtime.store.blockRevision('executor')).toBe(revision)
   // A draft of the Executor settings started before the pause still saves, and keeps the pause; the executor block has no pause.
   const draft = runtime.store.settings().executor
