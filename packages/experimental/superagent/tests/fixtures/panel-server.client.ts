@@ -477,7 +477,10 @@ export function fakeForm(writable = true, accept = true) {
       mutations.push({ ops, revision })
       if (!accept || revision !== snapshot.revision) return false
       const value = { ...snapshot.value }
-      for (const op of ops) { if (op.op === 'set') value[op.path[0]!] = op.value; else delete value[op.path[0]!] }
+      for (const op of ops) {
+        if (op.op === 'set') value[op.path[0]!] = op.value
+        else { const { [op.path[0]!]: _removed, ...rest } = value; value = rest }
+      }
       snapshot = { ...snapshot, value, revision: snapshot.revision! + 1 }
       notify()
       return true

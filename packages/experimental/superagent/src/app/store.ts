@@ -238,8 +238,8 @@ export class Store implements Repositories {
     describe: (keyValue: string, patch: { label?: string; url?: string; facts?: Record<string, ThreadFact | null> }): void => {
       const thread = this.threads.get(keyValue)
       if (!thread) return
-      const facts: ThreadFacts = { ...(thread.meta.facts as ThreadFacts | undefined) }
-      for (const [id, fact] of Object.entries(patch.facts ?? {})) { if (fact) facts[id] = fact; else delete facts[id] }
+      const facts = Object.fromEntries(Object.entries({ ...(thread.meta.facts as ThreadFacts | undefined ?? {}), ...patch.facts })
+        .filter(([, fact]) => !!fact)) as ThreadFacts
       const meta = { ...thread.meta, ...(patch.label === undefined ? {} : { label: patch.label }), ...(patch.url === undefined ? {} : { url: patch.url }), facts }
       if (JSON.stringify(meta) !== JSON.stringify(thread.meta)) this.threads.save({ ...thread, meta })
     },
@@ -250,8 +250,7 @@ export class Store implements Repositories {
     patchMeta: (keyValue: string, patch: Record<string, unknown>): void => { this.atomic(() => {
       const thread = this.threads.get(keyValue)
       if (!thread) return
-      const meta = { ...thread.meta }
-      for (const [name, value] of Object.entries(patch)) { if (value === undefined) delete meta[name]; else meta[name] = value }
+      const meta = Object.fromEntries(Object.entries({ ...thread.meta, ...patch }).filter(([, value]) => value !== undefined))
       if (JSON.stringify(meta) !== JSON.stringify(thread.meta)) this.threads.save({ ...thread, meta })
     }) },
   }

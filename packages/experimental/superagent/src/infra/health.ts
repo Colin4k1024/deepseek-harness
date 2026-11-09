@@ -13,7 +13,7 @@ export interface HealthEntry {
  * Claimed by Runtime, Effects, Sessions, DshExecutor, Settings, and SourceRegistry, and read by management HTTP routes.
  */
 export class HealthBoard {
-  private readonly entries: Record<string, Health> = {}
+  private entries: Record<string, Health> = {}
   private readonly claimed = new Set<string>()
   claim(name: string, initial?: Health): HealthEntry {
     if (this.claimed.has(name)) throw new Error(`The health entry ${name} is reported by another part`)
@@ -27,7 +27,8 @@ export class HealthBoard {
         if (!held) return
         held = false
         this.claimed.delete(name)
-        delete this.entries[name]
+        const { [name]: _released, ...remaining } = this.entries
+        this.entries = remaining
       },
     }
   }

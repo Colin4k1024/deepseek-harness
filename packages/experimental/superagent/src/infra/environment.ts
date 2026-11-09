@@ -129,7 +129,9 @@ export async function writeEnvironment(deployment: Pick<Deployment, 'stateDir' |
 export function applyEnvironment(variables: Record<string, string | undefined>, stateDir: string, path: string): () => void {
   const values = { ...variables, PATH: [workerBin(stateDir), path].join(delimiter) }
   const previous = Object.fromEntries(Object.keys(values).map(name => [name, process.env[name]]))
-  const apply = (env: Record<string, string | undefined>): void => { for (const [name, value] of Object.entries(env)) { if (value === undefined) delete process.env[name]; else process.env[name] = value } }
+  const apply = (env: Record<string, string | undefined>): void => {
+    for (const [name, value] of Object.entries(env)) { if (value === undefined) Reflect.deleteProperty(process.env, name); else process.env[name] = value }
+  }
   apply(values)
   return () => { apply(previous) }
 }

@@ -666,6 +666,7 @@ export class DshExecutor implements Executor {
     }
     // The worker may have reported while its turn ended; a blocked or failed report a person's message has lifted is stale.
     if (handedOff(current)) return
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const last = agent.session.snapshotEvents().filter(event => event.type === 'assistant/message').at(-1)
     const text = last?.type === 'assistant/message'
       ? last.data.message.content.filter(block => block.type === 'text').map(block => block.text).join('\n').trim() : ''

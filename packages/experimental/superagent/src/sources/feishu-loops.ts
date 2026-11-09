@@ -170,7 +170,7 @@ export async function backfillChat(ctx: SourceContext, chatId: string, direct: b
   signal: AbortSignal, tally: Tally = { skipped: 0 }): Promise<void> {
   const commands = ctx.commands.withSignal(signal)
   const topicsKey = KV.feishu.topics(chatId)
-  const topics = { ...ctx.state.get(topicsKey) }
+  let topics = { ...ctx.state.get(topicsKey) }
   const scan = async (kind: 'chat' | 'thread', id: string): Promise<void> => {
     let page: string | undefined
     const pages = new Set<string>()
@@ -200,9 +200,8 @@ export async function backfillChat(ctx: SourceContext, chatId: string, direct: b
   // A quiet topic is forgotten unless a subscribed Thread that is still polled follows it.
   const followed = new Set(ctx.threads.subscribed(SOURCE).filter(thread => polled(ctx, thread))
     .map(thread => String(thread.meta.threadId ?? ctx.triggers.latest(thread.key)?.meta.threadId ?? '')))
-  for (const [id, seen] of Object.entries(topics)) {
-    if (!followed.has(id) && Date.parse(until) - Date.parse(seen) >= POLL_HORIZON_MS) delete topics[id]
-  }
+  topics = Object.fromEntries(Object.entries(topics)
+    .filter(([id, seen]) => followed.has(id) || Date.parse(until) - Date.parse(seen) < POLL_HORIZON_MS))
   ctx.state.set(topicsKey, topics)
   for (const id of Object.keys(topics)) await scan('thread', id)
   ctx.state.set(topicsKey, topics)

@@ -7,10 +7,13 @@ type Overrides<T extends object> = { [K in keyof T]?: T[K] | undefined }
 
 /** Apply overrides to a base value, treating an explicit undefined as field removal. */
 function apply<T extends object>(base: T, overrides: Overrides<T>): T {
-  const result = { ...base }
+  let result: T & object = { ...base }
   for (const key of Object.keys(overrides) as Array<keyof T>) {
     const value = overrides[key]
-    if (value === undefined) delete (result as Partial<T>)[key]
+    if (value === undefined) {
+      const { [key]: _removed, ...rest } = result
+      result = rest
+    }
     else result[key] = value
   }
   return result

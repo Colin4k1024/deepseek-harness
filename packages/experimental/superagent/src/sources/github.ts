@@ -326,7 +326,7 @@ async function pollNotifications(ctx: SourceContext, round: Round): Promise<{ co
   const notifications = /rel="next"/.test(headers)
     ? await commands.pages(NotificationSchema, path, round.tally)
     : validItems(NotificationSchema, z.array(z.unknown()).parse(JSON.parse(body)), round.tally)
-  const retries = { ...state.get(KV.github.retries) }
+  let retries = { ...state.get(KV.github.retries) }
   // Failed items from the previous round run first, followed by newly notified items in chronological order; each is read once.
   const items = new Map(Object.entries(retries).map(([number, retry]) => [Number(number), retry]))
   for (const notification of notifications.reverse()) {
@@ -341,7 +341,8 @@ async function pollNotifications(ctx: SourceContext, round: Round): Promise<{ co
     round.read.add(number)
     try {
       await readNotified(ctx, round, number, item)
-      delete retries[number]
+      const { [number]: _done, ...withoutDone } = retries
+      retries = withoutDone
     } catch (error) {
       if (stopped(ctx, round)) return { count: notifications.length, interval }
       const retry = { ...item, failedAt: item.failedAt ?? round.started, attempts: (item.attempts ?? 0) + 1 }
@@ -350,7 +351,8 @@ async function pollNotifications(ctx: SourceContext, round: Round): Promise<{ co
       const abandoned = Date.parse(round.started) - Date.parse(retry.failedAt) >= RETRY_WINDOW_MS
       failed(ctx, round, number, error, abandoned)
       if (!deleted(error) && !abandoned) { retries[number] = retry; continue }
-      delete retries[number]
+      const { [number]: _dropped, ...withoutDropped } = retries
+      retries = withoutDropped
     }
   }
   ctx.atomic(() => { state.set(KV.github.since, cursorAt(round.started)); state.set(KV.github.retries, retries) })
