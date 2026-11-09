@@ -14,6 +14,14 @@ function passes(closing = () => false) {
 const trigger = { id: 't1', source: 'feishu', threads: [{ source: 'feishu', id: 'oc_1:om_1' }], actor: { source: 'feishu', id: 'ou_a' }, human: true,
   at: '2026-10-01T00:00:00.000Z', text: 'hi', meta: {} } as Trigger
 
+it('waits for a pass that is already running when idle is called', async () => {
+  const h = passes()
+  const running = h.passes.pump()
+  const idle = h.passes.idle()
+  await Promise.all([running, idle])
+  expect(h.engine.evaluateDue).toHaveBeenCalledOnce()
+})
+
 it('is idle immediately when no pass is running', async () => {
   const h = passes()
   await h.passes.idle()

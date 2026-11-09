@@ -30,8 +30,20 @@ function fixture(history: UserMessage[] = []) {
     inbox.nextStep.splice(0); inbox.nextTurn.splice(0)
     ctx.emit('session/event', agent.session, event(message))
   }
-  return { agent, agents, inbox, steer, followup, injected, open, read, close, flush, send, inject, holds, consume, signal }
+  return { ctx, agent, agents, inbox, steer, followup, injected, open, read, close, flush, send, inject, holds, consume, signal }
 }
+
+it('ignores Session events that are not user messages, live and restored', async () => {
+  const f = fixture()
+  const ended: SessionEvent<'turn/end'> = { type: 'turn/end', seq: SessionSeq(1), time: 1, surfaceOp: 'append',
+    data: { turn: 1, reason: { kind: 'completed' } } }
+  f.read.mockResolvedValueOnce({ events: [ended] })
+  f.ctx.emit('session/event', f.agent.session, ended)
+  await f.holds('request')
+  f.consume(createUserMessage({ content: [], source: { kind: 'user', rpcId: 'request' } }))
+  await f.holds('request')
+  expect(f.steer).not.toHaveBeenCalled()
+})
 
 it.each(['queue', 'steer'] as const)('delivers %s as an orchestrator relay, deduplicating pending and consumed messages', async (mode) => {
   const f = fixture()

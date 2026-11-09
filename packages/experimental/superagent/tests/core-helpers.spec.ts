@@ -1,8 +1,9 @@
 /** Contracts for shared core helpers that Engine tests do not reach through normal workflows. */
 import { describe, expect, it } from 'vitest'
-import { MemoryRepositories, UserError, reasonText, type Reason, type Trigger } from '../src/core/index.ts'
+import { MemoryRepositories, UserError, reasonText, type DomainEvent, type Reason, type Trigger } from '../src/core/index.ts'
 import { EnginePart, type EngineOptions } from '../src/core/part.ts'
 import { required } from '../src/core/required.ts'
+import { eventNotice } from '../src/app/notices.ts'
 import { settingsPolicy, SettingsSchema } from '../src/policy.ts'
 import { SourceRegistry } from '../src/sources/registry.ts'
 
@@ -40,6 +41,20 @@ describe('core helpers', () => {
       fanout: [], handbacks: [{ ticketId: 'ticket-1', reason: 'not mine', at: '2026-09-09T00:00:00Z' }],
     })
     expect(repo.threads.get('github:1')).toBeUndefined()
+  })
+
+  it('turns domain events into the notices the main Session needs', () => {
+    const at = '2026-09-09T00:00:00Z'
+    const ended: DomainEvent = { type: 'ticket.ended', at, data: { ticketId: 'ticket-1', by: 'executor', outcome: 'dropped', reason: 'out of scope' } }
+    expect(eventNotice(ended)?.[1]).toMatchObject({ ticket_ended: 'ticket-1', by: 'executor', outcome: 'dropped', reason: 'out of scope', at })
+    expect(eventNotice(ended, () => undefined)?.[2]).toContain('Ticket ticket-1 ended (out of scope)')
+    const requeued: DomainEvent = { type: 'trigger.requeued', at, data: { triggerId: 'trigger-1' } }
+    expect(eventNotice(requeued)?.[1]).toMatchObject({ trigger_requeued: 'trigger-1', read: 'trigger/trigger-1', at })
+    const person: DomainEvent = { type: 'thread.unsubscribed', at, data: { threadKey: 'github:1', ticketId: 'ticket-1', by: 'person' } }
+    expect(eventNotice(person)?.[0]).toBe('subscription:github:1')
+    const executor: DomainEvent = { type: 'thread.unsubscribed', at, data: { threadKey: 'github:1', ticketId: 'ticket-1', by: 'executor', reason: 'unrelated' } }
+    expect(eventNotice(executor)?.[1]).toMatchObject({ thread_unrelated: { ticket_id: 'ticket-1', thread: 'github:1', reason: 'unrelated' } })
+    expect(eventNotice({ type: 'policy.changed', at, data: { from: 'v1', to: 'v2' } })).toBeUndefined()
   })
 
   it('formats absent, custom, and partial reasons without inventing values', () => {

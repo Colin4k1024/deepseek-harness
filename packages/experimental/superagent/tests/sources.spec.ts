@@ -24,6 +24,17 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 const MEMBER = 'ou_alice'
+it('exposes Source state keys and sends notifications through the Outbox', () => {
+  const sent: unknown[] = []
+  const h = host({ outbox: { send: (message: unknown) => { sent.push(message) } } })
+  h.state.set('github-cursor:7', '2026-09-09T00:00:00Z')
+  expect(h.state.keys('github-cursor:')).toEqual(['github-cursor:7'])
+  const message = { id: 'notice-1', channel: { source: 'github', thread: 'github:7', address: {} }, text: 'Done', kind: 'notice' as const }
+  h.notify(message)
+  expect(sent).toEqual([message])
+  h.store.close()
+})
+
 it('describes Feishu listening rules and the bot variable without inventing a chat or name', () => {
   if (!feishuKind.channel || !feishuKind.policy || !feishuKind.environment) throw new Error('Feishu kind is incomplete')
   const config = feishuKind.schema.parse({ otherChats: 'mentions', directMessages: false })
