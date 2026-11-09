@@ -1,6 +1,7 @@
 /** Lifecycle, prompt/tool/skill decoration, message delivery, and budget retry tracking for orchestrator and worker DSH sessions. */
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
+import { AttachmentId, type ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import type { MessageId } from '@deepseek-ai/dsh-llm'
 import { scopeParentOf } from '@deepseek-ai/dsh-scope'
 import type { SessionId } from '@deepseek-ai/dsh-session'
@@ -19,6 +20,13 @@ import { SKILL_PREFIX, type PromptVersion, type Prompts } from './prompts.ts'
 import type { Store } from './store.ts'
 import { KV } from '../kv.ts'
 import type { RegisterTool, Tool } from './tools/tool.ts'
+
+/** Validates the optional image attachment a tool's canonical JSON output may carry. */
+const ImageAttachmentSchema = z.object({
+  attachmentId: z.string().min(1), mediaType: z.enum(['image/png', 'image/jpeg', 'image/webp', 'image/gif']),
+  bytes: z.number().int().nonnegative(), width: z.number().int().positive(), height: z.number().int().positive(),
+  name: z.string().optional(), originalDimensions: z.object({ width: z.number().int().positive(), height: z.number().int().positive() }).optional(),
+}).strict()
 
 /** Host dependencies used by `Sessions`. */
 export interface SessionsHost {
@@ -229,8 +237,16 @@ export class Sessions {
       binding.disposers.push(agent.ctx.tools.register({ name, description, parameters: z.toJSONSchema(schema),
         output: { schema: { type: 'object', additionalProperties: true }, render: (_args, value) => {
           const text = { type: 'text' as const, text: JSON.stringify(value) }
-          const image = value && typeof value === 'object' && 'image' in value ? (value as { image: never }).image : undefined
-          return image ? [text, { type: 'image' as const, attachment: image }] : [text]
+          const image = value && typeof value === 'object' && 'image' in value
+            ? ImageAttachmentSchema.safeParse(value.image) : undefined
+          if (image?.success !== true) return [text]
+          const { attachmentId, bytes, height, mediaType, width, name, originalDimensions } = image.data
+          const attachment: ImageAttachmentRef = {
+            attachmentId: AttachmentId(attachmentId), bytes, height, mediaType, width,
+            ...name === undefined ? {} : { name },
+            ...originalDimensions === undefined ? {} : { originalDimensions },
+          }
+          return [text, { type: 'image' as const, attachment }]
         } },
         execute: (args, execution) => execute(schema.parse(args), execution.signal) }))
     }

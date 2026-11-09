@@ -39,7 +39,7 @@ export function until<T>(work: Promise<T>, signal?: AbortSignal, ms?: number): P
   const stopped = new Promise<false>((resolve) => { stop = () => { resolve(false) } })
   signal?.addEventListener('abort', stop, { once: true })
   const timer = ms === undefined ? undefined : setTimeout(stop, ms)
-  timer?.unref?.()
+  if (timer) timer.unref()
   return Promise.race([work, stopped]).finally(() => { signal?.removeEventListener('abort', stop); clearTimeout(timer) })
 }
 /** The workers whose turn a stop of their subagents cancelled, whose next idle ends that turn rather than one of their own. */

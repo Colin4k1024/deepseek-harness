@@ -488,9 +488,12 @@ export class DshExecutor implements Executor {
     const ctx = this.host.context
     this.disposers.push(ctx.on('agent/status', ({ agent, status }) => {
       // A turn that starts ends the look at its worker's background work; the turn's own idle looks afresh.
-      if (status === 'running') { this.settling.get(ticketOfSession(agent.id) ?? '')?.abort(); return }
+      switch (status) {
+        case 'running': { this.settling.get(ticketOfSession(agent.id) ?? '')?.abort(); return }
+        case 'idle': break
+      }
       // The turn a stop of the worker's subagents woke and cancelled is no turn of the worker's.
-      if (status !== 'idle' || cancelled.delete(agent) || this.host.closing()) return
+      if (cancelled.delete(agent) || this.host.closing()) return
       const ticket = this.ticketOf(agent)
       const assignment = ticket && runningAssignment(ticket)
       if (ticket && assignment && liveTicket(ticket)) void this.background(this.workerIdle(ticket, assignment, agent))
@@ -588,7 +591,7 @@ export class DshExecutor implements Executor {
   /** Schedules `then` to run after `ms` milliseconds unless `dispose()` is called first. */
   private after(ms: number, then: () => void): void {
     const timer = setTimeout(() => { this.timers.delete(timer); then() }, ms)
-    timer.unref?.()
+    timer.unref()
     this.timers.add(timer)
   }
   /**
@@ -643,7 +646,7 @@ export class DshExecutor implements Executor {
     const look = new AbortController(), limit = new AbortController()
     this.settling.set(ticket.id, look)
     const timer = setTimeout(() => { limit.abort() }, BACKGROUND_LIMIT_MS)
-    timer.unref?.()
+    timer.unref()
     let quiet: boolean
     const left = this.left.get(ticket.id)?.jobs
     try { quiet = await untilQuiet(this.host.context, agent, AbortSignal.any([this.host.lifetime, look.signal, limit.signal]), left) }

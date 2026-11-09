@@ -7,6 +7,7 @@ import { usePoll, type HistoryView, type Settings, type SettingsView, type Sourc
 import { Button, DisclosureRow, Icon, InfoTip, Input, SegmentedControl, Switch } from './controls.tsx'
 import { useDraft } from './draft.tsx'
 import { useAction, usePanel, usePanelData } from './provider.tsx'
+import { scrollIntoView } from './scroll.ts'
 import { settingsRoute } from './route.ts'
 import { errorText, localized, valueLabel, when, type T } from './text.ts'
 import { Hint, LoadState } from './widgets.tsx'
@@ -136,7 +137,7 @@ export function ConfigHistory({ blocks, versions, focus }: { blocks: string[]; v
   // Match the oldest save that produced the focused Policy version (where that version originated).
   const target = focus ? items.filter(item => item.policyChanged && item.policyVersion.startsWith(focus)).at(-1) : undefined
   const scroll = (element: HTMLLIElement | null) => { if (element
-    && !element.dataset.scrolled) { element.dataset.scrolled = '1'; element.scrollIntoView?.({ block: 'center' }) } }
+    && !element.dataset.scrolled) { element.dataset.scrolled = '1'; scrollIntoView(element, { block: 'center' }) } }
   return <DisclosureRow icon={<Icon name="history" />} title={t('configHistory')} open={open} onToggle={() => { setOpen(!open) }}>
     <div className="dt-disclosure-body">
       {error && <p className="dt-error">{error}</p>}

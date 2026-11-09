@@ -14,7 +14,7 @@ export interface CiSnapshot { head: string; checks: Check[]; statuses: Status[] 
 /** Check conclusions and status states that count as failures; `success`, `neutral`, `skipped`, and `stale` do not. */
 const FAILING = new Set(['failure', 'timed_out', 'cancelled', 'action_required', 'startup_failure', 'error'])
 export function ciCounts(snapshot: CiSnapshot): { failed: number; running: number } {
-  const statuses = snapshot.statuses ?? []
+  const statuses = snapshot.statuses
   return {
     failed: snapshot.checks.filter(check => FAILING.has(check.conclusion ?? '')).length + statuses.filter(status => FAILING.has(status.state)).length,
     running: snapshot.checks.filter(check => check.status !== 'completed').length + statuses.filter(status => status.state === 'pending').length,
@@ -22,7 +22,7 @@ export function ciCounts(snapshot: CiSnapshot): { failed: number; running: numbe
 }
 export function ciSummary(snapshot: CiSnapshot, where: string, read: string): string {
   const checks = snapshot.checks.map(check => ({ name: check.name, failed: FAILING.has(check.conclusion ?? ''), running: check.status !== 'completed' }))
-  const statuses = (snapshot.statuses ?? []).map(status => ({ name: status.context, failed: FAILING.has(status.state), running: status.state === 'pending' }))
+  const statuses = snapshot.statuses.map(status => ({ name: status.context, failed: FAILING.has(status.state), running: status.state === 'pending' }))
   const results = [...checks, ...statuses]
   const failed = results.filter(result => result.failed).map(result => result.name)
   const running = results.filter(result => result.running).map(result => result.name)
@@ -36,7 +36,7 @@ export function ciSummary(snapshot: CiSnapshot, where: string, read: string): st
 }
 export function ciFailures(snapshot: CiSnapshot): string[] {
   return [...snapshot.checks.filter(check => FAILING.has(check.conclusion ?? '')).map(check => check.name),
-    ...(snapshot.statuses ?? []).filter(status => FAILING.has(status.state)).map(status => status.context)].sort()
+    ...snapshot.statuses.filter(status => FAILING.has(status.state)).map(status => status.context)].sort()
 }
 export function ciFact(counts: { failed: number; running: number }): ThreadFact {
   if (counts.failed) return { label: { zh: 'CI 失败', en: 'CI failed' }, value: String(counts.failed), problem: true }

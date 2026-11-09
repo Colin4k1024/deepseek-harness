@@ -97,7 +97,7 @@ export class Settings {
     if (!failed || this.host.lifetime.aborted) return
     const wait = previous ? Math.min(previous.wait * 2, 3_600_000) : 60_000
     const timer = setTimeout(() => { this.sync(id).catch(() => { /* sync() records its failure in health. */ }) }, wait)
-    timer.unref?.()
+    timer.unref()
     this.retries.set(id, { timer, wait })
   }
   private syncHealth(id: string): HealthEntry {

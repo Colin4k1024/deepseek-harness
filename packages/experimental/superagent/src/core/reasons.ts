@@ -26,12 +26,12 @@ export const REASONS = {
 } as const
 export type ReasonCode = keyof typeof REASONS
 /** Reason code and template values; `triggerId` identifies the trigger in a batch that the reason applies to. */
-export interface Reason { code: ReasonCode | (string & {}); values?: Record<string, string>; triggerId?: string }
+export interface Reason { code: ReasonCode | (string & {}); values?: Record<string, string> | undefined; triggerId?: string }
 export const said = (text: string): Reason => ({ code: 'said', values: { text } })
 /** Formats reasons in English (prefixed by `triggerId` when present) for agent consumption. */
 export function reasonText(reasons: readonly Reason[] | Reason | undefined): string {
   return [reasons ?? []].flat().map((reason) => {
-    const template: string = REASONS[reason.code as ReasonCode] ?? reason.code
+    const template: string = reason.code in REASONS ? REASONS[reason.code as ReasonCode] : reason.code
     const text = template.replace(/\{(\w+)\}/g, (match, name: string) => reason.values?.[name] ?? match)
     return reason.triggerId ? `${reason.triggerId}: ${text}` : text
   }).join('; ')

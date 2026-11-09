@@ -4,6 +4,7 @@ import { ApiError, usePoll, type ThreadPageView, type TriggerRow } from './api.t
 import { Button, DisclosureRow, Icon, Tag } from './controls.tsx'
 import { decisionMark } from './marks.ts'
 import { useAction, usePanel } from './provider.tsx'
+import { scrollIntoView } from './scroll.ts'
 import { DecisionLine, Earlier, TicketLine, automatedRuns } from './rows.tsx'
 import { actorName, errorText, readableMarkers, reasonLabel, valueLabel, when, type T } from './text.ts'
 import { ActionLink, ClampText, ConfirmButton, Hint, LoadState, PageHead, Section, When } from './widgets.tsx'
@@ -39,7 +40,7 @@ function TriggerItem({ trigger, earlier, target, subscribed, requeue }: {
   const ticketId = trigger.disposition.decision?.ticketId
   const scroll = (element: HTMLLIElement | null) => {
     if (element && target === trigger.id
-      && !element.dataset.scrolled) { element.dataset.scrolled = '1'; element.scrollIntoView?.({ block: 'center' }) }
+      && !element.dataset.scrolled) { element.dataset.scrolled = '1'; scrollIntoView(element, { block: 'center' }) }
   }
   return <li id={`trigger-${trigger.id}`} className={`dt-event${target === trigger.id ? ' dt-highlight' : ''}${trigger.human ? ''
     : ' dt-event-quiet'}`} ref={scroll}>
@@ -90,21 +91,21 @@ function useThreadTimeline(key: string, target: string | undefined) {
     }, (failure: unknown) => { if (active) notify(errorText(failure)) })
     return () => { active = false }
   }, [missing, call, key, target, notify])
-  const gap = !!newest && gapBetween(newest, older)
+  const gapPage = newest && older ? { newest, older, gap: gapBetween(newest, older) } : undefined
   useEffect(() => {
-    if (!gap || !newest || !older) return
+    if (gapPage === undefined || !gapPage.gap) return
     let active = true
     const fill = async () => {
-      let run = newest.timeline, cursor = newest.earlier
-      while (cursor !== null && !overlaps(run, older.triggers)) {
+      let run = gapPage.newest.timeline, cursor = gapPage.newest.earlier
+      while (cursor !== null && !overlaps(run, gapPage.older.triggers)) {
         const page = await call('GET threads/:key', { key, query: { limit: PAGE, before: cursor } })
         run = [...page.timeline, ...run]; cursor = page.earlier
       }
-      if (active) setOlder({ triggers: byTime([...older.triggers, ...run]), cursor: overlaps(run, older.triggers) ? older.cursor : cursor })
+      if (active) setOlder({ triggers: byTime([...gapPage.older.triggers, ...run]), cursor: overlaps(run, gapPage.older.triggers) ? gapPage.older.cursor : cursor })
     }
     fill().catch((failure: unknown) => { if (active) notify(errorText(failure)) })
     return () => { active = false }
-  }, [gap, newest, older, call, key, notify])
+  }, [gapPage?.gap, newest, older, call, key, notify])
   const earlier = useAction(async (shown: ThreadPageView) => {
     const page = await call('GET threads/:key', { key, query: { limit: PAGE, before: shown.earlier! } })
     setOlder({ triggers: [...page.timeline, ...shown.timeline], cursor: page.earlier })

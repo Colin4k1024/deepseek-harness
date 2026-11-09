@@ -5,7 +5,7 @@
 import { basename } from 'node:path'
 import { z } from 'zod'
 import { isoTime, said, type AcceptMode, type AdmissionCell, type ChannelRef, type Decision, type Execution, type Follow, type MandateBasis,
-  type Reason, type Thread, type Ticket, type TicketInput, type TriggerDisposition } from '../core/index.ts'
+  type Reason, type Thread, type Ticket, type TicketInput, type TicketOutcome, type TriggerDisposition } from '../core/index.ts'
 import { feishuChatLink } from '../sources/feishu-channel.ts'
 import { POLL_HORIZON_MS } from '../sources/poll.ts'
 import { SettingsSchema, policyVersion, type SettingsOrigin } from '../policy.ts'
@@ -25,6 +25,8 @@ export const tooOld = (version: number): string =>
   `Orchestrator database schema ${version} predates schema ${OLDEST_SCHEMA}, which this version cannot migrate; start with a new state directory`
 
 type Stored = Record<string, unknown>
+type TicketEnd = NonNullable<Ticket['ended']>
+type LegacyTicketEnd = Omit<TicketEnd, 'outcome'> & { outcome?: TicketOutcome }
 const isObject = (value: unknown): value is Stored => !!value && typeof value === 'object' && !Array.isArray(value)
 const text = (value: unknown): string | undefined => typeof value === 'string' && value ? value : undefined
 
@@ -392,14 +394,14 @@ export function ticketOf(old: Stored, answers = new Map<string, string[]>(), hum
       : { id: input.id, kind: 'text', at: input.at, text: JSON.stringify({ resumed: true, decision_id: input.decisionId, read: `ticket/${ticket.id}/assignment`,
         note: 'This ticket ended earlier and a follow-up resumed it under the same mandate. Inspect the worktree, git history and PR state before continuing; do not repeat completed external operations.' }) })
   const reported = [...new Set([...ticket.answers ?? [], ...answers.get(ticket.id) ?? []])]
-  const ended = ticket.ended && { ...ticket.ended, outcome: ticket.ended.outcome ?? outcomeOf(ticket.ended) }
+  const ended = ticket.ended && { ...ticket.ended, outcome: outcomeOf(ticket.ended) }
   const mandate = { ...ticket.mandate, basis: basisOf(ticket.mandate.basis) }
   const delivery = ticket.delivery ?? (text(meta.deliveryError) ? { error: meta.deliveryError as string, at: ticket.updatedAt } : undefined)
   const kept = execution ?? ticket.execution
   const follows = ticket.follows ?? followsOf(meta, ticket.channels, closed)
-  return { ...ticket, inputs, ...ended ? { ended } : {}, mandate, origin: ticket.origin ?? { triggerId, triggerIds },
+  return { ...ticket, inputs, ...ended ? { ended } : {}, mandate, origin: originOf(ticket, triggerId, triggerIds),
     // A ticket stopped by a person receives no further work, so clear any undelivered inputs.
-    ...ended?.by === 'human' ? { undelivered: [] } : {},
+    ...ended && ended.by === 'human' ? { undelivered: [] } : {},
     ...kept ? { execution: kept } : {}, ...delivery ? { delivery } : {},
     channels: ticket.channels.filter(channel => !opener(channel)), ...follows.length ? { follows } : {},
     ...reported.length ? { answers: reported } : {} }
@@ -520,9 +522,14 @@ function dropPullEnds(store: Store): void {
  * Infer a ticket's `ended.outcome` when predating recorded outcomes (`stopped` for human stops, else matching `reason` or defaulting to
  * `closed`).
  */
-function outcomeOf(ended: Pick<NonNullable<Ticket['ended']>, 'by' | 'reason'>): NonNullable<Ticket['ended']>['outcome'] {
+function outcomeOf(ended: LegacyTicketEnd): TicketOutcome {
+  if (ended.outcome !== undefined) return ended.outcome
   if (ended.by === 'human') return 'stopped'
   return (['completed', 'merged', 'closed', 'dropped'] as const).find(outcome => outcome === ended.reason) ?? 'closed'
+}
+/** Restore an origin for schema 10 tickets that predate the extracted `origin` field. */
+function originOf(ticket: Omit<Ticket, 'origin'> & { origin?: Ticket['origin'] }, triggerId: string, triggerIds: string[]): Ticket['origin'] {
+  return ticket.origin ?? { triggerId, triggerIds }
 }
 /** Backfill thread creation and activity timestamps from their earliest and latest triggers. */
 function backfillThreadTimes(store: Store): void {

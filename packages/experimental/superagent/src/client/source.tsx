@@ -6,6 +6,7 @@ import { DisclosureRow, Dot, Icon, InfoTip, Switch, Tag } from './controls.tsx'
 import { SaveBar } from './draft.tsx'
 import { sourceMark } from './marks.ts'
 import { usePanel, usePanelData } from './provider.tsx'
+import { scrollIntoView } from './scroll.ts'
 import { setupPage, settingsRoute, type Route } from './route.ts'
 import { ConfigHistory, Fields, SourceField, useBlockDraft, useSettings } from './settings-kit.tsx'
 import { actorName, healthText, localized, readableMarkers, reasonLabel, valueLabel, when } from './text.ts'
@@ -61,7 +62,7 @@ function SourceCard({ source }: { source: SourceView }) {
 
 export function SourceSettings({ focus }: { focus?: string }) {
   const { sources } = useSettings().settings
-  useEffect(() => { if (focus) document.getElementById(`dt-source-${focus}`)?.scrollIntoView?.({ block: 'start' }) }, [focus])
+  useEffect(() => { if (focus) scrollIntoView(document.getElementById(`dt-source-${focus}`), { block: 'start' }) }, [focus])
   return <div className="dt-form">
     {sources.map(source => <SourceCard key={source.id} source={source} />)}
     <ConfigHistory blocks={['source:']} />

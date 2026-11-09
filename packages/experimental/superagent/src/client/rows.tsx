@@ -83,7 +83,7 @@ export function DecisionLine({ decision }: { decision: DecisionRow }) {
   const matched = decision.rules.filter(rule => rule.matched).map(rule => rule.name)
   const mark = decisionMark(t, decision.outcome)
   const preview = readableMarkers(t, decision.preview)
-  const reason = decision.reason ? reasonLabel(t, decision.reason) : ''
+  const reason = reasonLabel(t, decision.reason)
   const open = () => { decision.ticketId ? navigate({ page: 'execution', id: decision.ticketId })
     : navigate({ page: 'trigger', id: decision.thread, query: { trigger: decision.triggerIds[0] ?? '' } }) }
   return <li className="dt-row dt-link dt-ticket">

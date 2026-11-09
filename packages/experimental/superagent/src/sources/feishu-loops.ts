@@ -14,6 +14,7 @@ import { health, type SourceContext } from './host.ts'
 import { KV } from '../kv.ts'
 import { cursorAt, POLL_HORIZON_MS, polled, pollThreads as pollEach } from './poll.ts'
 import type { FeishuConfig } from './feishu.ts'
+import { isAborted } from '../infra/signals.ts'
 import { textValue } from '../infra/text.ts'
 
 export const runFeishu = (ctx: SourceContext, signal: AbortSignal): Promise<unknown> =>
@@ -132,7 +133,7 @@ async function chatNamesLoop(ctx: SourceContext, signal: AbortSignal): Promise<v
 async function backfillLoop(ctx: SourceContext, signal: AbortSignal): Promise<void> {
   await ctx.ready
   if (!available(ctx)) { ctx.report('history', health('paused', 'feishuBotMissing')); return }
-  while (!signal.aborted) {
+  while (!isAborted(signal)) {
     const config = enabled(ctx)
     if (!config) {
       ctx.report('history', health('paused', 'sourceOff'))
@@ -145,19 +146,19 @@ async function backfillLoop(ctx: SourceContext, signal: AbortSignal): Promise<vo
     const errors: string[] = []
     const tally = { skipped: 0 }
     for (const [chatId, direct] of Object.entries(chats)) {
-      if (signal.aborted) break
+      if (isAborted(signal)) break
       const started = new Date().toISOString()
       const cursorKey = KV.feishu.history(chatId)
       const since = ctx.state.get(cursorKey)
       if (since === undefined) { ctx.state.set(cursorKey, started); continue }
       try {
         await backfillChat(ctx, chatId, direct, since, started, signal, tally)
-        if (!signal.aborted) ctx.state.set(cursorKey, cursorAt(started))
-      } catch (error) { if (!signal.aborted) errors.push(`${chatId}: ${String(error)}`) }
+        if (!isAborted(signal)) ctx.state.set(cursorKey, cursorAt(started))
+      } catch (error) { if (!isAborted(signal)) errors.push(`${chatId}: ${String(error)}`) }
     }
     await pollThreads(ctx, signal, tally)
     const skipped = tally.skipped ? `; ${tally.skipped} unreadable messages skipped` : ''
-    if (!signal.aborted) ctx.report('history', errors.length
+    if (!isAborted(signal)) ctx.report('history', errors.length
       ? { state: 'error', detail: errors.join('\n') }
       : { state: 'ready', detail: `Configured groups and known direct chats recovered${skipped}`, at: new Date().toISOString() })
     await delay(60_000, undefined, { signal }).catch(() => {})
