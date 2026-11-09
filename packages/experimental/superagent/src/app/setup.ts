@@ -61,7 +61,7 @@ export class Setup {
     this.restart()
   }
   /** Defer the restart to the next macrotask so the current HTTP or tool caller receives its response first. */
-  restart(): void { setTimeout(() => this.host.restart(), 0) }
+  restart(): void { setTimeout(() => { this.host.restart() }, 0) }
   /** Verify account CLIs for a modified source block before saving, ignoring setup errors belonging to other blocks. */
   async checkAccounts(block: SettingsBlock, settings: Settings): Promise<void> {
     const { machine } = this.host

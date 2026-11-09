@@ -69,7 +69,9 @@ export async function type(element: HTMLInputElement | HTMLTextAreaElement | HTM
 /** The page's text without its stylesheet. */
 export const text = () => [...document.body.querySelectorAll('style')].reduce((all, style) => all.replace(style.textContent ?? '', ''),
   document.body.textContent ?? '')
-export function field<E extends HTMLElement>(label: string): E {
+type FieldKey<E> = string & { readonly element?: E }
+
+export function field<E extends HTMLElement>(label: FieldKey<E>): E {
   const labelled = (element: HTMLElement) => !!element.id && all('label').some(item => (item as HTMLLabelElement).htmlFor === element.id
     && item.textContent === label)
   const match = all('input, textarea, select').find(element => element.getAttribute('aria-label') === label || labelled(element))

@@ -440,7 +440,11 @@ describe('a worker whose work runs in the background', () => {
     // A person asks for more; the worker starts the tests in the background and ends its turn.
     await new Promise(resolve => setTimeout(resolve, 5))
     h.runtime.receive(feishu('2', '再加个测试', { mentions: [], root_id: 'om_1' })); await h.runtime.idle()
-    await vi.waitFor(() =>{  expect(latestAssignment(ticket())?.deliveredAt! >= latestAssignment(ticket())!.report!.at).toBe(true) })
+    await vi.waitFor(() => {
+      const deliveredAt = latestAssignment(ticket())?.deliveredAt
+      const reportedAt = latestAssignment(ticket())?.report?.at
+      expect(deliveredAt !== undefined && reportedAt !== undefined && deliveredAt >= reportedAt).toBe(true)
+    })
     const job = h.jobs.run(one.sessionId)
     idle(one.sessionId); await h.runtime.idle()
     await new Promise(resolve => setTimeout(resolve, 10))
@@ -827,7 +831,7 @@ it('resumes an ended ticket a person wrote to during a pause once it lifts, unde
   }
   // While processing is paused, the message waits on the ended ticket; the first pass after the pause resumes it.
   await followUp('2', 'om_1')
-  expect(h.runtime.store.tickets.get(first)).toMatchObject({ ended: expect.anything(), undelivered: [expect.any(String)] })
+  expect(h.runtime.store.tickets.get(first)).toMatchObject({ ended: expect.anything() as unknown, undelivered: [expect.any(String) as unknown] })
   await h.runtime.settings.pause(false, 'panel'); await pass()
   expect(h.runtime.store.tickets.get(first)).toMatchObject({ assignments: [expect.anything(), expect.objectContaining({ state: 'running' })] })
   expect(h.runtime.store.tickets.get(first)).not.toHaveProperty('ended')
@@ -836,7 +840,7 @@ it('resumes an ended ticket a person wrote to during a pause once it lifts, unde
   const settings = h.runtime.store.settings()
   h.runtime.store.saveSettings({ ...settings, policy: { ...settings.policy, sources: { ...settings.policy.sources, feishu: { ...settings.policy.sources.feishu!, allowed: [] } } } })
   await h.runtime.settings.pause(false, 'panel'); await pass()
-  expect(h.runtime.store.tickets.get(second)).toMatchObject({ ended: expect.anything(), undelivered: [] })
+  expect(h.runtime.store.tickets.get(second)).toMatchObject({ ended: expect.anything() as unknown, undelivered: [] })
 })
 
 it('ends a worker\'s turn only when the stop that ended its Assignment commits', async () => {

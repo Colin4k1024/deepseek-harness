@@ -618,7 +618,7 @@ describe('github source', () => {
     // GitHub also answers 404 for a private repository the agent lost access to: that is a failure read again.
     github(h, { notifications: [notification(16)] })
     await expect(pollRound(h)).rejects.toThrow('#16: Error: gh: Not Found (HTTP 404)')
-    expect(h.store.get('github-retry')).toEqual({ 16: expect.objectContaining({ pr: false }) })
+    expect(h.store.get('github-retry')).toEqual({ 16: expect.objectContaining({ pr: false }) as unknown })
     h.store.close()
   })
   it('skips and counts a notification or comment it cannot read, and names the count in the health', async () => {
@@ -827,9 +827,10 @@ describe('github source', () => {
       repository: { full_name: 'acme/widgets' },
       subject: { url: `https://api.github.com/repos/acme/widgets/issues/${item.number}`, type: 'Issue', title: item.title } }))
     // An Issue that is a PR also answers as the PR.
-    const routes: Record<string, unknown> = { notifications, ...Object.fromEntries(issues.flatMap(item => [[`issues/${item.number}`, item],
+    const entries = issues.flatMap((item): Array<[string, unknown]> => [[`issues/${item.number}`, item],
       [`pulls/${item.number}`, openPull(item.number)],
-      [`issues/${item.number}/comments`, comments[item.number] ?? []]])) }
+      [`issues/${item.number}/comments`, comments[item.number] ?? []]])
+    const routes: Record<string, unknown> = { notifications, ...Object.fromEntries(entries) }
     return { routes, reads: github(h, routes) }
   }
   it('takes in a new Issue from its notification as a Trigger with its body, addressed to the agent when the body mentions it', async () => {

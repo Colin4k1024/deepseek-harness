@@ -56,7 +56,7 @@ it.each(['queue', 'steer'] as const)('delivers %s as an orchestrator relay, dedu
 
 it.each(['pending', 'consumed', 'live'] as const)('recognizes legacy plugin identity in %s input without rewriting it', async (location) => {
   // Bypass TypeScript's current source union to construct the retired serialized shape.
-  const old: UserMessage = JSON.parse(JSON.stringify({ id: 'dsh-superagent:request', role: 'user', content: [], source: { kind: 'plugin', plugin: 'dsh-superagent', form: 'relay' } }))
+  const old = JSON.parse(JSON.stringify({ id: 'dsh-superagent:request', role: 'user', content: [], source: { kind: 'plugin', plugin: 'dsh-superagent', form: 'relay' } })) as UserMessage
   const before = JSON.stringify(old)
   const f = fixture(location === 'consumed' ? [old] : [])
   if (location === 'pending') f.inbox.nextTurn.push(old)
@@ -69,7 +69,7 @@ it.each(['pending', 'consumed', 'live'] as const)('recognizes legacy plugin iden
 })
 
 it.each(['another-plugin', undefined])('does not treat a legacy plugin source %s as this producer', async (plugin) => {
-  const old: UserMessage = JSON.parse(JSON.stringify({ id: 'dsh-superagent:request', role: 'user', content: [], source: { kind: 'plugin', plugin, form: 'relay' } }))
+  const old = JSON.parse(JSON.stringify({ id: 'dsh-superagent:request', role: 'user', content: [], source: { kind: 'plugin', plugin, form: 'relay' } })) as UserMessage
   const f = fixture([old])
   await f.send()
   expect(f.steer).toHaveBeenCalledOnce()

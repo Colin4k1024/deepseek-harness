@@ -101,7 +101,7 @@ async function consume(ctx: SourceContext, signal: AbortSignal): Promise<void> {
     await new Promise<void>((resolve, reject) => {
       child.once('error', reject)
       const exited = (code: number | null) => new Error(`Feishu event consumer exited (${code}, ready=${ready}): ${diagnostic}`)
-      child.once('close', (code) => { signal.aborted ? resolve() : reject(exited(code)) })
+      child.once('close', (code) => { if (signal.aborted) resolve(); else reject(exited(code)) })
     })
   } finally { clearTimeout(timeout); signal.removeEventListener('abort', stop); stdout.close(); stderr.close(); await chain }
 }

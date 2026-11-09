@@ -35,9 +35,9 @@ function setup(strength: 'explicit' | 'inferred' = 'inferred', bodies = Array.fr
   const repo = new MemoryRepositories()
   const sources = new SourceRegistry(() => SettingsSchema.parse({}))
   sources.register(githubKind)
-  let engine!: Engine
+  const engines: { engine?: Engine } = {}
   const host: AssessorHost = {
-    get engine() { return engine }, commands, deployment: testDeployment(), settings: () => SettingsSchema.parse({}),
+    get engine() { return engines.engine }, commands, deployment: testDeployment(), settings: () => SettingsSchema.parse({}),
     threadContext: threadContext ?? (trigger => sources.threadContext(trigger)),
     effects: { enqueue: () => {}, handle: () => {} }, paused: () => false, deliver: async () => {}, candidateCard: async candidate => ({ eval_id: candidate.evalId }),
   }
@@ -47,7 +47,7 @@ function setup(strength: 'explicit' | 'inferred' = 'inferred', bodies = Array.fr
   const executor: Executor = { start: () => {}, deliver: () => {}, stop: () => {} }
   const scope = { scope: () => ({ listened: true as const, observed: true }) }
   const outbox = { send: () => {}, status: () => undefined, withdraw: () => {} }
-  engine = new Engine({ repo, policy: () => policy, scope, assessor, executor, outbox })
+  const engine = engines.engine = new Engine({ repo, policy: () => policy, scope, assessor, executor, outbox })
   const tools: Record<string, (args: unknown, signal: AbortSignal) => Promise<unknown>> = {}
   tools.orchestrator_eval_read = (args, signal) => assessor.read({} as Agent, EvalReadSchema.parse(args), signal)
   tools.orchestrator_eval_decide = (args, signal) => {

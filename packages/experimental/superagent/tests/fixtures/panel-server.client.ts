@@ -398,8 +398,8 @@ const ROUTES: { [K in keyof Api]: Route<K> } = {
     return { revision: server.prompts.revision, context_delivery: 'injected' }
   } },
   'POST prompts/preview': { body: true, answer: ({ body }) => {
-    const skills = [...server.setup.accounts?.feishu ? ['feishu'] : [], 'github', ...Object.keys(body.skills)].map(name => [name,
-      composeSkill(body, name)])
+    const skills: [string, string][] = [...server.setup.accounts?.feishu ? ['feishu'] : [], 'github', ...Object.keys(body.skills)]
+      .map(name => [name, composeSkill(body, name)])
     // The generated parts from their templates, without variables or rules.
     const environment = environmentSection(body, []), policy = policySection(SettingsSchema.parse({ policy: { rules: [] } }), body)
     return { parts: { orchestrator: promptParts(body, 'orchestrator', environment, policy), worker: promptParts(body, 'worker', environment) },

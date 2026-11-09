@@ -40,7 +40,10 @@ it('reads the lists, a ticket, a decision, the settings, the prompts and the mod
     const page = await read(`settings/${block}`) as { text: string }
     expect(JSON.parse(page.text)).toEqual({ block, revision: h.runtime.store.blockRevision(block as 'policy'), value: h.runtime.settings.block(block).value })
   }
-  expect(JSON.parse((await read('settings/policy') as { text: string }).text).value.sources.feishu.allowed).toEqual([{ id: 'ou_alice', name: 'Alice' }])
+  const policy = JSON.parse((await read('settings/policy') as { text: string }).text) as {
+    value: { sources: { feishu: { allowed: { id: string; name: string }[] } } }
+  }
+  expect(policy.value.sources.feishu.allowed).toEqual([{ id: 'ou_alice', name: 'Alice' }])
   await expect(read('settings/source:retired')).rejects.toThrow('Unknown settings block')
   const skills = { built_in: ['dsh-superagent-feishu', 'dsh-superagent-github'], team: [] }
   expect(await read('prompts')).toMatchObject({ revision: 0, read: 'prompts/0', skills, items: [expect.objectContaining({ revision: 0 })], next_offset: null })

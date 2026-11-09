@@ -98,7 +98,6 @@ export function usePoll<T>(load: () => Promise<T>, deps: readonly unknown[], int
     void run()
     document.addEventListener('visibilitychange', shown)
     return () => { active = false; clearTimeout(timer); document.removeEventListener('visibilitychange', shown) }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [...deps, intervalMs])
   const reload = useCallback(() => refresh.current(), [])
   return { data: state.data, error: state.error, reload }

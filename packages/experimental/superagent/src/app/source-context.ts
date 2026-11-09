@@ -3,7 +3,7 @@ import type { EngineForSources, ReceiveResult, Trigger } from '../core/index.ts'
 import type { Deployment } from '../deployment.ts'
 import type { Commands } from '../infra/commands.ts'
 import type { SetupProblem } from '../setup.ts'
-import type { SourceContext } from '../sources/host.ts'
+import type { SourceConfigKey, SourceContext } from '../sources/host.ts'
 import type { SourceRegistry } from '../sources/registry.ts'
 import type { Outbox } from './outbox.ts'
 import type { Store } from './store.ts'
@@ -39,7 +39,7 @@ export function sourceContextOf(deps: SourceContextDeps, kind: { kind: string; h
     ready: deps.ready,
     configured: () => deps.configured(),
     get problem() { return [deps.feishuProblem, deps.setupProblem].find(problem => problem?.place === kind.kind) },
-    config: <C extends Record<string, unknown>>(id: string) => {
+    config: <C extends Record<string, unknown>>(id: SourceConfigKey<C>): C | undefined => {
       const instance = deps.sources.instance<C>(id)
       return instance?.enabled ? instance.config : undefined
     },

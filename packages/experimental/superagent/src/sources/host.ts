@@ -31,6 +31,9 @@ export interface SourceHost {
 /** Display label, URL, and facts (`null` removes a fact) that a Source publishes on a Thread. */
 export interface ThreadDescription { label?: string; url?: string; facts?: Record<string, ThreadFact | null> }
 /** Application capabilities exposed to a Source kind for reading state, ingesting triggers, managing threads/tickets, and reporting health. */
+/** Source id that carries the configuration type a caller requests. */
+export type SourceConfigKey<C> = string & { readonly config?: C }
+
 export interface SourceContext {
   readonly deployment: Deployment
   readonly commands: Commands
@@ -40,7 +43,7 @@ export interface SourceContext {
   /** Setup problem keeping this Source's account from running; only the Feishu bot check reports one. */
   readonly problem?: SetupProblem | undefined
   /** Returns a Source's configuration while enabled, or undefined while disabled or uninstalled. */
-  config<C extends Record<string, unknown>>(kind: string): C | undefined
+  config<C extends Record<string, unknown>>(kind: SourceConfigKey<C>): C | undefined
   /**
    * Ingests a trigger into the Engine and schedules the next evaluation pass; callers should await completion before advancing read
    * cursors.

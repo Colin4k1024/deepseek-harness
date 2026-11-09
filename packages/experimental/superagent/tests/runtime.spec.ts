@@ -220,7 +220,7 @@ it('relays an explicit member mention as a candidate and creates the ticket, ack
   const { trigger, ticket, sessionId } = await acceptedTicket()
   const candidate = relays(runtime.masterId).find(item => item.kind === 'candidate')!
   expect(candidate).toMatchObject({ strength: 'explicit', trigger_id: trigger.id, next_action: 'Route it with orchestrator_route as dispatch says: accept, attach, stop or ignore.' })
-  expect(ticket).toMatchObject({ title: '修复回归', mandate: { strength: 'explicit', basis: expect.objectContaining({ via: 'addressed', source: 'feishu', sender: 'Alice', addressed: 'mention', scope: expect.objectContaining({ chatId: CHAT }) }) },
+  expect(ticket).toMatchObject({ title: '修复回归', mandate: { strength: 'explicit', basis: expect.objectContaining({ via: 'addressed', source: 'feishu', sender: 'Alice', addressed: 'mention', scope: expect.objectContaining({ chatId: CHAT }) as unknown }) as unknown },
     execution: expect.objectContaining({ name: expect.stringMatching(/^fix-regression-/) as unknown }) as unknown, origin: expect.objectContaining({ triggerId: trigger.id }) as unknown })
   expect(ticket).not.toHaveProperty('ended')
   // The ticket's execution environment is fixed at accept time: its directory under the execution root, and the Sources' values from its
@@ -236,7 +236,7 @@ it('relays an explicit member mention as a candidate and creates the ticket, ack
   // The first message holds the request itself: an explicit ticket has no assignment text beyond it, and nothing to read first.
   const first = relays(sessionId)[0]!
   expect(first).toEqual({ ticket_id: ticket.id, title: '修复回归', trigger: expect.objectContaining({ trigger_id: trigger.id, from: MEMBER,
-    thread: `feishu:${CHAT}:om_1`, text: trigger.text }) })
+    thread: `feishu:${CHAT}:om_1`, text: trigger.text }) as unknown })
   expect(first.trigger).not.toHaveProperty('read')
   expect(await route({ kind: 'accept', trigger_id: trigger.id, title: 'again', worktree_name: worktreeName, acknowledgement: 'x' })).toMatchObject({ ticket: { ticket_id: ticket.id } })
 })
@@ -560,7 +560,7 @@ it('projects read models for the management page and removes thread subscription
   // route.
   expect((await api('GET', 'state')).body).toMatchObject({ health: { runtime: { state: expect.any(String) as unknown } }, paused: false, load: { maxWorkers: 3 } })
   expect((await api('GET', 'settings')).body).toMatchObject({ sources: expect.arrayContaining([expect.objectContaining({ id: 'github',
-    revision: expect.any(Number) as unknown, value: expect.objectContaining({ enabled: true }) as unknown })]), blocks: { policy: { revision: expect.any(Number) as unknown } } })
+    revision: expect.any(Number) as unknown, value: expect.objectContaining({ enabled: true }) as unknown })]) as unknown, blocks: { policy: { revision: expect.any(Number) as unknown } } })
   expect((await api('POST', `threads/${encodeURIComponent(threadKeyValue)}/unsubscribe`)).body).toMatchObject({ removed: true })
   expect(threadList(viewsOf(runtime), 'subscribed', 0, 20).items).toEqual([])
   expect(agents.get(runtime.masterId)!.inject).toHaveBeenCalled()
@@ -690,7 +690,7 @@ it('retries only a failed, blocked or undelivered ticket with a new assignment, 
   agents.delete(`worker-${ticket.id}`)
   runtime.engine.retryTicket(ticket.id)
   await runtime.idle()
-  expect(relays(`worker-${ticket.id}`).at(-1)).toMatchObject({ ticket_id: ticket.id, title: '修复回归', trigger: expect.objectContaining({ text: '@bot 修一下回归' }) })
+  expect(relays(`worker-${ticket.id}`).at(-1)).toMatchObject({ ticket_id: ticket.id, title: '修复回归', trigger: expect.objectContaining({ text: '@bot 修一下回归' }) as unknown })
   expect(search(viewsOf(runtime), '修复', new TextCache(0)).tickets).toEqual([expect.objectContaining({ id: ticket.id })])
   expect(decisionList(viewsOf(runtime), [], 0, 10, '2999-01-01T00:00:00Z').items).toEqual([])
   const accepted = runtime.store.read.recentDecisions(0, 1)[0]!

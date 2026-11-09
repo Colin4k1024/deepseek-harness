@@ -84,8 +84,10 @@ export function DecisionLine({ decision }: { decision: DecisionRow }) {
   const mark = decisionMark(t, decision.outcome)
   const preview = readableMarkers(t, decision.preview)
   const reason = reasonLabel(t, decision.reason)
-  const open = () => { decision.ticketId ? navigate({ page: 'execution', id: decision.ticketId })
-    : navigate({ page: 'trigger', id: decision.thread, query: { trigger: decision.triggerIds[0] ?? '' } }) }
+  const open = () => {
+    if (decision.ticketId) navigate({ page: 'execution', id: decision.ticketId })
+    else navigate({ page: 'trigger', id: decision.thread, query: { trigger: decision.triggerIds[0] ?? '' } })
+  }
   return <li className="dt-row dt-link dt-ticket">
     <div className="dt-ticket-stage"><StageMark state={mark.dot} icon={mark.icon} label={mark.label} /></div>
     <div className="dt-ticket-body">
