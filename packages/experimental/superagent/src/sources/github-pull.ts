@@ -1,5 +1,6 @@
 /** Pull request binding, lifecycle observation, and terminal IM notification helpers. */
 import { z } from 'zod'
+import { required } from '../core/required.ts'
 import { key, liveTicket, type Follow, type OutboundMessage, type ThreadFact, type Ticket } from '../core/index.ts'
 import type { Deployment } from '../deployment.ts'
 import { sameName } from '../infra/text.ts'
@@ -61,7 +62,7 @@ export async function observePull(ctx: SourceContext, pr: Pull): Promise<boolean
   if (ended) closePull(ctx, pr)
   else {
     const candidates = agentPull(pr, ctx.deployment) ? ctx.tickets.open().filter(ticket => ticketBranch(ticket, pr.head.ref)) : []
-    const ticket = candidates.length === 1 ? candidates[0]! : undefined
+    const ticket = candidates.length === 1 ? required(candidates[0]) : undefined
     // A PR the ticket followed until it closed, and that is open again, is followed again.
     const reopened = ticket?.follows?.some(item => item.thread === `${SOURCE}:${pr.number}` && item.closed)
     if (ticket && (reopened || pullsOf(ticket, true).every(number => number === pr.number))) claimPull(ctx, ticket.id, pr)
@@ -92,10 +93,10 @@ function closePull(ctx: SourceContext, pr: Pull): void {
 export function pullEndNotices(ticket: Ticket, request: string, repository: string): OutboundMessage[] {
   const outcome = ticket.ended?.outcome
   const follows = (ticket.follows ?? []).filter(item => item.closed && pullNumber(item.thread) !== undefined)
-  const latest = (items: Follow[]) => items.sort((a, b) => b.closed!.at.localeCompare(a.closed!.at))[0]
+  const latest = (items: Follow[]) => items.sort((a, b) => required(b.closed).at.localeCompare(required(a.closed).at))[0]
   const follow = latest(follows.filter(item => item.own)) ?? latest(follows)
   if ((outcome !== 'merged' && outcome !== 'closed') || !follow) return []
-  const number = pullNumber(follow.thread)!
+  const number = required(pullNumber(follow.thread))
   const url = githubPage(repository, number, true)
   const chinese = /\p{Script=Han}/u.test(request) && !/[\p{Script=Hiragana}\p{Script=Katakana}]/u.test(request)
   const text = chinese

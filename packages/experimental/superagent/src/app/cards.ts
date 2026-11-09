@@ -1,6 +1,7 @@
 /** Compact, bounded model-facing projections of triggers, tickets, threads, and decisions; full texts stay behind readable resources. */
 import { latestReport, reasonText, threadKey, ticketStage, type Decision, type Mandate, type Thread, type Ticket, type TicketInput,
   type Trigger, type TriggerDisposition } from '../core/index.ts'
+import { required } from '../core/required.ts'
 import { pullOf } from '../sources/github-pull.ts'
 import { batchLine, inputResource } from '../executor/dsh.ts'
 import { textValue } from '../infra/text.ts'
@@ -11,7 +12,7 @@ export function preview(text: string): string { return text.replace(/\s+/g, ' ')
 export type TriggerDispositionView = Omit<TriggerDisposition, 'decisionId'> & { decisionId?: string | undefined }
 
 export function triggerCard(trigger: Trigger, disposition?: TriggerDispositionView) {
-  return { trigger_id: trigger.id, source: trigger.source, ...(trigger.url ? { source_url: trigger.url } : {}), actor: trigger.actor.id, thread: threadKey(trigger.threads[0]!), human: trigger.human, at: trigger.at,
+  return { trigger_id: trigger.id, source: trigger.source, ...(trigger.url ? { source_url: trigger.url } : {}), actor: trigger.actor.id, thread: threadKey(required(trigger.threads[0])), human: trigger.human, at: trigger.at,
     preview: preview(trigger.text), chars: trigger.text.length, read: `trigger/${trigger.id}`,
     ...(disposition ? { disposition: { ...(disposition.filtered ? { filtered: reasonText(disposition.filtered) } : {}),
       ...(disposition.decisionId ? { decision_id: disposition.decisionId } : {}),

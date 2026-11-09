@@ -1,5 +1,6 @@
 /** Tickets: their lifecycle from an accept to their end, their Subscriptions and their Inputs. */
 import { key } from './ids.ts'
+import { required } from './required.ts'
 import { UserError } from './errors.ts'
 import { latestAssignment, liveTicket, readUntil, runningAssignment, settled, threadKey, waitsForPerson } from './model.ts'
 import type { Assignment, ChannelRef, Evaluation, Follow, Mandate, PolicyEffect, ThreadRef, Ticket, TicketEndBy, TicketInput, TicketOutcome,
@@ -38,8 +39,8 @@ export class Tickets extends EnginePart {
     outcome: Extract<AssessmentOutcome, { kind: 'accept' }>, at: string): void {
     const { triggerIds } = evaluation
     // Fall back to the last trigger for Evals recorded before `primary` existed.
-    const primary = this.repo.triggers.get(evaluation.primary ?? triggerIds.at(-1)!)
-    const origin = { triggerId: primary?.id ?? triggerIds[0]!, triggerIds }
+    const primary = this.repo.triggers.get(evaluation.primary ?? required(triggerIds.at(-1)))
+    const origin = { triggerId: primary?.id ?? required(triggerIds[0]), triggerIds }
     let ticket: Ticket = { id, title: outcome.title, decisionId, mandate, channels: [], assignments: [], inputs: [], undelivered: [],
       createdAt: at, updatedAt: at, origin }
     for (const triggerId of triggerIds) {
@@ -97,7 +98,7 @@ export class Tickets extends EnginePart {
     const own = follows.filter(item => item.own)
     const counted = own.length ? own : follows
     if (!counted.length || counted.some(item => !item.closed)) return undefined
-    return counted.map(item => item.closed!).sort((a, b) => a.at.localeCompare(b.at)).at(-1)
+    return counted.map(item => required(item.closed)).sort((a, b) => a.at.localeCompare(b.at)).at(-1)
   }
   /**
    * The Trigger to attach to a ticket, once the ticket may take it.

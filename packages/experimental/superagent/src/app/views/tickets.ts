@@ -1,6 +1,7 @@
 /** Ticket list, ticket detail, mandate basis formatting, and executor load views. */
 import { liveTicket, threadKey, ticketStage, type AcceptMode, type AdmissionCell, type MandateBasis, type Ticket,
   type TicketStage } from '../../core/index.ts'
+import { required } from '../../core/required.ts'
 import { workerSessionId } from '../../executor/dsh.ts'
 import type { Store } from '../store.ts'
 import { channelLink, decisionView, newestFirst, page, snapshot, threadSummary, ticketLine, type Snapshot,
@@ -67,7 +68,7 @@ export function ticketDetail(host: ViewHost, id: string) {
     const trigger = value.kind === 'trigger' ? store.triggers.get(value.triggerId) : undefined
     const handback = trigger && store.triggers.disposition(trigger.id)?.handbacks?.find(item => item.ticketId === id)
     const shown = trigger && { id: trigger.id, actor: view.actor(trigger.actor, trigger.human), human: trigger.human,
-      preview: preview(trigger.text), thread: threadKey(trigger.threads[0]!),
+      preview: preview(trigger.text), thread: threadKey(required(trigger.threads[0])),
       ...handback ? { handback: { reason: handback.reason, at: handback.at } } : {} }
     const text = (value.kind === 'text' || value.kind === 'note') && value.text ? { text: markdown(value.text) } : {}
     return { ...value, ...text, delivered: !ticket.undelivered.includes(value.id), ...shown ? { trigger: shown } : {} }

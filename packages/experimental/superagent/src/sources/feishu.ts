@@ -1,5 +1,6 @@
 /** Feishu source kind definition, policy synchronization, and Cordis plugin entry. */
 import type { Context } from '@deepseek-ai/cordis'
+import { required } from '../core/required.ts'
 import { z } from 'zod'
 import { FeishuBotSchema } from '../deployment.ts'
 import { feishuLink, sendFeishu } from './feishu-channel.ts'
@@ -61,7 +62,7 @@ export const feishuKind: SourceKind<FeishuConfig> = {
   // A reply goes only to a chat the Source still receives.
   channel: {
     allowed: (address, config) =>
-      feishuKind.scope!({ meta: { chatId: address.chatId ?? '', direct: address.direct === 'true' } }, config).listened,
+      feishuKind.scope?.({ meta: { chatId: address.chatId ?? '', direct: address.direct === 'true' } }, config).listened ?? false,
     send: sendFeishu, link: feishuLink,
   },
   threadContext: feishuThreadContext,
@@ -112,7 +113,7 @@ export const feishuKind: SourceKind<FeishuConfig> = {
         // Preserve existing member order so policy version hashes stay stable; update names in place and append new members.
         const users = new Map(result.users.map(user => [user.member_id, user.name]))
         const known = new Set(part.allowed.map(entry => entry.id))
-        return { ...part, allowed: [...part.allowed.filter(entry => users.has(entry.id)).map(entry => ({ ...entry, name: users.get(entry.id)! })), ...result.users.filter(user => !known.has(user.member_id)).map(user => ({ id: user.member_id, name: user.name }))] }
+        return { ...part, allowed: [...part.allowed.filter(entry => users.has(entry.id)).map(entry => ({ ...entry, name: required(users.get(entry.id)) })), ...result.users.filter(user => !known.has(user.member_id)).map(user => ({ id: user.member_id, name: user.name }))] }
       },
     },
   },

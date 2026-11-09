@@ -3,6 +3,7 @@
  * Who may originate work is configured per Source in that Source's own identities; the Policy never maps a person across Sources.
  */
 import { LIMITS } from './limits.ts'
+import { required } from './core/required.ts'
 import { z } from 'zod'
 import { ADMISSION_DEFAULTS, type Admission, type AdmissionCell, type AdmissionRow } from './admission.ts'
 import { key, type AssessmentOutcome, type Mandate, type Policy, type PolicyEffect, type SourceScope, type Strength, type Thread, type Ticket,
@@ -208,7 +209,7 @@ export function settingsPolicy(settings: Settings, sources: SourceScope): Policy
       const row = scope.listened ? scope.row : undefined
       const recorded = { source: trigger.source, scope: trigger.meta, ...row === undefined ? {} : { row }, ...allowed ? { sender: senderName(allowed) } : {} }
       if (allowed && trigger.addressed) return { admissible: true, strength: 'explicit', basis: { ...recorded, via: 'addressed', addressed: trigger.addressed } }
-      const cell = admissionCell(!!allowed, !!trigger.addressed)!
+      const cell = required(admissionCell(!!allowed, !!trigger.addressed))
       // Unaddressed messages only use the admission table when the Source observes all messages in that scope.
       const receivable = !!trigger.addressed || (scope.listened && scope.observed)
       const admission = receivable ? admissionOf(settings, trigger.source, row, cell) : 'ignore'

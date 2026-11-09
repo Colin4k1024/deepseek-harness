@@ -1,5 +1,6 @@
 /** Trigger ingestion, thread correlation, subscription fan-out, and evaluation queuing. */
 import { key } from './ids.ts'
+import { required } from './required.ts'
 import { isoTime, liveTicket, threadKey } from './model.ts'
 import type { Ticket, Trigger } from './model.ts'
 import { EnginePart, type EngineOptions } from './part.ts'
@@ -50,7 +51,7 @@ export class Intake extends EnginePart {
       this.tickets.addInput(ticket, { id: key('input', ticketId, 'trigger', trigger.id), kind: 'trigger', triggerId: trigger.id, at,
         ...trigger.human ? { human: true } : {}, ...followed ? { context: true } : {} })
     }
-    const fanout = [...reached.keys()], context = fanout.filter(id => reached.get(id)!.context)
+    const fanout = [...reached.keys()], context = fanout.filter(id => required(reached.get(id)).context)
     const disposition = { fanout, ...context.length ? { context } : {}, at }
     this.repo.triggers.saveDisposition(trigger.id, disposition)
     // A person's message that no ticket decides, such as one that reached only tickets a person stopped or that follow the

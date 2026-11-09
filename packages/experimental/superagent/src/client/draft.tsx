@@ -2,6 +2,7 @@
  * Optimistic settings draft state with sessionStorage persistence and three-way rebase against concurrent saves.
  */
 import { useEffect, useLayoutEffect, useReducer, useRef, type FormEvent } from 'react'
+import { required } from '../core/required.ts'
 import { ApiError } from './api.ts'
 import { usePanel } from './provider.tsx'
 import { errorText, type T } from './text.ts'
@@ -36,15 +37,15 @@ export function merge3(base: unknown, mine: unknown, theirs: unknown, conflicts:
 }
 function mergeList([base, mine, theirs]: unknown[][], field: string, conflicts: string[][], path: string[]): unknown[] {
   const name = (item: unknown) => String((item as Record<string, unknown>)[field])
-  const [before, ours, others] = [base!, mine!, theirs!].map(list => new Map(list.map(item => [name(item), item])))
-  const order = theirs!.map(name)
-  mine!.forEach((item, index) => {
+  const [before, ours, others] = [required(base), required(mine), required(theirs)].map(list => new Map(list.map(item => [name(item), item])))
+  const order = required(theirs).map(name)
+  required(mine).forEach((item, index) => {
     if (order.includes(name(item))) return
-    const previous = mine!.slice(0, index).map(name).reverse().find(key => order.includes(key))
+    const previous = required(mine).slice(0, index).map(name).reverse().find(key => order.includes(key))
     order.splice(previous === undefined ? 0 : order.indexOf(previous) + 1, 0, name(item))
   })
   return order.flatMap((key) => {
-    const value = merge3(before!.get(key), ours!.get(key), others!.get(key), conflicts, [...path, key])
+    const value = merge3(required(before).get(key), required(ours).get(key), required(others).get(key), conflicts, [...path, key])
     return value === undefined ? [] : [value]
   })
 }

@@ -1,5 +1,6 @@
 /** Main Session tools for routing triggers, assessing candidates, sending replies, and updating settings and prompts. */
 import type { Context } from '@deepseek-ai/cordis'
+import { required } from '../../core/required.ts'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { z } from 'zod'
 import { UserError, followupOwners, key, reasonText, type Decision, type DecisionKind, type EngineForMainSession, type EngineForPeople }
@@ -94,8 +95,8 @@ function route(host: MainToolsHost, item: RouteItem, decided: ReadonlyMap<string
   switch (item.kind) {
     case 'accept': {
       const before = host.store.triggers.disposition(item.trigger_id)?.decisionId
-      const decision = host.engine.decide(item.trigger_id, { kind: 'accept', title: item.title!, scope: item.title!, reason: { code: 'explicitRouted' },
-        acknowledgement: item.acknowledgement!, name: item.worktree_name!, ...note })
+      const decision = host.engine.decide(item.trigger_id, { kind: 'accept', title: required(item.title), scope: required(item.title), reason: { code: 'explicitRouted' },
+        acknowledgement: required(item.acknowledgement), name: required(item.worktree_name), ...note })
       // A Decision that created no ticket is the item's refusal; one that existed before keeps what it was accepted with.
       if (decision.kind !== 'accept' || !decision.ticketId) return { refused: `Ticket was not created: ${reasonText(decision.reason)}` }
       if (decision.id === before) {
@@ -104,16 +105,16 @@ function route(host: MainToolsHost, item: RouteItem, decided: ReadonlyMap<string
       return { ...fromDecision(decision), triggerIds: decision.triggerIds }
     }
     case 'attach': {
-      const ticket = host.quietly(() => host.engine.attach(item.ticket_id!, item.trigger_id, item.note ?? undefined))
+      const ticket = host.quietly(() => host.engine.attach(required(item.ticket_id), item.trigger_id, item.note ?? undefined))
       return { reason: 'Attached: the ticket follows the trigger\'s thread and receives the trigger', ticketId: ticket.id }
     }
     // Through `engine.decide`, so only a person's message the gate admits with explicit strength stops a ticket.
     case 'stop': {
-      const decision = host.engine.decide(item.trigger_id, { kind: 'stop', ticketId: item.ticket_id!, reason: item.reason || { code: 'humanStop' } })
+      const decision = host.engine.decide(item.trigger_id, { kind: 'stop', ticketId: required(item.ticket_id), reason: item.reason || { code: 'humanStop' } })
       return { ...fromDecision(decision), triggerIds: decision.triggerIds }
     }
     case 'ignore': {
-      const decision = host.engine.decide(item.trigger_id, { kind: 'ignore', reason: item.reason! })
+      const decision = host.engine.decide(item.trigger_id, { kind: 'ignore', reason: required(item.reason) })
       return { ...fromDecision(decision), triggerIds: decision.triggerIds }
     }
   }
@@ -263,7 +264,7 @@ export function mainTools(host: MainToolsHost, agent: Agent): Tool[] {
       execute: async (args) => {
         if (args.block === 'pause') return host.settings.pause(z.object({ paused: z.boolean() }).parse(args.value).paused, 'tool')
         // Strip context_delivery since the main Session initiated the save itself.
-        const { context_delivery: _delivery, ...saved } = await host.settings.save(args.block === 'source' ? `source:${args.source!}` : args.block,
+        const { context_delivery: _delivery, ...saved } = await host.settings.save(args.block === 'source' ? `source:${required(args.source)}` : args.block,
           args.value, args.revision, 'tool')
         return saved
       },

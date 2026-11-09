@@ -1,5 +1,6 @@
 /** Computes structured settings diffs across saved revisions for display in the management panel. */
 import type { FieldSpec } from '../sources/kind.ts'
+import { required } from '../core/required.ts'
 import type { SourceRegistry } from '../sources/registry.ts'
 import { KV } from '../kv.ts'
 import type { Store, SettingsVersion } from './store.ts'
@@ -30,7 +31,7 @@ function fieldChanges(id: string, fields: readonly FieldSpec[], a: Record<string
     const from = a[field.key], to = b[field.key]
     if (same(from, to)) continue
     if (field.type === 'rows') {
-      const rowKey = field.columns[0]!.key
+      const rowKey = required(field.columns[0]).key
       const rows = (value: unknown) => new Map((Array.isArray(value) ? value as Record<string, unknown>[] : []).map(row => [String(row[rowKey]), row]))
       // Prefer the second column (human-readable label) over the row key when naming changed rows.
       const label = (row: Record<string, unknown> | undefined, item: string) => textValue(field.columns[1] && row?.[field.columns[1].key]) || item

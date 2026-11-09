@@ -1,5 +1,6 @@
 /** Overview view: active system problems, tickets awaiting human action, executor load, and 24-hour trigger flow. */
 import { reasonText, ticketStage, type Decision, type Thread } from '../../core/index.ts'
+import { required } from '../../core/required.ts'
 import type { Health } from '../../sources/host.ts'
 import type { SetupProblem } from '../../setup.ts'
 import { anyoneAllowed } from '../../policy.ts'
@@ -27,7 +28,7 @@ export function evalsHealth(store: Store, now = Date.now()): Health {
   const since = new Date(now - 3_600_000).toISOString()
   const open = unjudged(store, since)
   if (!open.length) return { state: 'ready', detail: 'No unavailable Eval in the last hour' }
-  const latest = open[0]!.decision
+  const latest = required(open[0]).decision
   return { state: 'error', at: latest.at, detail: `${open.length} Eval(s) unavailable in the last hour without a later judgement; `
     + `the latest on ${latest.threadKey}: ${reasonText(latest.reason)}` }
 }
@@ -56,7 +57,7 @@ export function overview(host: ViewHost, health: HealthMap, policyVersionValue: 
     ...Object.entries(health).filter(([name, item]) => item.state === 'error' && !sourceParts.has(name) && !name.startsWith('sync:')
       && name !== 'evals')
       .map(([name, item]) => ({ kind: 'runtime-error' as const, name, detail: item.detail })),
-    ...evaluating.filter(thread => thread.evaluating!.deadline < now)
+    ...evaluating.filter(thread => required(thread.evaluating).deadline < now)
       .map(thread => ({ kind: 'eval-overdue' as const, thread: threadSummary(view, thread) })),
     ...unjudged(store, since).map(({ thread, decision }) => ({ kind: 'eval-unavailable' as const, decisionId: decision.id,
       thread: threadSummary(view, thread), reason: decision.reason, triggerId: decision.triggerIds[0] ?? '' })),

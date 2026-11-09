@@ -3,6 +3,7 @@
  * Databases older than schema 10 are rejected: this version cannot migrate them.
  */
 import { basename } from 'node:path'
+import { required } from '../core/required.ts'
 import { z } from 'zod'
 import { isoTime, said, type AcceptMode, type AdmissionCell, type ChannelRef, type Decision, type Execution, type Follow, type MandateBasis,
   type Reason, type Thread, type Ticket, type TicketInput, type TicketOutcome, type TriggerDisposition } from '../core/index.ts'
@@ -25,6 +26,8 @@ export const tooOld = (version: number): string =>
   `Orchestrator database schema ${version} predates schema ${OLDEST_SCHEMA}, which this version cannot migrate; start with a new state directory`
 
 type Stored = Record<string, unknown>
+type StoredSettingsVersion = { source: string; settings: unknown }
+type StoredPromptVersion = PromptVersion & { config: unknown }
 type TicketEnd = NonNullable<Ticket['ended']>
 type LegacyTicketEnd = Omit<TicketEnd, 'outcome'> & { outcome?: TicketOutcome }
 const isObject = (value: unknown): value is Stored => !!value && typeof value === 'object' && !Array.isArray(value)
@@ -51,7 +54,7 @@ export function migrateTo11(store: Store): void {
   for (const row of store.db.prepare("SELECT id, value FROM decision WHERE json_type(value, '$.mandate') = 'object'").all()) {
     step(`decision ${String(row.id)}`, () => {
       const decision = JSON.parse(String(row.value)) as Decision
-      store.decisions.save({ ...decision, mandate: { ...decision.mandate!, basis: basisOf(decision.mandate!.basis) } })
+      store.decisions.save({ ...decision, mandate: { ...required(decision.mandate), basis: basisOf(required(decision.mandate).basis) } })
     })
   }
   for (const thread of store.threads.list()) {
@@ -196,7 +199,7 @@ function migrateSettingsRecords(store: Store): void {
   }
   // Preserve unparseable historical revisions as-is so a corrupt history entry does not block startup.
   for (const name of store.keys('settings-version:')) {
-    const version = store.get<{ source: string; settings: unknown }>(name)!
+    const version = required(store.get<StoredSettingsVersion>(name))
     const settings = SettingsSchema.safeParse(migrateSettings(version.settings))
     store.set(name, { ...version, source: ORIGINS[version.source] ?? version.source, ...settings.success ? { settings: settings.data } : {} })
   }
@@ -241,9 +244,9 @@ function withoutRemovedFields(value: Stored): Stored {
     : storedRules
   const people = Array.isArray(members) ? members as Member[] : undefined
   const parts = people ? {
-    feishu: { allowed: people.filter(member => member.feishuId).map(member => ({ id: member.feishuId!, ...(member.name ? { name: member.name } : {}) })),
+    feishu: { allowed: people.filter(member => member.feishuId).map(member => ({ id: required(member.feishuId), ...(member.name ? { name: member.name } : {}) })),
       ...(memberChat ? { syncChat: memberChat } : {}) },
-    github: { allowed: people.filter(member => member.github).map(member => ({ id: member.github! })) },
+    github: { allowed: people.filter(member => member.github).map(member => ({ id: required(member.github) })) },
   } : undefined
   // The GitHub Source no longer configures a dedicated merge account; auto-merge policy now lives in prompts.
   const withoutMerge = (id: string, config: unknown) => { if (id !== 'github' || !isObject(config)) return config; const { mergeCli: _mergeCli, ...fields } = config; return fields }
@@ -313,7 +316,8 @@ function normalize(config: unknown): PromptConfig {
 function migratePrompts(store: Store): void {
   // Preserve original configs on legacy or unparseable revisions, falling back to the last readable config so sessions always have valid
   // prompts.
-  const versions = store.keys('prompt-version:').map(name => store.get<PromptVersion & { config: unknown }>(name)!).sort((a, b) => a.revision - b.revision)
+  const versions = store.keys('prompt-version:').map(name => required(store.get<StoredPromptVersion>(name)))
+    .sort((a, b) => a.revision - b.revision)
   let readable: PromptConfig = { ...teamDefaults, skills: {} }
   for (const version of versions) {
     const legacy = LegacyPromptConfigSchema.safeParse(version.config).success
@@ -472,9 +476,9 @@ const SENTENCES: Readonly<Record<string, string>> = {
 function knownReason(text: string): Reason | undefined {
   if (SENTENCES[text]) return { code: SENTENCES[text] }
   const routed = /^Routed to ticket (\S+)$/.exec(text) ?? /^Already accepted as ticket (\S+)$/.exec(text)
-  if (routed) return { code: text.startsWith('Routed') ? 'routed' : 'startedTicket', values: { ticket: routed[1]! } }
+  if (routed) return { code: text.startsWith('Routed') ? 'routed' : 'startedTicket', values: { ticket: required(routed[1]) } }
   const observed = /^Observe mode: would accept \((.*)\)$/s.exec(text)
-  if (observed) return { code: 'observed', values: { text: observed[1]! } }
+  if (observed) return { code: 'observed', values: { text: required(observed[1]) } }
   return /^[a-z]+(?:_[a-z]+)+$/.test(text) ? { code: text } : undefined
 }
 /**
@@ -486,7 +490,7 @@ export function reasonsOf(stored: unknown): Reason[] {
   if (Array.isArray(stored)) return stored as Reason[]
   const text = typeof stored === 'string' ? stored : ''
   const parts = text.split('; ').map(part => /^([^:\s]+): (.+)$/s.exec(part))
-  if (parts.every(match => match && knownReason(match[2]!))) return parts.map(match => ({ ...knownReason(match![2]!)!, triggerId: match![1]! }))
+  if (parts.every(match => match && knownReason(required(match[2])))) return parts.map(match => ({ ...required(knownReason(required(required(match)[2]))), triggerId: required(required(match)[1]) }))
   return [knownReason(text) ?? said(text)]
 }
 /** Convert stored decision, disposition, and assignment end reasons from free-form strings to reason codes. */
@@ -576,7 +580,7 @@ function feishuDirectAddresses(store: Store): void {
       const value = JSON.parse(String(row.value)) as Stored
       if (!direct(value.channel)) continue
       const rewritten = JSON.stringify({ ...value, channel: marked(value.channel) })
-      store.db.prepare(`UPDATE ${table} SET value = ? WHERE id = ?`).run(rewritten, row.id!)
+      store.db.prepare(`UPDATE ${table} SET value = ? WHERE id = ?`).run(rewritten, required(row.id))
     }
   }
   for (const row of store.db.prepare('SELECT id, value FROM ticket').all()) {
@@ -628,8 +632,8 @@ function assessmentTriggers(store: Store): void {
   for (const row of store.db.prepare("SELECT key FROM effect WHERE kind = 'assessment' AND value ->> '$.triggerId' IS NULL").all()) {
     const triggerId = triggers.get(String(row.key))
     const named = JSON.stringify({ triggerId })
-    if (triggerId) store.db.prepare("UPDATE effect SET value = ? WHERE kind = 'assessment' AND key = ?").run(named, row.key!)
-    else store.db.prepare("DELETE FROM effect WHERE kind = 'assessment' AND key = ?").run(row.key!)
+    if (triggerId) store.db.prepare("UPDATE effect SET value = ? WHERE kind = 'assessment' AND key = ?").run(named, required(row.key))
+    else store.db.prepare("DELETE FROM effect WHERE kind = 'assessment' AND key = ?").run(required(row.key))
   }
   // Re-enqueue active evaluations that predate delivery tracking so delivery starts their timeout deadline instead of leaving the thread
   // stuck.

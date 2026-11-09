@@ -1,5 +1,6 @@
 /** Trigger-scoped Feishu context reader; retrieved messages are returned for model inspection without entering intake. */
 import { z } from 'zod'
+import { required } from '../core/required.ts'
 import type { Trigger } from '../core/index.ts'
 import { validItems, type Commands } from '../infra/commands.ts'
 import { admissionImageKeys, readAdmissionImage } from './feishu-image.ts'
@@ -50,7 +51,7 @@ export function feishuResource(resource: string) {
   if (!match || (match[3] && match[2] !== 'thread' && match[2] !== 'around')) {
     throw new Error('Use feishu/<trigger-id>/message, /root, /parent, /thread or /around; follow returned next_resource for another page')
   }
-  return { triggerId: match[1]!, section: match[2]!, cursor: match[3] ? decodeURIComponent(match[3]) : undefined }
+  return { triggerId: required(match[1]), section: required(match[2]), cursor: match[3] ? decodeURIComponent(match[3]) : undefined }
 }
 async function sourceOf(commands: Commands, ref: FeishuRef) {
   const id = messageId.parse(ref.messageId)
@@ -85,7 +86,7 @@ export async function readFeishu(commands: Commands, ref: FeishuRef, resource: s
     if (result.thread_id !== source.thread_id || outside) throw new Error('Feishu returned messages outside the source thread')
     if (result.has_more && (!result.page_token || result.page_token === request.cursor)) throw new Error('Feishu thread pagination did not advance; history is incomplete')
     return { status: 'available', thread_id: result.thread_id, messages, ...tally.skipped ? { skipped: tally.skipped } : {},
-      next_resource: result.has_more ? `feishu/${ref.triggerId}/thread/${encodeURIComponent(result.page_token!)}` : null }
+      next_resource: result.has_more ? `feishu/${ref.triggerId}/thread/${encodeURIComponent(required(result.page_token))}` : null }
   }
   const target = request.section === 'root' ? source.root_id : request.section === 'parent' ? source.parent_id : source.message_id
   if (!target) return { status: `no_${request.section}`, message: null }
@@ -131,7 +132,7 @@ async function chatAround(commands: Commands, ref: FeishuRef, cursor: string | u
   const messages = [...earlier.items.reverse(), ...later].filter(item => !seen.has(item.message_id) && seen.add(item.message_id))
     .map(historyView)
   const more = earlier.has_more && earlier.page_token && earlier.page_token !== cursor
-  const next = more ? `feishu/${ref.triggerId}/around/${encodeURIComponent(earlier.page_token!)}` : null
+  const next = more ? `feishu/${ref.triggerId}/around/${encodeURIComponent(required(earlier.page_token))}` : null
   return { status: 'available', messages, next_resource: next }
 }
 export async function feishuRead(commands: Commands, ref: FeishuRef, resource: string,
@@ -163,7 +164,7 @@ export const feishuThreadContext: ThreadContext<{ readPageSize: number }> = {
       return { messages: around.messages, body: { status: 'chat_neighbours', messages: around.messages }, status: 'chat_neighbours' }
     }
     const messages = 'messages' in body ? body.messages : body.message ? [body.message] : []
-    const next = 'next_resource' in body && body.next_resource ? decodeURIComponent(body.next_resource.split('/').at(-1)!) : undefined
+    const next = 'next_resource' in body && body.next_resource ? decodeURIComponent(required(body.next_resource.split('/').at(-1))) : undefined
     return { messages, next, body: { ...body }, status: body.status }
   },
   images: admissionImageKeys,

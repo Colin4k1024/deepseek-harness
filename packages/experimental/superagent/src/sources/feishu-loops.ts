@@ -1,5 +1,6 @@
 /** Feishu background loops: live event stream consumer, chat/topic history backfill, chat name refresh, and subscribed thread polling. */
 import { spawn } from 'node:child_process'
+import { required } from '../core/required.ts'
 import { createInterface } from 'node:readline'
 import { setTimeout as delay } from 'node:timers/promises'
 import { z } from 'zod'
@@ -111,7 +112,7 @@ export async function refreshChatNames(ctx: SourceContext, signal?: AbortSignal)
   const commands = ctx.commands.withSignal(signal)
   const result = z.looseObject({ chats: z.array(z.looseObject({ chat_id: z.string(), name: z.string().nullish() })).optional() })
     .parse(await commands.lark(['im', '+chat-list', '--page-all', '--page-size', '100']))
-  const names = Object.fromEntries((result.chats ?? []).filter(chat => chat.name).map(chat => [chat.chat_id, chat.name!]))
+  const names = Object.fromEntries((result.chats ?? []).filter(chat => chat.name).map(chat => [chat.chat_id, required(chat.name)]))
   ctx.state.set(KV.sources.labels(SOURCE), names)
   return names
 }

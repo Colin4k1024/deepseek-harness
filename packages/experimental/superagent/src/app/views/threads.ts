@@ -1,5 +1,6 @@
 /** Thread list, timeline detail, cross-entity search, and decision list views. */
 import { threadKey, type Thread, type Ticket, type Trigger } from '../../core/index.ts'
+import { required } from '../../core/required.ts'
 import type { ThreadFilter } from '../api.ts'
 import type { TextCache } from '../cache.ts'
 import { awaitingEval, channelLink, dayAgo, decisionView, newestFirst, page, snapshot, threadSummary, threadTitle, ticketLine,
@@ -49,7 +50,7 @@ export function threadDetail(host: ViewHost, key: string, before: string | undef
     }),
     tickets: thread.subscriptions.flatMap((id) => { const ticket = store.tickets.get(id); return ticket ? [ticketLine(view, ticket)] : [] }),
     decisions: decisions.slice().reverse().map(decision => decisionView(view, decision)),
-    timeline: shown.map(trigger => triggerView(view, trigger, decisions)), earlier: more ? `${shown[0]!.at}|${shown[0]!.id}` : null }
+    timeline: shown.map(trigger => triggerView(view, trigger, decisions)), earlier: more ? `${required(shown[0]).at}|${required(shown[0]).id}` : null }
 }
 export type ThreadDetailView = NonNullable<ReturnType<typeof threadDetail>>
 /**
@@ -63,7 +64,7 @@ export function search(host: ViewHost, query: string, links: Pick<TextCache, 'en
   const view = snapshot(host)
   const named = sources.find(value)
   const terms = new Set([value, ...named.terms])
-  for (const [name, url] of links.entries()) if (url === value) terms.add(name.split(':').at(-1)!)
+  for (const [name, url] of links.entries()) if (url === value) terms.add(required(name.split(':').at(-1)))
   const found = new Map<string, Trigger>()
   for (const term of terms) for (const trigger of store.read.search(term)) found.set(trigger.id, trigger)
   const threads = named.threads.flatMap((key) => { const thread = store.threads.get(key); return thread ? [threadSummary(view, thread)]
@@ -77,13 +78,13 @@ export function search(host: ViewHost, query: string, links: Pick<TextCache, 'en
   // Omit automated triggers from threads already included in `threads`.
   const shownThreads = new Set(threads.map(thread => thread.key))
   const item = (trigger: Trigger) => {
-    const home = store.threads.get(threadKey(trigger.threads[0]!))
+    const home = store.threads.get(threadKey(required(trigger.threads[0])))
     const { text: _text, ...row } = triggerView(view, trigger)
     // Triggers filtered by their Source have no Thread record; surface the filter reason instead.
     const filtered = home ? {} : { filtered: store.triggers.disposition(trigger.id)?.filtered ?? '' }
     return { ...row, threadTitle: home ? threadTitle(store, home) : undefined, ...filtered }
   }
-  const items = [...found.values()].filter(trigger => trigger.human || !shownThreads.has(threadKey(trigger.threads[0]!)))
+  const items = [...found.values()].filter(trigger => trigger.human || !shownThreads.has(threadKey(required(trigger.threads[0]))))
   return { tickets, items: items.sort((a, b) => b.at.localeCompare(a.at)).slice(0, 20).map(item), threads }
 }
 export type SearchView = ReturnType<typeof search>

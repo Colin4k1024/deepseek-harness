@@ -3,6 +3,7 @@
  * reporting status.
  */
 import { z } from 'zod'
+import { required } from '../../core/required.ts'
 import { liveTicket, type EngineForExecutor, type Ticket } from '../../core/index.ts'
 import { IM_WORDS } from '../../infra/text.ts'
 import { claimPull, readPull } from '../../sources/github-pull.ts'
@@ -38,7 +39,7 @@ export function executorTools(host: ExecutorToolsHost, ticket: Ticket): Tool[] {
       execute: async (args) => {
         const reply = host.engine.reply({ purpose: 'acknowledgement', ticketId, triggerId: args.trigger_id, text: args.text })
         if (reply.status !== 'sent') await host.sendReplies()
-        return { trigger_id: args.trigger_id, acknowledgement: host.store.replyStatus(reply.id)!, reused: reply.reused }
+        return { trigger_id: args.trigger_id, acknowledgement: required(host.store.replyStatus(reply.id)), reused: reply.reused }
       },
     }),
     tool({

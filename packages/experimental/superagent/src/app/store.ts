@@ -1,5 +1,6 @@
 /** SQLite persistence for domain aggregates, key-value state, settings history, and the channel outbox. */
 import { DatabaseSync, type SQLInputValue } from 'node:sqlite'
+import { required } from '../core/required.ts'
 import { chmodSync, mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { key, threadKey, type ChannelRef, type Decision, type OutboundMessage, type ReplyStatus, type Repositories, type Thread, type ThreadFact,
@@ -164,8 +165,8 @@ export class Store implements Repositories {
     try { value = operation(); this.db.exec(`RELEASE ${name}`) }
     catch (error) { this.db.exec(`ROLLBACK TO ${name}`); this.db.exec(`RELEASE ${name}`); throw error }
     finally { this.depth-- }
-    const actions = this.committed.splice(level)[0]!
-    if (level) this.committed[level - 1]!.push(...actions)
+    const actions = required(this.committed.splice(level)[0])
+    if (level) required(this.committed[level - 1]).push(...actions)
     else for (const action of actions) { try { action() } catch (error) { this.report(error) } }
     return value
   }
@@ -176,7 +177,7 @@ export class Store implements Repositories {
    * that cannot wait for the effect queue and need not survive a restart; use `Effects` for durable side effects that must survive a crash.
    */
   afterCommit(action: () => void): void {
-    if (this.depth) this.committed[this.depth - 1]!.push(action)
+    if (this.depth) required(this.committed[this.depth - 1]).push(action)
     else action()
   }
   /** Reads a typed KV record by its key in `KV`. */

@@ -1,5 +1,6 @@
 /** Pure helpers for editing prompt sections/skills and computing folded line diffs. */
 import type { PromptConfig, PromptsView } from './api.ts'
+import { required } from '../core/required.ts'
 import { valueLabel, type T } from './text.ts'
 
 type TeamSection = PromptsView['sections'][number]
@@ -58,19 +59,19 @@ export function lineDiff(before: string, after: string): DiffLine[] {
   const a = before.split('\n'), b = after.split('\n')
   // Fill LCS table from the end so the forward pass below reconstructs the diff in order.
   const lcs = Array.from({ length: a.length + 1 }, () => new Array<number>(b.length + 1).fill(0))
-  for (let i = a.length - 1; i >= 0; i--) for (let j = b.length - 1; j >= 0; j--) lcs[i]![j] = a[i] === b[j] ? lcs[i + 1]![j + 1]! + 1
-    : Math.max(lcs[i + 1]![j]!, lcs[i]![j + 1]!)
+  for (let i = a.length - 1; i >= 0; i--) for (let j = b.length - 1; j >= 0; j--) required(lcs[i])[j] = a[i] === b[j] ? required(required(lcs[i + 1])[j + 1]) + 1
+    : Math.max(required(required(lcs[i + 1])[j]), required(required(lcs[i])[j + 1]))
   const lines: { kind: 'same' | 'del' | 'ins'; text: string }[] = []
   for (let i = 0, j = 0; i < a.length || j < b.length;) {
-    if (i < a.length && j < b.length && a[i] === b[j]) { lines.push({ kind: 'same', text: a[i]! }); i++; j++ }
-    else if (j < b.length && (i === a.length || lcs[i]![j + 1]! >= lcs[i + 1]![j]!)) lines.push({ kind: 'ins', text: b[j++]! })
-    else lines.push({ kind: 'del', text: a[i++]! })
+    if (i < a.length && j < b.length && a[i] === b[j]) { lines.push({ kind: 'same', text: required(a[i]) }); i++; j++ }
+    else if (j < b.length && (i === a.length || required(required(lcs[i])[j + 1]) >= required(required(lcs[i + 1])[j]))) lines.push({ kind: 'ins', text: required(b[j++]) })
+    else lines.push({ kind: 'del', text: required(a[i++]) })
   }
   const folded: DiffLine[] = []
   for (let k = 0; k < lines.length;) {
     let end = k
-    while (end < lines.length && lines[end]!.kind === 'same') end++
-    if (end - k > 4) folded.push(lines[k]!, { kind: 'fold', count: end - k - 2 }, lines[end - 1]!)
+    while (end < lines.length && required(lines[end]).kind === 'same') end++
+    if (end - k > 4) folded.push(required(lines[k]), { kind: 'fold', count: end - k - 2 }, required(lines[end - 1]))
     else folded.push(...lines.slice(k, Math.max(end, k + 1)))
     k = Math.max(end, k + 1)
   }

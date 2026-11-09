@@ -1,5 +1,6 @@
 /** Read-only GitHub repository, conversation, and CI check inspection for assessments and workers. */
 import { z } from 'zod'
+import { required } from '../core/required.ts'
 import type { ThreadFact } from '../core/index.ts'
 import { validItems, type Commands, type Tally } from '../infra/commands.ts'
 import { CommentSchema, IssueSchema, isHumanLogin, reviewPlace, type GithubComment } from './github-trigger.ts'
@@ -108,7 +109,7 @@ function threadMessages(thread: GithubComment[], id: (comment: GithubComment) =>
 export async function readGithub(commands: Commands, resource: string): Promise<unknown> {
   // A commit's CI, such as the default branch's, which no PR names.
   const commit = /^github\/commits\/([0-9a-f]{7,40})\/checks$/.exec(resource)
-  if (commit) return pullChecks(commands, commit[1]!)
+  if (commit) return pullChecks(commands, required(commit[1]))
   const match = /^github\/(issues|pulls)\/([1-9]\d*)(?:\/(comments|reviews|checks|thread)(?:\/([1-9]\d*))?)?$/.exec(resource)
   if (!match) {
     throw new Error('Use github/issues/<number>, github/pulls/<number>, or append /comments/<page>, /reviews/<page>, /thread/<comment-id> or /checks; or github/commits/<sha>/checks')

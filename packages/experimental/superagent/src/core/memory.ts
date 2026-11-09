@@ -1,5 +1,6 @@
 /** In-memory repository implementation for testing and ephemeral engine instances. */
 import { latestAssignment, type Decision, type Thread, type Ticket, type Trigger, type TriggerDisposition } from './model.ts'
+import { required } from './required.ts'
 import type { Repositories } from './ports.ts'
 
 const clone = <T>(value: T): T => structuredClone(value)
@@ -18,7 +19,7 @@ export class MemoryRepositories implements Repositories {
     const snapshot = maps.map(map => new Map(map))
     try { return work() }
     catch (error) {
-      maps.forEach((map, index) => { map.clear(); for (const [id, value] of snapshot[index]!) map.set(id, value) })
+      maps.forEach((map, index) => { map.clear(); for (const [id, value] of required(snapshot[index])) map.set(id, value) })
       throw error
     }
   }

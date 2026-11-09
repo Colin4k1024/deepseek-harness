@@ -1,5 +1,6 @@
 /** Shared list rows for Tickets, Threads, and Decisions, plus Source fact chips and automated-message run folding. */
 import { useState } from 'react'
+import { required } from '../core/required.ts'
 import type { DecisionRow, ThreadFacts, ThreadRow, TicketRow } from './api.ts'
 import { Icon, Tag } from './controls.tsx'
 import { decisionMark, threadMark, ticketMark } from './marks.ts'
@@ -55,7 +56,7 @@ export function ThreadLine({ thread, ticketId, context }: { thread: ThreadRow; t
   const { t, navigate } = usePanel()
   const live = thread.tickets.filter(ticket => ticket.state === 'open' && ticket.id !== ticketId)
   const { dot, icon, label } = threadMark(t, thread)
-  const reaches = live.length > 0 && `${live[0]!.title}${live.length > 1 ? t('andMore', { count: live.length - 1 }) : ''}`
+  const reaches = live.length > 0 && `${required(live[0]).title}${live.length > 1 ? t('andMore', { count: live.length - 1 }) : ''}`
   return <li className="dt-row dt-link dt-ticket">
     <div className="dt-ticket-stage"><StageMark state={dot} icon={icon} label={label} /></div>
     <div className="dt-ticket-body">

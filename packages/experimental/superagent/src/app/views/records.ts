@@ -1,5 +1,6 @@
 /** Shared view projections for triggers, tickets, threads, decisions, and channel links. */
 import { z } from 'zod'
+import { required } from '../../core/required.ts'
 import { canRetry, followupOwners, latestReport, liveTicket, settled, threadKey, ticketStage, type ActorRef, type ChannelRef, type Decision,
   type DecisionKind, type Thread, type ThreadFacts, type Ticket, type TicketStage, type Trigger } from '../../core/index.ts'
 import { allowedSender, listedBot } from '../../policy.ts'
@@ -86,7 +87,7 @@ export const awaitingEval = ({ store, owners }: { store: Pick<Store, 'triggers'>
 export function triggerView(view: Snapshot, trigger: Trigger, threadDecisions?: Decision[]) {
   const { store } = view
   const disposition = store.triggers.disposition(trigger.id)
-  const home = store.threads.get(threadKey(trigger.threads[0]!))
+  const home = store.threads.get(threadKey(required(trigger.threads[0])))
   const decision = disposition?.decisionId ? store.decisions.get(disposition.decisionId)
     : (threadDecisions ?? (home ? store.decisions.byThread(home.key) : [])).filter(item => item.triggerIds.includes(trigger.id)).at(-1)
   const delivered = view.owners(trigger).length > 0
@@ -113,7 +114,7 @@ function ticketNote(ticket: Ticket, stage: TicketStage): { text: string; error: 
   if (stage.action === 'delivery' && ticket.delivery) return { text: preview(ticket.delivery.error), error: true }
   const summary = latestReport(ticket)?.summary
   if ((stage.action !== 'blocked' && stage.action !== 'failed') || !summary) return undefined
-  return { text: preview(summary.split('\n')[0]!), error: stage.action === 'failed' }
+  return { text: preview(required(summary.split('\n')[0])), error: stage.action === 'failed' }
 }
 export function ticketSummary(ticket: Ticket) {
   const stage = ticketStage(ticket)

@@ -1,5 +1,6 @@
 /** Settings view combining versioned configuration blocks, per-source forms and policy metadata, and execution environment details. */
 import { SETUP_FIELDS } from '../../deployment.ts'
+import { required } from '../../core/required.ts'
 import { KV } from '../../kv.ts'
 import { policyVersion } from '../../policy.ts'
 import type { SourceRegistry } from '../../sources/registry.ts'
@@ -10,7 +11,7 @@ import { problemOf, sourceHealth, type HealthMap, type SetupState } from './sour
 function policyOf(sources: SourceRegistry, id: string, health: HealthMap) {
   const policy = sources.kind(id)?.policy
   if (!policy) return {}
-  const part = sources.policyPart(id)!
+  const part = required(sources.policyPart(id))
   const config = sources.instance(id)?.config ?? {}
   const sync = policy.sync && { label: policy.sync.label, ready: policy.sync.ready(part), health: health[`sync:${id}`] }
   return { policy: { fields: policy.fields, explicit: policy.explicit, ...policy.rows ? { rows: policy.rows(config) } : {}, ...sync

@@ -1,5 +1,6 @@
 /** Eval status view (Decision log) and Eval settings group (Policy rules, per-Source admission, and assessor settings). */
 import { useState } from 'react'
+import { required } from '../core/required.ts'
 import { ADMISSION_DEFAULTS, ADMISSION_OPTIONS, type Admission, type AdmissionCell } from '../admission.ts'
 import type { AdmissionRowView } from '../sources/kind.ts'
 import { LIMITS } from '../limits.ts'
@@ -90,7 +91,7 @@ function SourcePart({ source, part, saved, dirty, onChange, reload }: {
   reload: () => Promise<void>
 }) {
   const { t, call, notify } = usePanel()
-  const policy = source.policy!
+  const policy = required(source.policy)
   const sync = policy.sync
   const run = useAction(() => call('POST policy-sync/:id', { id: source.id }), { reload })
   // Syncing saves the Policy block, so require unsaved edits to be saved or discarded first.

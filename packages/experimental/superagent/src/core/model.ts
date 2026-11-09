@@ -1,5 +1,6 @@
 /** Domain model of a proactive agent: the concepts and their invariants, independent of any source, policy, or executor. */
 import type { Reason } from './reasons.ts'
+import { required } from './required.ts'
 
 /** Actor identity in the source's own vocabulary; Policy decides which actors may originate work on that Source. */
 export interface ActorRef { source: string; id: string }
@@ -79,7 +80,7 @@ export function followupOwners(trigger: Pick<Trigger, 'id' | 'human' | 'threads'
   // The disposition alone rules most messages out, so a Thread or a ticket is read only for one that may have an owner.
   const returned = new Set(disposition.handbacks?.map(item => item.ticketId))
   const reached = disposition.fanout.filter(id => !returned.has(id) && !disposition.context?.includes(id))
-  if (!reached.length || records.threads.get(threadKey(trigger.threads[0]!))?.evaluating?.triggerIds.includes(trigger.id)) return []
+  if (!reached.length || records.threads.get(threadKey(required(trigger.threads[0])))?.evaluating?.triggerIds.includes(trigger.id)) return []
   return reached.filter((id) => {
     const ticket = records.tickets.get(id)
     return !!ticket && (liveTicket(ticket) || (ticket.ended?.by !== 'human'

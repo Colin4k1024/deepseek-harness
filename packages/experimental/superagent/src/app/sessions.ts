@@ -1,5 +1,6 @@
 /** Lifecycle, prompt/tool/skill decoration, message delivery, and budget retry tracking for orchestrator and worker DSH sessions. */
 import type { Context } from '@deepseek-ai/cordis'
+import { required } from '../core/required.ts'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { AttachmentId, type ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import type { MessageId } from '@deepseek-ai/dsh-llm'
@@ -259,7 +260,7 @@ export class Sessions {
   private updateModelHealth(): void {
     const retries = this.retryHealth.list()
     this.host.health.set(retries.length
-      ? { state: 'error', detail: retries.slice(0, 5).map(item => `${item.sessionId}: ${item.provider} is over its model budget; retried ${item.attempts} times, waiting since ${item.since}; the model and retry policy are unchanged`).join('; ') + (retries.length > 5 ? `; ${retries.length - 5} more Sessions` : ''), at: retries.at(-1)!.lastAt }
+      ? { state: 'error', detail: retries.slice(0, 5).map(item => `${item.sessionId}: ${item.provider} is over its model budget; retried ${item.attempts} times, waiting since ${item.since}; the model and retry policy are unchanged`).join('; ') + (retries.length > 5 ? `; ${retries.length - 5} more Sessions` : ''), at: required(retries.at(-1)).lastAt }
       : { state: 'ready', detail: 'No managed Session is waiting on a model budget retry' })
   }
   private ticketOf(agent: Agent): Ticket | undefined {
@@ -302,7 +303,7 @@ export class Sessions {
         agent.ctx.tools.guard(execution => noWait(execution, () => this.routed(agent))))
     } else {
       // An Executor Session keeps the profile's work tools it has, which DSH requires to be known; its own tools are not masked.
-      binding.disposers.push(...this.workOnly(agent, ticket!.id))
+      binding.disposers.push(...this.workOnly(agent, required(ticket).id))
     }
   }
   /**

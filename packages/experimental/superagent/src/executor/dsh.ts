@@ -1,5 +1,6 @@
 /** DSH executor: manages one persistent worker session and workspace directory per ticket. */
 import type { Context } from '@deepseek-ai/cordis'
+import { required } from '../core/required.ts'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { mkdir, rmdir, stat } from 'node:fs/promises'
@@ -121,7 +122,7 @@ const capped = (text: string, limit: number, read: string) =>
  * optional routing note, and a preview of the replied-to message when the worker has not yet seen it.
  */
 export function triggerMessage(trigger: Trigger, link: { source_url?: string; source_url_read?: string }, note?: string, repliesTo?: Trigger) {
-  return { trigger_id: trigger.id, from: trigger.actor.id, thread: threadKey(trigger.threads[0]!), at: trigger.at,
+  return { trigger_id: trigger.id, from: trigger.actor.id, thread: threadKey(required(trigger.threads[0])), at: trigger.at,
     ...capped(trigger.text, TRIGGER_CHARS, `trigger/${trigger.id}`), ...link, ...(note ? { routing_note: note } : {}),
     ...(repliesTo ? { replies_to: { trigger_id: repliesTo.id, preview: repliesTo.text.replace(/\s+/g, ' ').slice(0, 160) } } : {}) }
 }
@@ -567,7 +568,7 @@ export class DshExecutor implements Executor {
   }
   /** Schedules a worker turn retry with exponential backoff after a transient provider or network error. */
   private resumeAfter(ticketId: string, assignmentId: string, error: unknown): void {
-    const tries = this.transient.get(assignmentId)!
+    const tries = required(this.transient.get(assignmentId))
     const text = `Your last turn failed for a passing reason (${String(error).slice(0, 200)}). Continue the assignment where it stopped.`
     this.resuming.add(assignmentId)
     const go = () => {

@@ -1,5 +1,6 @@
 /** Loads packaged built-in skill definitions and prompt templates from disk. */
 import { readFileSync } from 'node:fs'
+import { required } from '../core/required.ts'
 import { packagePath } from '../infra/paths.ts'
 /**
  * Reads a packaged text file with normalized Unix line endings.
@@ -19,7 +20,7 @@ function load(name: string) {
   const { path, text } = packaged('skills', `dsh-superagent-${name}`, 'SKILL.md')
   const match = /^---\nname: ([^\n]+)\ndescription: ([^\n]+)\n---\n\n([\s\S]*)$/.exec(text)
   if (!match) throw new Error(`Invalid packaged skill: ${path}`)
-  return { name: match[1]!, description: match[2]!, content: match[3]!, path }
+  return { name: required(match[1]), description: required(match[2]), content: required(match[3]), path }
 }
 export const bundledSkills = { feishu: load('feishu'), github: load('github') }
 /**

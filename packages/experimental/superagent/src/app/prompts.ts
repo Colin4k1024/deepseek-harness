@@ -1,5 +1,6 @@
 /** Manages versioned role prompts, behavioral policies, and operational skills independently of access settings. */
 import { z } from 'zod'
+import { required } from '../core/required.ts'
 import { UserError, key } from '../core/index.ts'
 import { policyVersion, type Settings, type SettingsOrigin } from '../policy.ts'
 import { masterPrompt, workerPrompt, sharedPrompt, guides, mainAdmissionPolicy, handoffPolicy, teamDefaults, sourceSkills, cliNotes } from './context.ts'
@@ -79,10 +80,10 @@ export const builtInPart = (part: string): BuiltInPart | undefined =>
   Object.hasOwn(builtInParts(), part) ? builtInParts()[part as PartKey] : undefined
 /** The text of a built-in part: the team's override, else the built-in one. */
 const builtIn = (config: PromptConfig, part: PartKey): string =>
-  (config.overrides && Object.hasOwn(config.overrides, part) ? config.overrides[part]!.text : undefined) ?? builtInParts()[part].text
+  (config.overrides && Object.hasOwn(config.overrides, part) ? required(config.overrides[part]).text : undefined) ?? builtInParts()[part].text
 /** Fill a template's placeholders in one pass, so text filled in is not read for placeholders again. */
 const fill = (template: string, values: Record<string, string>): string =>
-  template.replace(/\{(\w+)\}/g, (match, name: string) => Object.hasOwn(values, name) ? values[name]! : match)
+  template.replace(/\{(\w+)\}/g, (match, name: string) => Object.hasOwn(values, name) ? required(values[name]) : match)
 /** The execution environment part: its template with the variables, or, while setup waits, that it waits. */
 export function environmentSection(config: PromptConfig, variables: Variable[] | undefined): string {
   return variables ? fill(builtIn(config, 'runtime/environment'), { variables: environmentLines(variables) })
@@ -180,7 +181,7 @@ export class Prompts {
       if (!override.text.trim()) throw new UserError('promptPartEmpty', { part: name })
       const missing = (part.placeholders ?? []).filter(placeholder => !override.text.includes(placeholder))
       if (missing.length) throw new UserError('promptPlaceholders', { part: name, placeholders: missing.join(', ') })
-      const base = override.base ?? (Object.hasOwn(saved, name) ? saved[name]!.base : undefined) ?? builtInBase(part.text)
+      const base = override.base ?? (Object.hasOwn(saved, name) ? required(saved[name]).base : undefined) ?? builtInBase(part.text)
       return override.text === part.text ? [] : [[name, { text: override.text, base }] as const]
     })
     const result: PromptConfig = { ...config, ...kept.length ? { overrides: Object.fromEntries(kept) } : {} }

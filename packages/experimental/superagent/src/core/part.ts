@@ -1,5 +1,6 @@
 /** Shared base class and configuration for Engine domain parts. */
 import { UserError } from './errors.ts'
+import { required } from './required.ts'
 import { followupOwners, reached, threadKey } from './model.ts'
 import type { Thread, ThreadRef, Ticket, Trigger } from './model.ts'
 import type { Assessor, AssessmentOutcome, DomainEvent, DomainEvents, Executor, Outbox, Policy, Repositories, SourceScope } from './ports.ts'
@@ -57,7 +58,7 @@ export abstract class EnginePart {
   }
   /** Queue a Trigger on its primary Thread for the next Eval, unless it waits there already or an Eval holds it. */
   protected queueForEval(trigger: Trigger): boolean {
-    const primary = this.thread(trigger.threads[0]!)
+    const primary = this.thread(required(trigger.threads[0]))
     if (primary.pending.includes(trigger.id) || primary.evaluating?.triggerIds.includes(trigger.id)) return false
     primary.pending.push(trigger.id)
     this.repo.threads.save(primary)

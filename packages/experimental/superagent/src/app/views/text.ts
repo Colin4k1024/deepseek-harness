@@ -1,8 +1,9 @@
-/** Text sanitization and formatting helpers for plain-text previews and HTML-free Markdown in views. */
+
+import { required } from '../../core/required.ts'
 const ENTITIES: Record<string, string> = { amp: '&', lt: '<', gt: '>', quot: '"', '#39': "'", nbsp: ' ' }
 /** Strips HTML comments and tags, decodes basic entities, and strips again to catch entity-encoded tags. */
 const withoutHtml = (text: string) => text.replace(/<!--[\s\S]*?-->/g, '').replace(/<\/?[a-zA-Z][^>]*>/g, '')
-  .replace(/&(amp|lt|gt|quot|#39|nbsp);/g, (_match, name: string) => ENTITIES[name]!)
+  .replace(/&(amp|lt|gt|quot|#39|nbsp);/g, (_match, name: string) => required(ENTITIES[name]))
   .replace(/<!--[\s\S]*?-->/g, '').replace(/<\/?[a-zA-Z][^>]*>/g, '')
 export function plain(text: string, lines = false): string {
   const result = withoutHtml(text)
@@ -29,7 +30,7 @@ function jsonLines(value: unknown): string[] {
 export function readable(text: string): string {
   const match = /^(?:([^\n{[]{1,200}): )?(\{[\s\S]*\}|\[[\s\S]*\])$/.exec(text.trim())
   if (!match) return text
-  try { return [...match[1] ? [match[1]] : [], ...jsonLines(JSON.parse(match[2]!))].join('\n') }
+  try { return [...match[1] ? [match[1]] : [], ...jsonLines(JSON.parse(required(match[2])))].join('\n') }
   catch (error) { void error /* Text that only looks like JSON is shown as written. */; return text }
 }
 export function preview(text: string, length = 160): string { return plain(readable(text)).slice(0, length) }

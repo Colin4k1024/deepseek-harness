@@ -1,5 +1,6 @@
 /** Normalizes GitHub issues, pull requests, comments, reviews, and CI transitions into domain Triggers. */
 import { z } from 'zod'
+import { required } from '../core/required.ts'
 import { key, type ChannelRef, type Trigger } from '../core/index.ts'
 import { escapeRegExp, sameName } from '../infra/text.ts'
 
@@ -13,8 +14,8 @@ export const githubPage = (repository: string, number: number, pr = false): stri
 export function githubAddress(url: string, repository: string): { number: number; pr: boolean; discussion?: number } | undefined {
   const address = /^https:\/\/(?:api\.github\.com\/repos|github\.com)\/([^/]+\/[^/]+)\/(issues|pulls?)\/(\d+)\/?(?:#discussion_r(\d+)|#[\w-]*)?$/i
   const match = address.exec(url)
-  if (!match || !sameName(match[1]!, repository)) return undefined
-  return { number: Number(match[3]), pr: match[2]!.toLowerCase() !== 'issues', ...match[4] ? { discussion: Number(match[4]) } : {} }
+  if (!match || !sameName(required(match[1]), repository)) return undefined
+  return { number: Number(match[3]), pr: required(match[2]).toLowerCase() !== 'issues', ...match[4] ? { discussion: Number(match[4]) } : {} }
 }
 /** GitHub returns a deleted account as `null` and displays it as `ghost`. */
 export const UserSchema = z.looseObject({ login: z.string(), type: z.string().optional() }).nullable()

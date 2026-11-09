@@ -1,5 +1,6 @@
 /** Serves paginated context resources to orchestrator_read so large bodies stay out of model prompts until requested. */
 import type { SessionId } from '@deepseek-ai/dsh-session'
+import { required } from '../core/required.ts'
 import { UserError, key, latestReport, reached, runningAssignment, threadKey, type Ticket, type Trigger } from '../core/index.ts'
 import { batchOf, inputMessage, triggerMessage, workerSessionId } from '../executor/dsh.ts'
 import { readGithub } from '../sources/github-read.ts'
@@ -205,7 +206,7 @@ const ROUTES: readonly Route[] = [
     return list(read, (offset, count) => models.slice(offset, offset + count))
   }],
   ['feishu/', async (read) => {
-    const source = trigger(read.host, read.rest.split('/')[0]!, read.ticketId)
+    const source = trigger(read.host, required(read.rest.split('/')[0]), read.ticketId)
     const ref = feishuRef(source)
     if (!ref) throw new Error('A Feishu source trigger is required')
     const commands = read.host.commands.withSignal(read.signal)
@@ -228,7 +229,7 @@ const ROUTES: readonly Route[] = [
     const { preview: _preview, chars: _chars, read: _read, ...card } = triggerCard(found, visible)
     const parent = found.source === 'feishu' && typeof found.meta.parentId === 'string' ? found.meta.parentId : undefined
     const repliedTo = shown(parent ? host.store.triggers.get(feishuTriggerId(parent)) : undefined)
-    const neighbours = host.store.read.neighbours(threadKey(found.threads[0]!), found.at, found.id)
+    const neighbours = host.store.read.neighbours(threadKey(required(found.threads[0])), found.at, found.id)
     const around = { before: shown(neighbours.before), after: shown(neighbours.after) }
     return { ...card, ...await host.sourceLink(found, signal), acknowledgement: host.store.replyStatus(key('ack', found.id)) ?? 'not_requested',
       ...(ref ? { context: feishuReferences(ref) } : {}),

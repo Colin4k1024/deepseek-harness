@@ -1,5 +1,6 @@
 /** GitHub source kind definition, notification and repository polling loops, and Cordis plugin entry. */
 import type { Context } from '@deepseek-ai/cordis'
+import { required } from '../core/required.ts'
 import { key, type Thread } from '../core/index.ts'
 import { isAborted } from '../infra/signals.ts'
 import { sameName } from '../infra/text.ts'
@@ -232,7 +233,7 @@ async function readStream(ctx: SourceContext, round: Round, id: string, path: st
   const items = validItems(ListedSchema, z.array(z.unknown()).parse(JSON.parse(body)), round.tally)
   const { login } = ctx.deployment.github
   const fresh = (at: string | null | undefined, kind: string) =>
-    kind in started && Date.parse(at ?? '') >= Math.max(Date.parse(started[kind]!), horizon)
+    kind in started && Date.parse(at ?? '') >= Math.max(Date.parse(required(started[kind])), horizon)
   for (const item of items) {
     // Stopping mid-stream aborts before advancing the cursor so unread items are retried.
     if (stopped(ctx, round)) throw new Error('The GitHub Source stopped during the poll')
@@ -335,7 +336,7 @@ async function pollNotifications(ctx: SourceContext, round: Round): Promise<{ co
     const address = githubAddress(notification.subject.url ?? '', repository)
     if (!address || address.discussion || items.has(address.number)) continue
     const { number, pr } = address
-    items.set(number, { since: [state.get(KV.github.cursor(number)) ?? since, since].sort().at(-1)!, pr })
+    items.set(number, { since: required([state.get(KV.github.cursor(number)) ?? since, since].sort().at(-1)), pr })
   }
   for (const [number, item] of items) {
     if (stopped(ctx, round)) return { count: notifications.length, interval }

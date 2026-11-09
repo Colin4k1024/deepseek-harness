@@ -1,5 +1,6 @@
 /** Evals: the Thread-level assessments of queued Triggers, and the Decisions they end with. */
 import { key } from './ids.ts'
+import { required } from './required.ts'
 import { UserError } from './errors.ts'
 import { liveTicket, threadKey } from './model.ts'
 import type { Decision, DecisionKind, Evaluation, Mandate, MandateBasis, Strength, Thread, Trigger } from './model.ts'
@@ -59,8 +60,8 @@ export class Evals extends EnginePart {
    */
   private expire(thread: Thread): void {
     const expired = (thread.expired ?? 0) + 1
-    if (expired > REQUEUES) { this.finish(thread, thread.evaluating!, { kind: 'unavailable', reason: [{ code: 'timeout' }] }); return }
-    const { id, triggerIds } = thread.evaluating!
+    if (expired > REQUEUES) { this.finish(thread, required(thread.evaluating), { kind: 'unavailable', reason: [{ code: 'timeout' }] }); return }
+    const { id, triggerIds } = required(thread.evaluating)
     delete thread.evaluating
     thread.expired = expired
     thread.pending = [...triggerIds, ...thread.pending.filter(item => !triggerIds.includes(item))]
@@ -69,7 +70,7 @@ export class Evals extends EnginePart {
   }
   /** Start one Eval of the Triggers queued on a Thread, judged by the gate, and ask the assessor for it. */
   start(threadKeyValue: string, policy: Policy): void {
-    const thread = this.repo.threads.get(threadKeyValue)!
+    const thread = required(this.repo.threads.get(threadKeyValue))
     const at = this.now()
     // A person's follow-up a ticket still decides is that ticket's: one an older version queued leaves the queue without a Decision.
     const delivered = (id: string) => {
@@ -86,7 +87,7 @@ export class Evals extends EnginePart {
     // Triggers that already originated a ticket cannot lend authority to a new evaluation or spawn a duplicate ticket.
     const accepted = this.accepted(thread.key)
     const started = thread.pending.filter(id => accepted.has(id))
-    const startedTicket = (id: string): Reason => ({ code: 'startedTicket', triggerId: id, values: { ticket: accepted.get(id)!.ticketId! } })
+    const startedTicket = (id: string): Reason => ({ code: 'startedTicket', triggerId: id, values: { ticket: required(required(accepted.get(id)).ticketId) } })
     if (started.length) this.ignore(thread, started, started.map(startedTicket), policy, at)
     const triggers = thread.pending.flatMap((id) => { const trigger = this.repo.triggers.get(id); return trigger ? [trigger] : [] })
     const tickets = this.ticketsOnThread(thread)
@@ -134,19 +135,19 @@ export class Evals extends EnginePart {
     const held = this.holding(triggerId)
     if (outcome.evalId && held?.evaluating?.id !== outcome.evalId) throw new UserError('evalFinished', { eval: outcome.evalId })
     // Prevent a replayed trigger that already created a ticket from spawning a second one.
-    const earlier = outcome.kind === 'accept' ? this.accepted(threadKey(trigger.threads[0]!)).get(triggerId) : undefined
+    const earlier = outcome.kind === 'accept' ? this.accepted(threadKey(required(trigger.threads[0]))).get(triggerId) : undefined
     if (earlier) {
       // Only an Eval started by an earlier version can still hold it; reassess the remaining triggers without it, or ignore it if alone.
       const others = held?.evaluating?.triggerIds.filter(id => id !== triggerId) ?? []
       if (held && others.length) this.reassess(held, { code: 'acceptedBefore', values: { trigger: triggerId } }, [triggerId])
       else if (held) {
-        this.finish(held, held.evaluating!, { kind: 'ignore', reason: [{ code: 'startedTicket', triggerId, values: { ticket: earlier.ticketId! } }] })
+        this.finish(held, required(held.evaluating), { kind: 'ignore', reason: [{ code: 'startedTicket', triggerId, values: { ticket: required(earlier.ticketId) } }] })
       }
       return earlier
     }
     // A follow-up that reached a ticket is its worker's to judge: the main Session may only stop the work on it.
     if (outcome.kind !== 'stop') this.leftToWorkers(trigger)
-    const thread = held ?? this.thread(trigger.threads[0]!)
+    const thread = held ?? this.thread(required(trigger.threads[0]))
     const evaluation = held?.evaluating ?? this.directEval(thread, trigger, outcome.kind, outcome.kind === 'stop' ? outcome.ticketId : undefined)
     // An inferred candidate is accepted only on enabled rules its assessment matched, while assessments may accept.
     if (outcome.kind === 'accept' && evaluation.strength !== 'explicit' && !this.policy().admitsInferred(outcome.rules ?? [])) {
@@ -184,7 +185,7 @@ export class Evals extends EnginePart {
     const ticket = this.require(ticketId)
     if (!ticket.inputs.some(input => input.kind === 'trigger' && input.triggerId === triggerId)) throw new UserError('notReached')
     if (this.repo.triggers.disposition(triggerId)?.handbacks?.some(item => item.ticketId === ticketId)) throw new UserError('handedBack')
-    return this.handBack(ticketId, this.repo.triggers.get(triggerId)!, reason)
+    return this.handBack(ticketId, required(this.repo.triggers.get(triggerId)), reason)
   }
   /**
    * Marks an `unavailable` Decision dismissed so the overview lists it no more.
@@ -199,7 +200,7 @@ export class Evals extends EnginePart {
   }
   /** Take a Trigger out of its Thread's queue because it was routed by hand. */
   withdraw(trigger: Trigger): void {
-    const thread = this.repo.threads.get(threadKey(trigger.threads[0]!))
+    const thread = this.repo.threads.get(threadKey(required(trigger.threads[0])))
     if (!thread?.pending.includes(trigger.id)) return
     thread.pending = thread.pending.filter(id => id !== trigger.id)
     this.repo.threads.save(thread)
@@ -221,9 +222,9 @@ export class Evals extends EnginePart {
   }
   /** End a Thread's Eval as unavailable for `reason` and queue its Triggers, except `without`, for a new Eval ahead of the others. */
   private reassess(thread: Thread, reason: Reason, without: string[] = []): Decision {
-    const ids = thread.evaluating!.triggerIds.filter(id => !without.includes(id))
-    const decision = this.finish(thread, thread.evaluating!, { kind: 'unavailable', reason: [reason] })
-    const current = this.repo.threads.get(thread.key)!
+    const ids = required(thread.evaluating).triggerIds.filter(id => !without.includes(id))
+    const decision = this.finish(thread, required(thread.evaluating), { kind: 'unavailable', reason: [reason] })
+    const current = required(this.repo.threads.get(thread.key))
     current.pending = [...ids, ...current.pending.filter(id => !ids.includes(id))]
     this.repo.threads.save(current)
     return decision
@@ -231,11 +232,11 @@ export class Evals extends EnginePart {
   /** The Thread whose Eval holds a Trigger: an Eval runs on the primary Thread of each Trigger it holds. */
   private holding(triggerId: string): Thread | undefined {
     const trigger = this.repo.triggers.get(triggerId)
-    const thread = trigger && this.repo.threads.get(threadKey(trigger.threads[0]!))
+    const thread = trigger && this.repo.threads.get(threadKey(required(trigger.threads[0])))
     return thread?.evaluating?.triggerIds.includes(triggerId) ? thread : undefined
   }
   private candidateOf(thread: Thread): Candidate {
-    const evaluation = thread.evaluating!
+    const evaluation = required(thread.evaluating)
     const triggers = evaluation.triggerIds.flatMap((id) => { const trigger = this.repo.triggers.get(id); return trigger ? [trigger] : [] })
     const { id: evalId, strength, policyVersion } = evaluation
     return { evalId, thread, triggers, strength, policyVersion, tickets: this.ticketsOnThread(thread) }

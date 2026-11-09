@@ -1,5 +1,6 @@
 /** Source message link resolution and candidate card assembly for the main Session. */
 import type { Candidate, Ticket, Trigger } from '../core/index.ts'
+import { required } from '../core/required.ts'
 import type { Commands } from '../infra/commands.ts'
 import { readFeishuLink } from '../sources/feishu-read.ts'
 import { feishuRef, feishuSettings } from '../sources/feishu.ts'
@@ -53,7 +54,7 @@ function referencedTickets(host: LinkHost, trigger: Trigger, known: readonly Tic
 }
 /** Builds the main Session's candidate card with routing metadata, handback history, and related or referenced tickets. */
 export async function candidateCard(host: LinkHost, candidate: Candidate) {
-  const primary = candidate.triggers.at(-1)!
+  const primary = required(candidate.triggers.at(-1))
   const settings = host.store.settings()
   const delivered = host.store.triggers.disposition(primary.id)?.fanout ?? []
   const referenced = referencedTickets(host, primary, candidate.tickets)

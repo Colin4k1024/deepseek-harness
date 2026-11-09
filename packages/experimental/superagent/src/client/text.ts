@@ -1,5 +1,6 @@
 /** Localization, reason formatting, message marker cleanup, and relative timestamp helpers. */
 import type { Translate } from '@deepseek-ai/dsh-client-ui-slots'
+import { required } from '../core/required.ts'
 import type { DshSuperagentKey } from './locales.ts'
 import type { Localized } from '../sources/kind.ts'
 import type { SetupProblem } from '../setup.ts'
@@ -29,7 +30,7 @@ function label(t: T, reason: Reason): string {
   if (reason.code !== 'said' && text !== key) return text
   const { triggerId: _triggerId, ...withoutTrigger } = reason
   const written = reason.code === 'said' ? text : reasonText(withoutTrigger)
-  if (/^\w*Error\b/.test(written)) { const first = written.split('\n')[0]!; return first.length > 140 ? `${first.slice(0, 140)}…` : first }
+  if (/^\w*Error\b/.test(written)) { const first = required(written.split('\n')[0]); return first.length > 140 ? `${first.slice(0, 140)}…` : first }
   return written
 }
 export const setupText = (t: T, problem: Pick<SetupProblem, 'code' | 'values'>): string => t(`setup.${problem.code}`, problem.values)

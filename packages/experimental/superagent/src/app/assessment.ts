@@ -1,5 +1,6 @@
 /** Proactive candidate assessment for the main Session: relays candidate cards, serves bounded context reads, and records outcomes. */
 import type { Agent } from '@deepseek-ai/dsh-agent'
+import { required } from '../core/required.ts'
 import { z } from 'zod'
 import { reasonText, threadKey, type Assessor, type AssessmentOutcome, type Candidate, type EngineForMainSession,
   type Trigger } from '../core/index.ts'
@@ -110,7 +111,7 @@ export class MasterAssessor implements Assessor {
     }, { limit: () => host.paused() ? 0 : 4 })
   }
   /** Enqueues an `assessment` effect to deliver `candidate`'s card to the main Session. */
-  request(candidate: Candidate): void { this.host.effects.enqueue('assessment', candidate.evalId, { triggerId: candidate.triggers[0]!.id }) }
+  request(candidate: Candidate): void { this.host.effects.enqueue('assessment', candidate.evalId, { triggerId: required(candidate.triggers[0]).id }) }
   /** Whether `evalId` is still the active evaluation for `trigger`. */
   private live(evalId: string, trigger: Trigger): boolean { return this.host.engine.candidate(trigger.id)?.evalId === evalId }
   /** Drop an Eval's context and reads once it finishes; any running load for it discards its result. */
@@ -120,7 +121,7 @@ export class MasterAssessor implements Assessor {
     const candidate = this.host.engine.candidate(triggerId)
     if (!candidate) throw new Error('No assessment is in progress for this trigger; it was already decided, timed out, or never reached assessment')
     if (candidate.strength === 'explicit') throw new Error(EXPLICIT)
-    const trigger = candidate.triggers.find(item => item.id === triggerId)!
+    const trigger = required(candidate.triggers.find(item => item.id === triggerId))
     return { candidate, trigger }
   }
   /**
@@ -219,7 +220,7 @@ export class MasterAssessor implements Assessor {
     const settings = this.host.settings()
     const others = candidate.triggers.filter(item => item.id !== trigger.id)
     return { trigger_id: trigger.id, strength: candidate.strength, mode: settings.eval.mode,
-      source: { kind: trigger.source, actor: trigger.actor.id, thread: threadKey(trigger.threads[0]!), ...(trigger.url
+      source: { kind: trigger.source, actor: trigger.actor.id, thread: threadKey(required(trigger.threads[0])), ...(trigger.url
         ? { url: trigger.url } : {}) },
       ...cut(trigger.text, TRIGGER_CHARS), ...imageIds(source?.messageId ?? '', trigger.text),
       ...others.length ? { batch: others.map((item) => {
@@ -242,11 +243,11 @@ export class MasterAssessor implements Assessor {
     const commands = this.host.commands.withSignal(AbortSignal.any([this.controller.signal, signal]))
     if (read.resource === 'image') {
       if (read.offset !== 0) throw new Error('Images are not paginated; use offset 0')
-      const image = images.get(read.image_id!)
+      const image = images.get(required(read.image_id))
       if (!image) throw new Error('Unknown image reference. Read the source/root/thread for this trigger first and copy its image read arguments.')
       const source = this.host.threadContext(trigger)
       if (!source) throw new Error(NO_CONTEXT)
-      const key = read.image_id!.slice(read.image_id!.indexOf('/') + 1)
+      const key = required(read.image_id).slice(required(read.image_id).indexOf('/') + 1)
       return source.image(agent, commands, image, key, this.host.deployment.stateDir, signal)
     }
     const cacheKey = JSON.stringify([read.resource, read.path, read.cursor, read.message_id])
@@ -275,7 +276,7 @@ export class MasterAssessor implements Assessor {
       body = JSON.stringify({ images: references, next_read: next, ...result.body })
     }
     else {
-      body = await readRepositoryPath(commands, read.path!, read.resource === 'directory' ? 'directory' : 'file')
+      body = await readRepositoryPath(commands, required(read.path), read.resource === 'directory' ? 'directory' : 'file')
     }
     snapshots.set(cacheKey, body)
     return textPage(read.resource, body, read.offset, 4000)

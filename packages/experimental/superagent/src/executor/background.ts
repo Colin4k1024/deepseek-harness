@@ -3,6 +3,7 @@
  * keep the worker busy after its turn ended, and they stop with its Assignment. A profile without either service has none.
  */
 import type { Context } from '@deepseek-ai/cordis'
+import { required } from '../core/required.ts'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 
@@ -112,8 +113,8 @@ export async function killJobs(ctx: Context, sessionId: string, reason: string, 
   const live = jobs ? owned(jobs, sessionId, except) : []
   const failures: unknown[] = []
   // The waits start before the kills, so each end counts as collected.
-  const collected = live.map(job => jobs!.wait(job.id, KILL_WAIT_MS, sessionId).catch(() => undefined))
-  for (const job of live) try { jobs!.kill(job.id, sessionId, reason) } catch (error) { failures.push(error) }
+  const collected = live.map(job => required(jobs).wait(job.id, KILL_WAIT_MS, sessionId).catch(() => undefined))
+  for (const job of live) try { required(jobs).kill(job.id, sessionId, reason) } catch (error) { failures.push(error) }
   await Promise.all(collected)
   if (failures.length) throw new AggregateError(failures, `Killing the shell jobs of ${sessionId} failed`)
 }

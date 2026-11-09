@@ -1,5 +1,6 @@
 /** Thread detail page: Trigger timeline with gap-free pagination, Decisions, subscribed Tickets, and correlated Threads. */
 import { useEffect, useState, type ReactNode } from 'react'
+import { required } from '../core/required.ts'
 import { ApiError, usePoll, type ThreadPageView, type TriggerRow } from './api.ts'
 import { Button, DisclosureRow, Icon, Tag } from './controls.tsx'
 import { decisionMark } from './marks.ts'
@@ -107,7 +108,7 @@ function useThreadTimeline(key: string, target: string | undefined) {
     return () => { active = false }
   }, [gapPage?.gap, newest, older, call, key, notify])
   const earlier = useAction(async (shown: ThreadPageView) => {
-    const page = await call('GET threads/:key', { key, query: { limit: PAGE, before: shown.earlier! } })
+    const page = await call('GET threads/:key', { key, query: { limit: PAGE, before: required(shown.earlier) } })
     setOlder({ triggers: [...page.timeline, ...shown.timeline], cursor: page.earlier })
   })
   return { data, error, reload, earlier }

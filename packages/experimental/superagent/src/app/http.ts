@@ -1,5 +1,6 @@
 /** Loopback-only management HTTP routes with same-origin enforcement for the web panel. */
 import type { Context } from '@deepseek-ai/cordis'
+import { required } from '../core/required.ts'
 import type {} from '@deepseek-ai/dsh-host-webserver'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { z } from 'zod'
@@ -228,7 +229,7 @@ function match(table: Routes, method: string, segments: string[]) {
     const fits = pattern.length === segments.length && pattern.every((part, index) => part.startsWith(':') || part === segments[index])
     if (verb !== method || !fits) continue
     const params: Record<string, string> = {}
-    pattern.forEach((part, index) => { if (part.startsWith(':')) params[part.slice(1)] = decoded(segments[index]!) })
+    pattern.forEach((part, index) => { if (part.startsWith(':')) params[part.slice(1)] = decoded(required(segments[index])) })
     return { run: run as (input: Input<keyof Api>) => unknown, params }
   }
   return undefined

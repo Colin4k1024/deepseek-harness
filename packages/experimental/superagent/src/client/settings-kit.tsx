@@ -1,6 +1,7 @@
 /** Shared settings context, block draft hook, form controls, Source schema field renderer, and configuration history. */
 import { cloneElement, createContext, useContext, useEffect, useId, useLayoutEffect, useRef, useState, type ReactElement,
   type ReactNode } from 'react'
+import { required } from '../core/required.ts'
 import type { ApiResponse } from '../app/api.ts'
 import type { FieldSpec, Localized } from '../sources/kind.ts'
 import { usePoll, type HistoryView, type Settings, type SettingsView, type SourceView } from './api.ts'
@@ -178,20 +179,20 @@ function RowsField({ field, value, saved, onChange, labels, refreshLabels }: {
   const [open, setOpen] = useState(false)
   const refresh = useAction(async () => {
     try {
-      const added = await refreshLabels!()
+      const added = await required(refreshLabels)()
       notify(added.length ? t('labelsAdded', { names: added.join(t('listSeparator')) }) : t('labelsCurrent'))
     } catch (failure) { notify(t('labelsFailed', { error: errorText(failure) })) }
   })
   const label = localized(t, field.label), hint = localized(t, field.hint)
   const rows = Array.isArray(value) ? value as Row[] : []
   const set = (index: number, row: Row) => { onChange(rows.map((item, position) => position === index ? row : item)) }
-  const key = field.columns[0]!
+  const key = required(field.columns[0])
   const savedKeys = new Set((Array.isArray(saved) ? saved as Row[] : []).map(row => row[key.key]))
   const choose = key.type === 'text' && key.choose && Object.keys(labels).length ? localized(t, key.choose) : ''
   // Exclude options already selected in another row.
   const choices = (id: string) => Object.entries(labels).filter(([option]) => option === id
     || !rows.some(other => other[key.key] === option)).sort(byName)
-  const blank = Object.fromEntries(field.columns.map(column => [column.key, column.type === 'select' ? column.options[0]!.value : '']))
+  const blank = Object.fromEntries(field.columns.map(column => [column.key, column.type === 'select' ? required(column.options[0]).value : '']))
   // Summarize a row by its second column only when that column is free text (e.g., a display name), not a select option.
   const named = field.columns[1]?.type === 'text' ? field.columns[1] : undefined
   const rowName = (row: Row) => (named && row[named.key]) || labels[row[key.key] ?? ''] || row[key.key] || ''
@@ -256,7 +257,7 @@ export function SourceField({ field, value, saved, fact, onChange, labels, refre
   switch (field.type) {
     case 'switch': return <SwitchRow label={label} hint={hint} checked={value === true} onChange={onChange} />
     case 'select': return <Field label={label} hint={hint}>
-      <SegmentedControl className="dt-segmented dt-field-segmented" label={label} value={textValue(value ?? field.options[0]!.value)}
+      <SegmentedControl className="dt-segmented dt-field-segmented" label={label} value={textValue(value ?? required(field.options[0]).value)}
         options={field.options.map(option => ({ value: option.value, label: localized(t, option.label) }))} onChange={onChange} />
     </Field>
     case 'number': return <Field label={label} hint={hint}>
@@ -278,7 +279,7 @@ export function SourceField({ field, value, saved, fact, onChange, labels, refre
       <span className="dt-mono">{localized(t, fact) || t('empty')}</span>
       {field.settings && <small>
         <button type="button" className="dt-textlink"
-          onClick={() => { navigate(settingsRoute(field.settings!)) }}>{t(`openSettingsOf.${field.settings}`)}</button>
+          onClick={() => { navigate(settingsRoute(required(field.settings))) }}>{t(`openSettingsOf.${field.settings}`)}</button>
       </small>}
     </div>
     case 'rows': return <RowsField field={field} value={value} saved={saved} onChange={onChange} labels={labels}

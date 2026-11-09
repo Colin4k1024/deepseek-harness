@@ -1,5 +1,6 @@
 /** What the Executor and its workers report about the Assignments that run tickets. */
 import { key } from './ids.ts'
+import { required } from './required.ts'
 import { UserError } from './errors.ts'
 import { latestAssignment, liveTicket, runningAssignment } from './model.ts'
 import type { ReportState, Ticket } from './model.ts'
@@ -49,7 +50,7 @@ export class Assignments extends EnginePart {
     const ticket = this.running(ticketId, assignmentId)
     if (!ticket) return
     ticket.undelivered = ticket.undelivered.filter(id => !inputIds.includes(id)); ticket.updatedAt = this.now()
-    runningAssignment(ticket)!.deliveredAt = ticket.updatedAt
+    required(runningAssignment(ticket)).deliveredAt = ticket.updatedAt
     for (const input of ticket.inputs) {
       if (input.kind === 'trigger' && inputIds.includes(input.id)) { input.readAt ??= null; input.deliveredTo = assignmentId }
     }
@@ -66,7 +67,7 @@ export class Assignments extends EnginePart {
   turnEnded(ticketId: string, assignmentId: string): void {
     const ticket = this.running(ticketId, assignmentId)
     if (!ticket) return
-    runningAssignment(ticket)!.idleAt = this.now()
+    required(runningAssignment(ticket)).idleAt = this.now()
     this.repo.tickets.save(ticket)
   }
   deliveryFailed(ticketId: string, assignmentId: string, error: string): void {

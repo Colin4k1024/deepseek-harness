@@ -4,6 +4,7 @@
  */
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ButtonHTMLAttributes, type InputHTMLAttributes, type KeyboardEvent,
   type ReactNode } from 'react'
+import { required } from '../core/required.ts'
 import { createPortal } from 'react-dom'
 
 const cx = (...names: (string | false | undefined)[]) => names.filter(Boolean).join(' ')
@@ -75,7 +76,7 @@ function walk<V extends string>(event: KeyboardEvent, values: readonly V[], valu
   const next = steps[event.key]
   if (next === undefined) return
   event.preventDefault()
-  const target = values[(next + values.length) % values.length]!
+  const target = required(values[(next + values.length) % values.length])
   if (target !== value) onChange(target)
   const list = event.currentTarget as HTMLElement
   requestAnimationFrame(() => list.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]')?.focus())

@@ -1,4 +1,5 @@
-/** Lightweight parser for the Markdown subset used in reports and questions, plus plain-text URL linkification; never interprets raw HTML. */
+
+import { required } from '../core/required.ts'
 
 export type Inline = { kind: 'text' | 'bold' | 'code'; text: string } | { kind: 'link'; text: string; url: string }
 export type Block = { kind: 'heading' | 'paragraph'; text: string } | { kind: 'list'; ordered: boolean; items: string[] }
@@ -20,7 +21,7 @@ export function inlines(text: string): Inline[] {
     if (/^\*\*[^*]+\*\*$/.test(part)) return [{ kind: 'bold', text: part.slice(2, -2) }]
     if (/^`[^`]+`$/.test(part)) return [{ kind: 'code', text: part.slice(1, -1) }]
     const link = /^\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)$/.exec(part)
-    return link ? [{ kind: 'link', text: link[1]!, url: link[2]! }] : linkify(part)
+    return link ? [{ kind: 'link', text: required(link[1]), url: required(link[2]) }] : linkify(part)
   })
 }
 export function markdownBlocks(text: string): Block[] {
@@ -31,12 +32,12 @@ export function markdownBlocks(text: string): Block[] {
     if (item) {
       const ordered = !/^\s*[-*]/.test(line)
       if (!list || list.ordered !== ordered) blocks.push(list = { kind: 'list', ordered, items: [] })
-      list.items.push(item[1]!)
+      list.items.push(required(item[1]))
       continue
     }
     list = undefined
     const heading = /^#{1,6}\s+(.*)$/.exec(line)
-    if (line.trim()) blocks.push(heading ? { kind: 'heading', text: heading[1]! } : { kind: 'paragraph', text: line })
+    if (line.trim()) blocks.push(heading ? { kind: 'heading', text: required(heading[1]) } : { kind: 'paragraph', text: line })
   }
   return blocks
 }
