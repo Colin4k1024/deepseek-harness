@@ -100,11 +100,11 @@ it('reads the context of a Trigger through its Source, and none for a Source tha
   expect(context.thread).toMatchObject({ complete: true, loaded_messages: 6, source_found: true })
   const page = await s.tools.orchestrator_eval_read!({ trigger_id: 'issue-1', resource: 'thread', offset: 0 }, signal) as { text: string }
   expect(JSON.parse(page.text)).toMatchObject({ next_read: null,
-    messages: expect.arrayContaining([expect.objectContaining({ text: 'comment 0' })]) })
+    messages: expect.arrayContaining([expect.objectContaining({ text: 'comment 0' })]) as unknown })
   const other: Trigger = { ...issue(2), id: 'other-2', source: 'probe', threads: [{ source: 'probe', id: '2' }], actor: { source: 'probe',
     id: 'bob' } }
   s.engine.receive(other); s.engine.evaluateDue()
-  expect((await s.assessor.context('other-2', signal)).thread).toMatchObject({ error: expect.stringContaining('gives no Thread context') })
+  expect((await s.assessor.context('other-2', signal)).thread).toMatchObject({ error: expect.stringContaining('gives no Thread context') as unknown })
   await expect(s.tools.orchestrator_eval_read!({ trigger_id: 'other-2', resource: 'thread', offset: 0 },
     signal)).rejects.toThrow('gives no Thread context')
   // The Trigger's own text is still readable when its Source provides no Thread context.
@@ -145,13 +145,13 @@ it('loads a window without the assessment instructions: the trigger once, cut me
     const messages = new Map(result.thread.messages.map(message => [message.id as string, message]))
     const at = (i: number) => messages.get(`https://github.com/acme/widgets/issues/1#c${i}`)!
     // The trigger's own text is given once at top level; its two nearest neighbours keep more text than the rest of the window.
-    expect(at(15)).toEqual({ id: expect.any(String), from: 'bob', at: expect.any(String), trigger: true })
+    expect(at(15)).toEqual({ id: expect.any(String) as unknown, from: 'bob', at: expect.any(String) as unknown, trigger: true })
     expect(at(16)).toMatchObject({ chars: bodies[16]!.length, text: `${bodies[16]!.slice(0, 1200)}…` })
     expect(at(12)).toMatchObject({ chars: bodies[12]!.length, text: `${bodies[12]!.slice(0, 400)}…` })
     expect(at(14)).toMatchObject({ text: bodies[14] })
     expect(at(14)).not.toHaveProperty('chars')
     // Messages outside the window are stubs that orchestrator_eval_read can read in full.
-    expect(at(8)).toEqual({ id: expect.any(String), from: 'bob', preview: bodies[8]!.slice(0, 50) })
+    expect(at(8)).toEqual({ id: expect.any(String) as unknown, from: 'bob', preview: bodies[8]!.slice(0, 50) })
     const whole = await s.tools.orchestrator_eval_read!({ trigger_id: 'c15', resource: 'message', message_id: at(8).id }, signal)
     expect(JSON.stringify(whole)).toContain(bodies[8]!.slice(-40))
     expect(JSON.stringify(result).length).toBeLessThan(9000)

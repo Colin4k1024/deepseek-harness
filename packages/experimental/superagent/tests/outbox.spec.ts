@@ -15,7 +15,7 @@ async function at(ms: number) {
 }
 
 it('holds every message while processing is paused, and sends it once processing resumes', async () => {
-  const lark = vi.mocked(Commands.prototype.lark)
+  const lark = vi.spyOn(Commands.prototype, 'lark')
   await h.runtime.settings.pause(true, 'panel')
   lark.mockClear()
   h.runtime.outbox.send({ id: 'held', channel: feishu('1', 'x').channel!, text: '已合并。', kind: 'notice' })

@@ -90,7 +90,7 @@ describe('agent git configuration', () => {
     await expect(git('config', 'core.abbrev')).rejects.toThrow()
     expect(env).not.toHaveProperty('GIT_AUTHOR_NAME')
     expect(env).not.toHaveProperty('GIT_COMMITTER_EMAIL')
-    await expect(git('-C', 'repo', 'commit', '--allow-empty', '-q', '-m', 'without identity')).rejects.toMatchObject({ stderr: expect.stringContaining('no email was given') })
+    await expect(git('-C', 'repo', 'commit', '--allow-empty', '-q', '-m', 'without identity')).rejects.toMatchObject({ stderr: expect.stringContaining('no email was given') as unknown })
     await git('-C', 'repo', '-c', 'user.name=Alice', '-c', 'user.email=alice@example.com', 'commit', '--allow-empty', '-q', '-m', 'with identity')
     expect(await git('-C', 'repo', 'log', '-1', '--format=%an <%ae> / %cn <%ce>')).toBe('Alice <alice@example.com> / Alice <alice@example.com>')
   })
@@ -107,7 +107,7 @@ it('fails instead of asking the operator\'s askpass helpers when the agent\'s cr
   await exec('git', ['-C', 'repo', 'config', 'core.askPass', askpass], { cwd: dir, env })
   const fill = exec('git', ['-C', 'repo', 'credential', 'fill'], { cwd: dir, env, timeout: 10_000 })
   fill.child.stdin?.end('protocol=https\nhost=github.com\n\n')
-  await expect(fill).rejects.toMatchObject({ stderr: expect.stringContaining('terminal prompts disabled') })
+  await expect(fill).rejects.toMatchObject({ stderr: expect.stringContaining('terminal prompts disabled') as unknown })
   expect(() => readFileSync(log, 'utf8')).toThrow()
 })
 

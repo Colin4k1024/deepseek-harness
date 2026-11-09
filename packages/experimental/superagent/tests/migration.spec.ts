@@ -130,8 +130,8 @@ it('writes a schema 10 database in its current shape once, so nothing reads an o
     answers: ['trig-3'],
     mandate: { basis: { via: 'listed', source: 'feishu', scope: { chatId: 'oc_team', direct: false }, sender: 'ou_alice', addressed: 'mention' } },
   })
-  expect(migrated.inputs[0]).toMatchObject({ id: 'i1', kind: 'text', text: expect.stringContaining('"resumed":true') })
-  expect(migrated.inputs[0]).not.toMatchObject({ text: expect.stringContaining('reopen') })
+  expect(migrated.inputs[0]).toMatchObject({ id: 'i1', kind: 'text', text: expect.stringContaining('"resumed":true') as unknown })
+  expect(migrated.inputs[0]).not.toMatchObject({ text: expect.stringContaining('reopen') as unknown })
   expect(migrated.inputs[1]).toEqual({ id: 'i2', kind: 'reopen', decisionId: 'd0', at: '0' })
   expect(migrated.inputs.slice(2)).toEqual([{ id: 'i3', kind: 'trigger', triggerId: 'trig-2', at: '4', human: true }, { id: 'i4', kind: 'trigger', triggerId: 'ci-1', at: '5' }])
   expect(migrated).not.toHaveProperty('execution.recoveries')

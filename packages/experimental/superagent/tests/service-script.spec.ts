@@ -71,15 +71,15 @@ const status = async (profile: string, url = 'http://127.0.0.1:9') =>
 
 it('refuses to stop when two processes serve the profile, before it writes the stop marker', async () => {
   processes(service(sleeper()), `${sleeper()} node node /opt/dsh --profile=superagent`)
-  expect(await run('stop')).toMatchObject({ code: 1, stderr: expect.stringContaining('Multiple dsh-superagent processes found') })
+  expect(await run('stop')).toMatchObject({ code: 1, stderr: expect.stringContaining('Multiple dsh-superagent processes found') as unknown })
   expect(existsSync(join(control('superagent'), 'manually-stopped'))).toBe(false)
 })
 it('keeps a stop per profile', async () => {
-  expect(await run('stop', '--profile', 'one')).toMatchObject({ code: 0, stdout: expect.stringContaining('Automatic recovery is paused') })
+  expect(await run('stop', '--profile', 'one')).toMatchObject({ code: 0, stdout: expect.stringContaining('Automatic recovery is paused') as unknown })
   expect(await status('one')).toMatchObject({ manually_stopped: true })
   expect(await status('two')).toMatchObject({ manually_stopped: false })
   const skipped = await run('--respect-stop', 'start', '--profile', 'one')
-  expect(skipped).toMatchObject({ code: 0, stdout: expect.stringContaining('Intentional stop is active') })
+  expect(skipped).toMatchObject({ code: 0, stdout: expect.stringContaining('Intentional stop is active') as unknown })
 })
 it('takes no `dsh plugin` command of the profile for its service', async () => {
   const service = sleeper()
@@ -93,7 +93,7 @@ it('records the service PID at start, and still refuses a second instance the sc
   writeFileSync(join(root, 'pane'), `${pid}\n`)
   started(service(pid))
   const start = await run('start', '--url', url, '--timeout', '10')
-  expect(start).toMatchObject({ code: 0, stdout: expect.stringContaining(`"pids": [\n    ${pid}\n  ]`) })
+  expect(start).toMatchObject({ code: 0, stdout: expect.stringContaining(`"pids": [\n    ${pid}\n  ]`) as unknown })
   expect(readFileSync(join(control('superagent'), 'service.pid'), 'utf8')).toBe(`${pid}\n`)
   const tmux = readFileSync(join(root, 'tmux.log'), 'utf8').split('---\n').find(call => call.startsWith('new-session'))!.split('\n')
   // The checkout's path, which has a space, is one argument, and the log path inside it is quoted for the shell.
@@ -104,14 +104,14 @@ it('records the service PID at start, and still refuses a second instance the sc
   const second = sleeper()
   started(service(pid), `${second} node node /opt/dsh --profile superagent`)
   const again = await run('start', '--url', url, '--timeout', '10')
-  expect(again).toMatchObject({ code: 1, stderr: expect.stringContaining('Multiple dsh-superagent processes') })
+  expect(again).toMatchObject({ code: 1, stderr: expect.stringContaining('Multiple dsh-superagent processes') as unknown })
   expect(await status('superagent')).toMatchObject({ pids: [pid, second] })
 }, 20_000)
 it('waits only for the process it stopped', async () => {
   const pid = sleeper()
   // Another instance shows up once the stopped one ended.
   processes(service(pid), `after:${pid} ${sleeper()} node node /opt/dsh --profile superagent`)
-  expect(await run('stop', '--stop-timeout', '5')).toMatchObject({ code: 0, stdout: expect.stringContaining('dsh-superagent stopped') })
+  expect(await run('stop', '--stop-timeout', '5')).toMatchObject({ code: 0, stdout: expect.stringContaining('dsh-superagent stopped') as unknown })
 }, 20_000)
 it('keeps only the newest logs it wrote for the profile', async () => {
   const url = await answering()
@@ -153,7 +153,7 @@ it('exits 2 while a part such as a Source reports an error, which a restart does
   expect(checked.code).toBe(2)
   expect(JSON.parse(checked.stdout)).toMatchObject({ errors: { github: 'bad token' } })
   expect(await run('start', '--url', url, '--timeout', '10'))
-    .toMatchObject({ code: 2, stdout: expect.stringContaining('github reports an error, which a restart does not fix: bad token') })
+    .toMatchObject({ code: 2, stdout: expect.stringContaining('github reports an error, which a restart does not fix: bad token') as unknown })
 }, 20_000)
 it('exits 3 while the service waits for setup, from status and from start, which a restart does not fix', async () => {
   processes(service(sleeper()))
@@ -162,7 +162,7 @@ it('exits 3 while the service waits for setup, from status and from start, which
   const url = await answering(waiting, true)
   expect(await run('status', '--url', url)).toMatchObject({ code: 3 })
   expect(await run('start', '--url', url, '--timeout', '10'))
-    .toMatchObject({ code: 3, stdout: expect.stringContaining('waiting for setup: The GitHub Source names no repository.') })
+    .toMatchObject({ code: 3, stdout: expect.stringContaining('waiting for setup: The GitHub Source names no repository.') as unknown })
 }, 20_000)
 it('restarts the service, and a restart whose graceful stop timed out does not keep recovery off', async () => {
   const url = await answering()
@@ -171,7 +171,7 @@ it('restarts the service, and a restart whose graceful stop timed out does not k
   writeFileSync(join(root, 'pane'), `${pid}\n`)
   started(service(pid))
   const restarted = await run('restart', '--url', url, '--timeout', '10', '--stop-timeout', '5')
-  expect(restarted).toMatchObject({ code: 0, stdout: expect.stringContaining('dsh-superagent stopped.') })
+  expect(restarted).toMatchObject({ code: 0, stdout: expect.stringContaining('dsh-superagent stopped.') as unknown })
   expect(restarted.stdout).not.toContain('Automatic recovery is paused')
   expect(existsSync(join(control('superagent'), 'manually-stopped'))).toBe(false)
   expect(readFileSync(join(control('superagent'), 'service.pid'), 'utf8')).toBe(`${pid}\n`)
@@ -179,7 +179,7 @@ it('restarts the service, and a restart whose graceful stop timed out does not k
   rmSync(join(root, 'launched'))
   processes(service(sleeper(true)))
   expect(await run('restart', '--url', url, '--timeout', '10', '--stop-timeout', '1'))
-    .toMatchObject({ code: 1, stderr: expect.stringContaining('Graceful stop timed out') })
+    .toMatchObject({ code: 1, stderr: expect.stringContaining('Graceful stop timed out') as unknown })
   expect(await status('superagent')).toMatchObject({ manually_stopped: false })
 }, 20_000)
 it('refuses a second control operation while one holds the profile\'s lock', async () => {
@@ -193,12 +193,12 @@ time.sleep(30)`], { stdio: 'ignore' })
   sleepers.push(holder)
   while (!existsSync(held)) await new Promise(resolve => setTimeout(resolve, 50))
   expect(await run('status')).toMatchObject({ code: 1,
-    stderr: expect.stringContaining('Another dsh-superagent control operation is in progress') })
+    stderr: expect.stringContaining('Another dsh-superagent control operation is in progress') as unknown })
 }, 20_000)
 it('refuses to start a service while no process runs it but something answers at its URL', async () => {
   const url = await answering(READY, true)
   expect(await run('start', '--url', url, '--timeout', '5'))
-    .toMatchObject({ code: 1, stderr: expect.stringContaining('An existing orchestrator answers at this URL') })
+    .toMatchObject({ code: 1, stderr: expect.stringContaining('An existing orchestrator answers at this URL') as unknown })
   expect(readFileSync(join(root, 'tmux.log'),
     'utf8').split('---\n').filter(Boolean).map(call => call.split('\n')[0])).toEqual(['has-session'])
 }, 20_000)
@@ -219,7 +219,7 @@ it('exits 1 when the started service does not answer in time, and leaves its pro
   writeFileSync(join(root, 'pane'), `${pid}\n`)
   started(service(pid))
   expect(await run('start', '--url', 'http://127.0.0.1:9', '--timeout', '2'))
-    .toMatchObject({ code: 1, stderr: expect.stringContaining('Startup health check timed out') })
+    .toMatchObject({ code: 1, stderr: expect.stringContaining('Startup health check timed out') as unknown })
   expect(() => process.kill(pid, 0)).not.toThrow()
 }, 20_000)
 it('does not signal a process that took the recorded service PID, and keeps a stop that timed out', async () => {
@@ -232,6 +232,6 @@ it('does not signal a process that took the recorded service PID, and keeps a st
   // A service that does not stop in time keeps the stop, so recovery does not start it again.
   rmSync(join(control('superagent'), 'manually-stopped'))
   processes(service(sleeper(true)))
-  expect(await run('stop', '--stop-timeout', '1')).toMatchObject({ code: 1, stderr: expect.stringContaining('Graceful stop timed out') })
+  expect(await run('stop', '--stop-timeout', '1')).toMatchObject({ code: 1, stderr: expect.stringContaining('Graceful stop timed out') as unknown })
   expect(existsSync(join(control('superagent'), 'manually-stopped'))).toBe(true)
 }, 20_000)

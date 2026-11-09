@@ -20,16 +20,16 @@ it('reports a relay in error once it failed three times, clears it once the rela
   for (let count = 0; count < 3; count++) steer.mockImplementationOnce(() => { throw new Error('session busy') })
   h.runtime.sessions.relay('r1', JSON.stringify({ kind: 'note' }))
   await h.runtime.idle()
-  expect(h.runtime.health.relay).toMatchObject({ state: 'ready', detail: expect.stringContaining('1 waiting') })
+  expect(h.runtime.health.relay).toMatchObject({ state: 'ready', detail: expect.stringContaining('1 waiting') as unknown })
   await failThrice()
-  expect(h.runtime.health.relay).toMatchObject({ state: 'error', detail: expect.stringContaining('session busy') })
+  expect(h.runtime.health.relay).toMatchObject({ state: 'error', detail: expect.stringContaining('session busy') as unknown })
   await at(14_000)
   expect(h.runtime.health).toMatchObject({ relay: { state: 'ready', detail: 'Nothing waiting' }, runtime: { state: 'ready' } })
 })
 
 it('keeps a failing relay\'s error while replies recover, and a failing reply\'s error while relays recover', async () => {
   const master = h.agents.get(h.runtime.masterId)!
-  const lark = vi.mocked(Commands.prototype.lark)
+  const lark = vi.spyOn(Commands.prototype, 'lark')
   const reply = (id: string) => { h.runtime.outbox.send({ id, channel: feishu('9', 'x').channel!, text: '已合并。', kind: 'notice' }) }
   master.steer.mockImplementation(() => { throw new Error('master gone') })
   h.runtime.sessions.relay('r2', JSON.stringify({ kind: 'note' }))
@@ -37,7 +37,7 @@ it('keeps a failing relay\'s error while replies recover, and a failing reply\'s
   reply('stuck')
   // Each fails three times in a row: the relay after 0, 2 and 6 seconds, the reply after 0, 5 and 15.
   await h.runtime.idle(); await at(5000); await at(15_000)
-  expect(h.runtime.health).toMatchObject({ relay: { state: 'error' }, reply: { state: 'error', detail: expect.stringContaining('2200') } })
+  expect(h.runtime.health).toMatchObject({ relay: { state: 'error' }, reply: { state: 'error', detail: expect.stringContaining('2200') as unknown } })
   lark.mockResolvedValue({})
   await at(35_000)
   expect(h.runtime.health).toMatchObject({ relay: { state: 'error' }, reply: { state: 'ready' } })
@@ -53,7 +53,7 @@ it('reports a notice the main Session did not receive three times, until one rea
   for (let count = 0; count < 3; count++) inject.mockImplementationOnce(() => { throw new Error('session busy') })
   await h.runtime.settings.pause(true, 'panel')
   await failThrice()
-  expect(h.runtime.health.notice).toMatchObject({ state: 'error', detail: expect.stringContaining('session busy') })
+  expect(h.runtime.health.notice).toMatchObject({ state: 'error', detail: expect.stringContaining('session busy') as unknown })
   inject.mockClear()
   await h.runtime.settings.pause(false, 'panel')
   expect(h.runtime.health).toMatchObject({ notice: { state: 'ready' }, runtime: { state: 'ready' } })

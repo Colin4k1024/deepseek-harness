@@ -75,7 +75,7 @@ it('renders the Deployment page with the derived accounts in the Plugin Manager,
     root = createRoot(container)
     const form = server.form
     await act(async () => { root.render(<PluginConfig t={translator(zh)} view={view} form={form && { state: form.getSnapshot(),
-      mutate: form.mutate }} />) })
+      mutate: (...args) => form.mutate(...args) }} />) })
     await settle()
   }
   await render('summary')

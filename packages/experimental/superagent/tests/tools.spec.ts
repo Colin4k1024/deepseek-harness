@@ -20,21 +20,21 @@ it('reads the lists, a ticket, a decision, the settings, the prompts and the mod
   const { ticket, trigger } = await h.acceptedTicket(feishu('1', '@bot 修一下回归'))
   await h.acceptedTicket(feishu('2', '@bot 再修一个'))
   const tickets = await read('tickets', { limit: 1 })
-  expect(tickets).toEqual({ items: [expect.objectContaining({ ticket_id: expect.any(String), state: 'working' })], next_offset: 1 })
+  expect(tickets).toEqual({ items: [expect.objectContaining({ ticket_id: expect.any(String) as unknown, state: 'working' })], next_offset: 1 })
   expect(await read('tickets', { offset: 1 })).toMatchObject({ items: [expect.objectContaining({ ticket_id: ticket.id })], next_offset: null })
   const triggers = await read('triggers') as { items: { trigger_id: string }[] }
   expect(triggers.items.map(item => item.trigger_id)).toEqual([expect.any(String), trigger.id])
-  expect(await read('threads')).toMatchObject({ items: expect.arrayContaining([expect.objectContaining({ tickets: [ticket.id] })]) })
+  expect(await read('threads')).toMatchObject({ items: expect.arrayContaining([expect.objectContaining({ tickets: [ticket.id] })]) as unknown })
   const decisions = await read('decisions') as { items: { decision_id: string; read: string }[] }
-  const accepted = expect.objectContaining({ kind: 'accept', ticket_id: ticket.id, trigger_ids: [trigger.id], read: expect.stringMatching(/^decision\//) })
+  const accepted: unknown = expect.objectContaining({ kind: 'accept', ticket_id: ticket.id, trigger_ids: [trigger.id], read: expect.stringMatching(/^decision\//) as unknown })
   expect(decisions.items).toContainEqual(accepted)
   expect(await read(decisions.items.at(-1)!.read)).toMatchObject({ kind: 'accept', ticket_id: ticket.id, mandate: { strength: 'explicit' } })
   expect(await read(`ticket/${ticket.id}`)).toMatchObject({ ticket_id: ticket.id, state: 'working', directory: ticket.execution!.directory,
     trigger_id: trigger.id, assignments: { items: [expect.objectContaining({ state: 'running' })] }, assignment: `ticket/${ticket.id}/assignment` })
   // The settings name each block's revision and hold the small blocks; a block reads whole by the name a save takes.
   const settings = await read('settings')
-  expect(settings).toMatchObject({ eval: { value: { mode: 'auto' } }, policy: { revision: expect.any(Number), allowed: { feishu: 1, github: 1 }, read: 'settings/policy' },
-    pause: { value: { paused: false } }, sources: expect.arrayContaining([expect.objectContaining({ id: 'github', read: 'settings/source:github' })]) })
+  expect(settings).toMatchObject({ eval: { value: { mode: 'auto' } }, policy: { revision: expect.any(Number) as unknown, allowed: { feishu: 1, github: 1 }, read: 'settings/policy' },
+    pause: { value: { paused: false } }, sources: expect.arrayContaining([expect.objectContaining({ id: 'github', read: 'settings/source:github' })]) as unknown })
   expect(JSON.stringify(settings)).not.toContain('ou_alice')
   for (const block of ['policy', 'eval', 'executor', 'pause', 'source:github']) {
     const page = await read(`settings/${block}`) as { text: string }
@@ -47,13 +47,13 @@ it('reads the lists, a ticket, a decision, the settings, the prompts and the mod
   const models = [{ id: 'm1', name: 'One' }, { id: 'm2', name: 'Two' }]
   const catalog = { default: { provider: 'p', model: 'm1' }, groups: [{ id: 'p', name: 'Provider', models }], failures: [] }
   Object.assign(h.controller, { modelCatalog: vi.fn(async () => catalog) })
-  expect(await read('models')).toMatchObject({ providers: [{ id: 'p', count: 2, read: 'models/p' }], roles: expect.any(Object) })
+  expect(await read('models')).toMatchObject({ providers: [{ id: 'p', count: 2, read: 'models/p' }], roles: expect.any(Object) as unknown })
   expect(await read('models/p', { limit: 1 })).toEqual({ items: [models[0]], next_offset: 1 })
   await expect(read('ticket')).rejects.toThrow('Unknown context resource')
   // A list page holds at most 50 items, the prompt history too.
   const config = h.runtime.prompts.current().config
   for (let revision = 0; revision < 51; revision++) h.runtime.prompts.save({ ...config, scope: `Scope ${revision}.` }, revision, 'panel')
-  expect(await read('prompts', { limit: 8000 })).toMatchObject({ items: expect.objectContaining({ length: 50 }), next_offset: 50 })
+  expect(await read('prompts', { limit: 8000 })).toMatchObject({ items: expect.objectContaining({ length: 50 }) as unknown, next_offset: 50 })
 })
 
 it('lists in prompts the built-in parts whose text changed since the team overrode them, and the built-in parts in prompts/defaults', async () => {
@@ -106,13 +106,13 @@ it('keeps the main Session\'s resources from an Executor Session, which lists on
 
 it('answers every routing tool in one shape: the decision it recorded, why, and the ticket card', async () => {
   const { ticket, sessionId } = await h.acceptedTicket(feishu('1', '@bot 修一下回归'))
-  const card = expect.objectContaining({ ticket_id: ticket.id })
+  const card: unknown = expect.objectContaining({ ticket_id: ticket.id })
   const run = (name: string, args: unknown) => h.runTool(h.runtime.masterId, name, args)
   const route = async (item: Record<string, unknown>) => ((await run('orchestrator_route', { decisions: [item] })).results as unknown[])[0]
   const other = feishu('3', '@bot 顺便看看这个')
   h.runtime.receive(other); await h.runtime.idle()
   expect(await route({ kind: 'attach', ticket_id: ticket.id, trigger_id: other.id })).toEqual({ trigger_id: other.id, kind: 'attach',
-    reason: expect.any(String), ticket: card })
+    reason: expect.any(String) as unknown, ticket: card })
   const status = await run('orchestrator_ticket_request_status', { ticket_id: ticket.id })
   expect(status).toEqual({ reason: 'The worker is not waiting; nothing was sent', ticket: card })
   await h.runTool(sessionId, 'orchestrator_report', { state: 'failed', summary: 'The build broke.' })
@@ -127,9 +127,9 @@ it('answers every routing tool in one shape: the decision it recorded, why, and 
   const request = feishu('5', '@bot 不用修了')
   h.runtime.receive(request); await h.runtime.idle()
   const stopped = await route({ kind: 'stop', ticket_id: ticket.id, trigger_id: request.id, reason: 'Not needed after all' }) as { ticket: { state: string } }
-  const ended = expect.objectContaining({ by: 'human', reason: 'Not needed after all' })
+  const ended: unknown = expect.objectContaining({ by: 'human', reason: 'Not needed after all' })
   expect(stopped).toEqual({ trigger_id: request.id, kind: 'stop', decision: 'stop', reason: 'Not needed after all',
-    ticket: expect.objectContaining({ ticket_id: ticket.id, state: 'stopped', ended }) })
+    ticket: expect.objectContaining({ ticket_id: ticket.id, state: 'stopped', ended }) as unknown })
   expect(TICKET_STATES).toContain(stopped.ticket.state)
 })
 
@@ -155,7 +155,7 @@ it('routes several triggers in one call, in order, and answers a refused or fail
   expect(results).toEqual([
     { trigger_id: thanks.id, kind: 'ignore', decision: 'ignore', reason: 'Thanks only.' },
     { trigger_id: request.id, kind: 'stop', refused: 'stop needs ticket_id' },
-    expect.objectContaining({ trigger_id: request.id, kind: 'accept', decision: 'accept', ticket: expect.objectContaining({ title: 'Other' }) }),
+    expect.objectContaining({ trigger_id: request.id, kind: 'accept', decision: 'accept', ticket: expect.objectContaining({ title: 'Other' }) as unknown }),
     { trigger_id: other.id, kind: 'attach', refused: 'Unknown ticket' },
     // An unexpected failure recorded nothing, which the item may be sent again for.
     { trigger_id: more.id, kind: 'attach', refused: 'Not recorded: database is locked; retry this item' },
@@ -179,8 +179,8 @@ it('refuses alone an item that lacks a field its kind needs or breaks a field\'s
   ] }) as { results: Record<string, unknown>[] }
   expect(results).toEqual([
     { trigger_id: a, kind: 'accept', refused: 'accept needs worktree_name' },
-    { trigger_id: b, kind: 'accept', refused: expect.stringMatching(/^worktree_name: /) },
-    { trigger_id: c, kind: 'accept', refused: expect.stringMatching(new RegExp(`^note: .*${NOTE_WORDS} words`)) },
+    { trigger_id: b, kind: 'accept', refused: expect.stringMatching(/^worktree_name: /) as unknown },
+    { trigger_id: c, kind: 'accept', refused: expect.stringMatching(new RegExp(`^note: .*${NOTE_WORDS} words`)) as unknown },
     { trigger_id: d, kind: 'accept', refused: 'accept needs title' },
     { trigger_id: e, kind: 'ignore', decision: 'ignore', reason: 'chat' },
   ])
@@ -242,7 +242,7 @@ it('ignores a proactive candidate from its card beside other decisions, marked s
   expect(results).toEqual([
     { trigger_id: chat.id, kind: 'ignore', decision: 'ignore', reason: 'Ignored from its card, without a rule assessment; Lunch chat.' },
     { trigger_id: thanks.id, kind: 'ignore', decision: 'ignore', reason: 'Thanks only.' },
-    { trigger_id: proposal.id, kind: 'accept', refused: expect.stringContaining('assess proactive candidates with orchestrator_eval') },
+    { trigger_id: proposal.id, kind: 'accept', refused: expect.stringContaining('assess proactive candidates with orchestrator_eval') as unknown },
   ])
 })
 
@@ -251,7 +251,7 @@ it('returns where a reply stands: sent, or dropped when its conversation can no 
   await h.runTool(sessionId, 'orchestrator_report', { state: 'ready', summary: 'Done.' })
   const reply = (text: string) => h.runTool(h.runtime.masterId, 'orchestrator_reply', { ticket_id: ticket.id, purpose: 'result', text })
   expect(await reply('修好了。')).toEqual({ status: 'sent' })
-  vi.mocked(Commands.prototype.lark).mockRejectedValue(new CliError('the message was withdrawn', 230011))
+  vi.spyOn(Commands.prototype, 'lark').mockRejectedValue(new CliError('the message was withdrawn', 230011))
   expect(await reply('修好了，请看 PR。')).toEqual({ status: 'dropped' })
 })
 
@@ -336,19 +336,19 @@ it('reads a ticket with the ids it is tied to, its reports by assignment, and it
   const earlier = await read(details.assignments.next_resource!, { offset: details.assignments.next_offset! }) as Page
   expect([earlier.items.map(item => (item as { id?: string }).id), earlier.next_offset]).toEqual([['a4', 'a3', 'a2'], 6])
   expect(await read(details.assignments.next_resource!, { offset: 6 })).toEqual({ next_offset: null,
-    items: [expect.objectContaining({ id: 'a1', report: expect.objectContaining({ read: `ticket/${ticket.id}/report/a1` }) })] })
+    items: [expect.objectContaining({ id: 'a1', report: expect.objectContaining({ read: `ticket/${ticket.id}/report/a1` }) as unknown })] })
   expect(await h.runTool(sessionId, 'orchestrator_read', { resource: `ticket/${ticket.id}/report/a1` })).toMatchObject({ text: report(1).summary })
   expect(JSON.stringify(details).length).toBeLessThan(3000)
   const page = await read(details.inputs.items[0]!.read!) as { text: string }
   expect(page.text).toContain('check the margin on mobile as well.')
   // An Input also reads by the id it has on the ticket.
   expect(await read(`ticket/${ticket.id}/input/text:long`)).toMatchObject({ text: page.text })
-  expect(await read(`ticket/${ticket.id}/inputs`, { offset: 20 })).toMatchObject({ items: expect.objectContaining({ length: 4 }), next_offset: null })
+  expect(await read(`ticket/${ticket.id}/inputs`, { offset: 20 })).toMatchObject({ items: expect.objectContaining({ length: 4 }) as unknown, next_offset: null })
   expect(await read(details.assignments.items[0]!.report.read)).toMatchObject({ text: report(7).summary.slice(0, 4000) })
   vi.mocked(h.controller.inspect).mockResolvedValueOnce({ events: [{ type: 'assistant/message', data: { message: { role: 'assistant',
     content: [{ type: 'text', text: `I fixed the margin. ${'Details. '.repeat(20)}` }] } } }] } as never)
   const transcript = JSON.parse((await read(`ticket/${ticket.id}/transcript`) as { text: string }).text) as { preview: string; read: string }
-  expect(transcript).toMatchObject({ preview: expect.stringMatching(/^I fixed the margin\./), read: `ticket/${ticket.id}/message/0` })
+  expect(transcript).toMatchObject({ preview: expect.stringMatching(/^I fixed the margin\./) as unknown, read: `ticket/${ticket.id}/message/0` })
   expect(transcript.preview.length).toBeLessThanOrEqual(80)
 })
 
@@ -404,7 +404,7 @@ it('relays a worker\'s report with its ticket card and the start of its summary,
   await h.runTool(sessionId, 'orchestrator_report', { state: 'progress', summary: 'Needs a decision.', human_action: 'Desktop too?' })
   await h.runtime.idle()
   expect(relaysOf('worker_attention').at(-1)).toEqual({ kind: 'worker_attention', state: 'progress', read: `ticket/${ticket.id}/result`,
-    ticket: expect.objectContaining({ ticket_id: ticket.id, state: 'person/answer', attention: expect.objectContaining({ question: 'Desktop too?' }) }) })
+    ticket: expect.objectContaining({ ticket_id: ticket.id, state: 'person/answer', attention: expect.objectContaining({ question: 'Desktop too?' }) as unknown }) as unknown })
   const summary = 'Done. ' + 'Evidence. '.repeat(100)
   await h.runTool(sessionId, 'orchestrator_report', { state: 'ready', summary, human_action: null })
   await h.runtime.idle()
@@ -438,7 +438,7 @@ it('tells the main Session of the settings, prompts, requeues and unsubscription
 })
 
 it('answers a policy sync with the counts and what changed, not the whole list', async () => {
-  vi.mocked(Commands.prototype.lark).mockResolvedValue({ users: [{ member_id: 'ou_alice', name: 'Alice' }, { member_id: 'ou_bob', name: 'Bob' }], has_more: false })
+  vi.spyOn(Commands.prototype, 'lark').mockResolvedValue({ users: [{ member_id: 'ou_alice', name: 'Alice' }, { member_id: 'ou_bob', name: 'Bob' }], has_more: false })
   expect(await h.runTool(h.runtime.masterId, 'orchestrator_policy_sync', { source: 'feishu' })).toEqual({ source: 'feishu', allowed: 2, added: ['Bob'], removed: [] })
 })
 
@@ -457,8 +457,8 @@ it('shows an Executor Session no id it cannot read: no Decision, no other ticket
     expect(shown).not.toContain(ticket.decisionId)
     expect(shown).not.toContain(other.ticket.id)
   }
-  expect(await read(`thread/feishu:${CHAT}:om_1`)).toMatchObject({ tickets: expect.arrayContaining([expect.objectContaining({ ticket_id: other.ticket.id })]),
-    decisions: expect.arrayContaining([expect.objectContaining({ decision_id: ticket.decisionId })]) })
+  expect(await read(`thread/feishu:${CHAT}:om_1`)).toMatchObject({ tickets: expect.arrayContaining([expect.objectContaining({ ticket_id: other.ticket.id })]) as unknown,
+    decisions: expect.arrayContaining([expect.objectContaining({ decision_id: ticket.decisionId })]) as unknown })
   expect(await read(`ticket/${ticket.id}`)).toMatchObject({ decision_id: ticket.decisionId })
 })
 
@@ -484,7 +484,7 @@ it('gives a worker the other messages of the request its ticket was accepted fro
   const other = ticket.origin.triggerIds.find(id => id !== ticket.origin.triggerId)!
   expect(ticket.origin.triggerIds).toHaveLength(2)
   const message = h.relays(`worker-${ticket.id}`)[0]!
-  expect(message.batch).toEqual([expect.objectContaining({ trigger_id: other, preview: expect.any(String), read: `trigger/${other}` })])
+  expect(message.batch).toEqual([expect.objectContaining({ trigger_id: other, preview: expect.any(String) as unknown, read: `trigger/${other}` })])
   const page = await h.runTool(`worker-${ticket.id}`, 'orchestrator_read', { resource: `ticket/${ticket.id}` })
   expect(page).toMatchObject({ batch: [{ trigger_id: other, read: `trigger/${other}` }] })
   expect(await h.runTool(`worker-${ticket.id}`, 'orchestrator_read', { resource: `trigger/${other}` })).toMatchObject({ trigger_id: other })

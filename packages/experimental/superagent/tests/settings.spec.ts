@@ -45,7 +45,7 @@ it('refuses a Policy sync that a Policy save outran, reports it on sync:feishu, 
   h = await startRuntime()
   const { settings, store } = h.runtime
   const members = deferred<unknown>()
-  vi.mocked(Commands.prototype.lark).mockImplementationOnce(() => members.promise)
+  vi.spyOn(Commands.prototype, 'lark').mockImplementationOnce(() => members.promise)
   const syncing = settings.sync('feishu')
   const policy = store.settings().policy
   const rules = [{ id: 'docs', name: 'Docs', enabled: true, instruction: 'Fix docs' }]
@@ -53,7 +53,7 @@ it('refuses a Policy sync that a Policy save outran, reports it on sync:feishu, 
   members.resolve({ users: [{ member_id: 'ou_alice', name: 'Alice' }, { member_id: 'ou_new', name: 'New' }], has_more: false })
   await expect(syncing).rejects.toThrow(SettingsConflict)
   expect(h.runtime.health['sync:feishu']).toMatchObject({ state: 'error',
-    detail: expect.stringContaining('Policy changed during synchronization') })
+    detail: expect.stringContaining('Policy changed during synchronization') as unknown })
   expect(store.settings().policy).toMatchObject({ rules, sources: { feishu: { allowed: [{ id: 'ou_alice', name: 'Alice' }] } } })
 })
 
@@ -65,10 +65,10 @@ it('syncs a Policy part again after a failed sync, a minute later and then after
   await h.runtime.idle()
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
   try {
-    const lark = vi.mocked(Commands.prototype.lark)
+    const lark = vi.spyOn(Commands.prototype, 'lark')
     lark.mockRejectedValueOnce(new Error('network down')).mockRejectedValueOnce(new Error('network down'))
     await expect(settings.sync('feishu')).rejects.toThrow('network down')
-    expect(h.runtime.health['sync:feishu']).toMatchObject({ state: 'error', detail: expect.stringContaining('network down') })
+    expect(h.runtime.health['sync:feishu']).toMatchObject({ state: 'error', detail: expect.stringContaining('network down') as unknown })
     const calls = () => lark.mock.calls.filter(([args]) => args.includes('+chat-members-list')).length
     const before = calls()
     await vi.advanceTimersByTimeAsync(60_000)
@@ -96,6 +96,6 @@ it('records nothing for a pause that changes nothing, refuses a sync while setup
   expect([store.blockRevision('pause'), inject.mock.calls.length, h.runtime.effects.pending('notice')]).toEqual([revision, 0, false])
   vi.spyOn(Setup.prototype, 'configured').mockReturnValue(false)
   await expect(settings.sync('feishu')).rejects.toThrow(new UserError('nothingToSync', { source: 'feishu' }))
-  vi.mocked(Setup.prototype.configured).mockRestore()
+  vi.spyOn(Setup.prototype, 'configured').mockRestore()
   expect(() => settings.block('source:x')).toThrow(new UserError('unknownBlock', { block: 'source:x' }))
 })

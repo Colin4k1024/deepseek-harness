@@ -57,9 +57,9 @@ export type AssessmentOutcome =
 
 /** Semantic judgement. `request` queues the assessment, idempotently per `evalId`; the outcome returns through `Engine.decide`. */
 export interface Assessor {
-  request(candidate: Candidate): void
+  readonly request: (candidate: Candidate) => void
   /** Called whenever an eval ends, decided or not, so the assessor drops what it kept for it. */
-  release?(evalId: string): void
+  readonly release?: (evalId: string) => void
 }
 
 /**
@@ -68,14 +68,14 @@ export interface Assessor {
  */
 export interface Executor {
   /** Queue a pending assignment for launch; reports back through `Engine.assignmentStarted` or a `failed` report. */
-  start(ticket: Ticket, assignment: Assignment): void
+  readonly start: (ticket: Ticket, assignment: Assignment) => void
   /**
    * Queue delivery of the ticket's waiting Inputs to its running assignment; reports back through `Engine.inputsDelivered`
    * or `Engine.deliveryFailed`, and through `Engine.inputsRead` once its worker's Session takes them into a step.
    */
-  deliver(ticket: Ticket, assignment: Assignment): void
+  readonly deliver: (ticket: Ticket, assignment: Assignment) => void
   /** End an assignment's work, such as cancelling its Session's turn; called after the ticket or assignment has already ended in the domain. */
-  stop(ticket: Ticket, assignment: Assignment, reason: string): void
+  readonly stop: (ticket: Ticket, assignment: Assignment, reason: string) => void
 }
 
 /** A message for a Channel; `ticketId` names the Ticket it is for, when there is one. */

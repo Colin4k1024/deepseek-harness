@@ -129,7 +129,7 @@ const ticket: Ticket = { id: 'ticket-1', title: 'Inspect failing check', decisio
 it('shows a trigger and a ticket as cards with a short preview and references to their bodies', () => {
   const card = triggerCard(trigger, { fanout: ['ticket-1'], evalId: 'e1', decisionId: 'd1', at: '' })
   expect(card).toEqual({ trigger_id: 'request-1', source: 'github', actor: 'alice', thread: 'github:42', human: true, at: '2026-09-09T00:00:00Z',
-    preview: expect.stringMatching(/^Please inspect the failing check\. Additional context\./), chars: trigger.text.length, read: 'trigger/request-1',
+    preview: expect.stringMatching(/^Please inspect the failing check\. Additional context\./) as unknown, chars: trigger.text.length, read: 'trigger/request-1',
     disposition: { decision_id: 'd1', delivered_to: ['ticket-1'] } })
   expect(card.preview).toHaveLength(160)
   const { policyVersion: _version, ...mandate } = ticket.mandate
@@ -139,7 +139,7 @@ it('shows a trigger and a ticket as cards with a short preview and references to
     state: 'person/review', strength: 'explicit', pr_number: 42, read: 'ticket/ticket-1', trigger_id: 'request-1', decision_id: 'd1',
     batch: [{ trigger_id: 'request-2', from: 'alice', at: trigger.at, preview: 'Also the flaky one.', read: 'trigger/request-2' }],
     threads, directory: '/worktrees/ticket-1', scope: mandate.scope, requested_by: 'alice', inputs: { items: [] },
-    assignments: { items: [{ id: 'a1', state: 'running', at: '2026-09-09T00:00:00Z', report: { state: 'ready', at: '', preview: expect.stringMatching(/^The focused/),
+    assignments: { items: [{ id: 'a1', state: 'running', at: '2026-09-09T00:00:00Z', report: { state: 'ready', at: '', preview: expect.stringMatching(/^The focused/) as unknown,
       chars: SUMMARY.length, read: 'ticket/ticket-1/report/a1' } }] },
     assignment: 'ticket/ticket-1/assignment', result: 'ticket/ticket-1/result', transcript: 'ticket/ticket-1/transcript' })
   // Its worker reads no Decision, so it sees no Decision's id.
@@ -152,7 +152,7 @@ it('shows a trigger and a ticket as cards with a short preview and references to
     [], []).inputs
   // A short text is inline; a longer one shows a preview and reads through the Input's resource.
   expect([page.items.length, page.items[0], page.items[1], page.next_resource, page.next_offset]).toEqual([10, { kind: 'text', at: '12',
-    preview: expect.stringMatching(/^Long note\./), chars: 110, read: `ticket/ticket-1/input/${key('text:long')}` },
+    preview: expect.stringMatching(/^Long note\./) as unknown, chars: 110, read: `ticket/ticket-1/input/${key('text:long')}` },
   { kind: 'text', at: '11', text: 'Note 11', undelivered: true }, 'ticket/ticket-1/inputs', 10])
 })
 it('shows a ticket card\'s state from a closed set: the open ticket\'s stage, the ended ticket\'s outcome', () => {

@@ -94,7 +94,7 @@ it('retries a failed effect after a delay that doubles up to its maximum, and re
     const calls = run.mock.calls.length
     clock += 1; await effects.idle()
     expect(run).toHaveBeenCalledTimes(calls + 1)
-    if (wait === 2000) expect(health.notice).toMatchObject({ state: 'error', detail: expect.stringContaining('1 waiting since 2026-09-09T00:00:00.000Z; the last failure: Error: session busy') })
+    if (wait === 2000) expect(health.notice).toMatchObject({ state: 'error', detail: expect.stringContaining('1 waiting since 2026-09-09T00:00:00.000Z; the last failure: Error: session busy') as unknown })
   }
   fail = false
   clock += 3000; await effects.idle()

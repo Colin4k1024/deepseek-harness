@@ -21,7 +21,7 @@ const machine = (overrides: Partial<Machine> = {}): Machine => ({ ...machineOf(C
 /** Runs commands like worker shells do, but locally: the stand-ins first on PATH, then the system's git. */
 const probe: Probe = async argv => (await exec(argv[0]!, argv.slice(1), { env: { PATH: path, HOME: dir } })).stdout
 const setupError = (place: string, code: string, values: Record<string, unknown> = {}): Record<string, unknown> =>
-  expect.objectContaining({ place, code, values: expect.objectContaining(values) })
+  expect.objectContaining({ place, code, values: expect.objectContaining(values) as unknown })
 
 beforeEach(async () => {
   dir = mkdtempSync(join(tmpdir(), 'deployment-'))
@@ -79,7 +79,7 @@ describe('setup', () => {
     // Signed in, but the account cannot read the repository, or the CLI names no account.
     const unreadable = program(join(dir, 'bin', 'gh-outsider'),
       'case "$*" in\n  "api user") echo \'{"login":"Agent-Bot","id":7}\' ;;\n  *) echo \'HTTP 404\' >&2; exit 1 ;;\nesac')
-    const output = expect.stringContaining('HTTP 404') as unknown
+    const output: unknown = expect.stringContaining('HTTP 404') as unknown
     await needs('github', 'repositoryUnreadable', { account: 'Agent-Bot', repository: 'acme/widgets', output }, { repository, cli: unreadable })
     await needs('github', 'agentCliNoAccount', {}, { repository, cli: program(join(dir, 'bin', 'gh-anonymous'), 'echo \'{}\'') })
     expect(() => executable('nothing-here', join(dir, 'bin'))).toThrow('nothing-here is not an executable file on PATH')

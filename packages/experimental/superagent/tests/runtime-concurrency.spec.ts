@@ -14,7 +14,7 @@ beforeEach(async () => { h = await startRuntime() })
 afterEach(async () => { await h.stop() })
 const lark = { users: [{ member_id: MEMBER, name: 'Alice' }], has_more: false }
 const linkLookedUp = (messageId: string) =>
-  vi.mocked(Commands.prototype.lark).mock.calls.some(([args]) => args.includes('+messages-mget') && args.includes(messageId))
+  vi.spyOn(Commands.prototype, 'lark').mock.calls.some(([args]) => args.includes('+messages-mget') && args.includes(messageId))
 /** Hold the first resolution of a Session until `gate` resolves; `held()` says whether it began. */
 function holdSession(sessionId: string, gate: Promise<void>) {
   let held = false
@@ -31,7 +31,7 @@ const idle = (sessionId: string) => {
 it('evaluates a message that arrives on a thread while an earlier candidate\'s card waits for its link, in the thread\'s next Eval', async () => {
   const gate = deferred()
   // The first candidate's source link lookup is slow; Feishu allows it up to linkTimeoutMs.
-  vi.mocked(Commands.prototype.lark).mockImplementation(async (args) => { if (args.includes('+messages-mget') && args.includes('om_1')) await gate.promise; return lark })
+  vi.spyOn(Commands.prototype, 'lark').mockImplementation(async (args) => { if (args.includes('+messages-mget') && args.includes('om_1')) await gate.promise; return lark })
   await h.runtime.settings.pause(true, 'panel')
   const a1 = feishu('1', '@bot 修 A'), b1 = feishu('2', '@bot 修 B'), b2 = feishu('3', '@bot B 还有这个', { root_id: 'om_2' })
   h.runtime.receive(a1); h.runtime.receive(b1)
@@ -185,7 +185,7 @@ it('records on the ticket that its worker Session could not be created again', a
     return h.resolveDefault(id)
   })
   h.runtime.receive(feishu('2', '一的补充', { mentions: [], root_id: 'om_1', sender_id: 'ou_guest' })); await h.runtime.idle()
-  expect(h.runtime.store.tickets.get(one.ticket.id)).toMatchObject({ delivery: { error: expect.stringContaining('The Session store is offline') } })
+  expect(h.runtime.store.tickets.get(one.ticket.id)).toMatchObject({ delivery: { error: expect.stringContaining('The Session store is offline') as unknown } })
 })
 
 it('lets a worker go on after a passing provider failure, three times, before its ticket fails', async () => {
@@ -205,7 +205,7 @@ it('lets a worker go on after a passing provider failure, three times, before it
   expect(latestAssignment(ticket())?.report).toBeUndefined()
   // The fourth passing failure fails the ticket, as any other failure does at once.
   fail(busy)
-  await vi.waitFor(() =>{  expect(latestAssignment(ticket())?.report).toMatchObject({ state: 'failed', summary: expect.stringContaining('Service Unavailable') }) })
+  await vi.waitFor(() =>{  expect(latestAssignment(ticket())?.report).toMatchObject({ state: 'failed', summary: expect.stringContaining('Service Unavailable') as unknown }) })
 })
 describe('a worker that goes on after a passing failure', () => {
   const busy = () => Object.assign(new Error('Service Unavailable'), { status: 503 })
@@ -521,7 +521,7 @@ describe('a worker whose work runs in the background', () => {
     await new Promise(resolve => setTimeout(resolve, 20))
     drain.resolve()
     // The message reaches the worker after the stop's cancel, which would have dropped it.
-    const message = expect.objectContaining({ sessionId: one.sessionId, text: expect.stringContaining('按钮再大一点') })
+    const message: unknown = expect.objectContaining({ sessionId: one.sessionId, text: expect.stringContaining('按钮再大一点') as unknown })
     await vi.waitFor(() =>{  expect(h.deliveries).toHaveBeenCalledWith(message) }, { timeout: 5000 })
     const delivered = h.deliveries.mock.calls.findIndex(([call]) => call.sessionId === one.sessionId && call.text.includes('按钮再大一点'))
     expect(h.deliveries.mock.invocationCallOrder[delivered]).toBeGreaterThan(agent.cancel.mock.invocationCallOrder.at(-1)!)
@@ -543,7 +543,7 @@ describe('a worker whose work runs in the background', () => {
     // The delivery waits for the release, so the effects are not idle until it ends.
     h.runtime.executor.resume()
     await new Promise(resolve => setTimeout(resolve, 20))
-    const late = expect.objectContaining({ sessionId: one.sessionId, text: expect.stringContaining('One more thing') })
+    const late: unknown = expect.objectContaining({ sessionId: one.sessionId, text: expect.stringContaining('One more thing') as unknown })
     expect(h.deliveries).not.toHaveBeenCalledWith(late)
     const reports = () => h.relays(h.runtime.masterId).filter(item => item.kind === 'worker_report').length
     const reported = reports()
@@ -600,7 +600,7 @@ describe('a worker whose work runs in the background', () => {
     h.runtime.executor.resume()
     expect(h.agents.get(one.sessionId)!.cancel).toHaveBeenCalledWith({ kind: 'user' }, { keepInbox: true })
     await vi.waitFor(() =>{  expect(h.jobs.service.kill).toHaveBeenCalledWith(job, one.sessionId, expect.any(String)) })
-    expect(h.runtime.store.tickets.get(one.ticket.id)!.inputs).toEqual([expect.objectContaining({ kind: 'text', text: expect.stringContaining('host restarted') })])
+    expect(h.runtime.store.tickets.get(one.ticket.id)!.inputs).toEqual([expect.objectContaining({ kind: 'text', text: expect.stringContaining('host restarted') as unknown })])
   })
   it('stops a ticket whose worker Session was never created without a health error, and goes on past a failing kill', async () => {
     const settings = h.runtime.store.settings()
@@ -906,7 +906,7 @@ describe('the Executor\'s parts', () => {
       at: '2026-09-01T00:00:00Z', text: 'Which page?', meta: {} } as Trigger
     const reply = { ...asked, id: 'tr2', text: 'The login page. '.repeat(50) }
     const card = triggerMessage(reply, { source_url: 'https://x' }, 'see the log', asked)
-    expect(card).toEqual({ trigger_id: 'tr2', from: 'ou_a', thread: 'feishu:oc:om_1', at: '2026-09-01T00:00:00Z', text: expect.stringMatching(/^The login page\./),
+    expect(card).toEqual({ trigger_id: 'tr2', from: 'ou_a', thread: 'feishu:oc:om_1', at: '2026-09-01T00:00:00Z', text: expect.stringMatching(/^The login page\./) as unknown,
       chars: reply.text.length, read: 'trigger/tr2', source_url: 'https://x', routing_note: 'see the log', replies_to: { trigger_id: 'tr1', preview: 'Which page?' } })
     expect(card.text).toHaveLength(601)
     expect(triggerMessage(asked, {})).toEqual({ trigger_id: 'tr1', from: 'ou_a', thread: 'feishu:oc:om_1', at: asked.at, text: 'Which page?' })
@@ -934,7 +934,7 @@ describe('the Executor\'s parts', () => {
       mandate: { strength: 'explicit' }, origin: { triggerId: 'tr1' } } as unknown as Ticket
     expect(reportRelay(ticket, { state: 'progress', summary: 'halfway' })).toBeUndefined()
     expect(reportRelay(ticket, { state: 'blocked', summary: 'need input', question: 'Which color?' }))
-      .toMatchObject({ id: 'attention:t1:a1', text: expect.stringContaining('"kind":"worker_attention"') })
+      .toMatchObject({ id: 'attention:t1:a1', text: expect.stringContaining('"kind":"worker_attention"') as unknown })
     const ready = reportRelay({ ...ticket, attention: undefined } as unknown as Ticket, { state: 'ready', summary: 'Done',
       answers: 'tr9' })!
     expect(ready.id).toMatch(/^report:/)

@@ -119,7 +119,7 @@ describe('eval', () => {
     expect(ticket).toMatchObject({ title: 'Fix', mandate: { strength: 'explicit', policyVersion: 'v1', basis: { via: 'listed' }, actor: member, scope: 'small' }, channels: [trigger('1').channel],
       origin: { triggerId: '1', triggerIds: ['1'] } })
     expect(ticket).not.toHaveProperty('ended')
-    expect(ticket.assignments).toEqual([expect.objectContaining({ state: 'running', startedAt: expect.any(String) })])
+    expect(ticket.assignments).toEqual([expect.objectContaining({ state: 'running', startedAt: expect.any(String) as unknown })])
     expect(h.repo.threads.get('chat:t1')?.subscriptions).toEqual([ticket.id])
     expect(h.outbox).toEqual([{ id: key('ack', '1'), channel: trigger('1').channel, text: 'ok', kind: 'acknowledgement', ticketId: ticket.id }])
     expect(h.executor.start).toHaveBeenCalledOnce()
@@ -193,7 +193,7 @@ describe('subscription fan-out', () => {
     expect(ticket.inputs).toEqual([expect.objectContaining({ kind: 'trigger', triggerId: '2' })])
     expect(ticket.undelivered).toEqual([])
     expect(h.delivered).toEqual([[ticket.id, ticket.inputs[0]!.id]])
-    expect(h.repo.triggers.disposition('2')).toEqual({ fanout: [ticket.id], at: expect.any(String) })
+    expect(h.repo.triggers.disposition('2')).toEqual({ fanout: [ticket.id], at: expect.any(String) as unknown })
     // No Eval, so no Decision and no timeout, and the Thread's queue stays free for a new request.
     expect([h.requests.length, h.repo.threads.get('chat:t1')!.pending, h.repo.decisions.byThread('chat:t1').length]).toEqual([requests, [],
       1])
@@ -317,7 +317,7 @@ describe('resume and stop', () => {
     const input = { id: 'waiting', kind: 'trigger' as const, triggerId: '2', at: stored.updatedAt, human: true as const }
     h.repo.tickets.save({ ...stored, inputs: [...stored.inputs, input], undelivered: ['waiting'] })
     h.pump()
-    expect(h.repo.tickets.get(ticketId)).toMatchObject({ inputs: expect.arrayContaining([expect.objectContaining({ kind: 'resumed' })]) })
+    expect(h.repo.tickets.get(ticketId)).toMatchObject({ inputs: expect.arrayContaining([expect.objectContaining({ kind: 'resumed' })]) as unknown })
     expect(h.repo.tickets.get(ticketId)).not.toHaveProperty('ended')
   })
   it('resumes an ended ticket at once when a person attaches a message to it', async () => {
@@ -333,7 +333,7 @@ describe('resume and stop', () => {
     const ticketId = await ended(h, 'human')
     expect(h.executor.stop).toHaveBeenCalledOnce()
     h.engine.receive(trigger('2')); h.pump()
-    expect(h.repo.tickets.get(ticketId)).toMatchObject({ ended: expect.objectContaining({ by: 'human' }) })
+    expect(h.repo.tickets.get(ticketId)).toMatchObject({ ended: expect.objectContaining({ by: 'human' }) as unknown })
     expect(h.executor.start).toHaveBeenCalledOnce()
   })
   it('keeps a ticket ended when its mandate no longer passes the current policy', async () => {
@@ -352,7 +352,7 @@ describe('resume and stop', () => {
       strength: 'inferred', reason: [{ code: 'stopNotExplicit' }] })
     h.engine.receive(trigger('3')); h.pump()
     expect(h.engine.decide('3', { kind: 'stop', ticketId: decision.ticketId!, reason: 'human said stop' }).kind).toBe('stop')
-    expect(h.repo.tickets.get(decision.ticketId!)).toMatchObject({ ended: expect.objectContaining({ by: 'human' }) })
+    expect(h.repo.tickets.get(decision.ticketId!)).toMatchObject({ ended: expect.objectContaining({ by: 'human' }) as unknown })
     expect(h.executor.stop).toHaveBeenCalledOnce()
   })
 })
@@ -399,7 +399,7 @@ describe('hand-back', () => {
       h.engine.receive(trigger('2')); h.engine.receive(trigger('3', { actor: guest })); h.pump()
       expect(h.engine.handback(ticketId, '2', 'A new request')).toBe(true); h.pump()
       expect(h.requests.at(-1)).toMatchObject({ strength: 'explicit', triggers: [{ id: '2' }] })
-      expect(h.repo.triggers.disposition('2')!.handbacks).toEqual([{ ticketId, reason: 'A new request', at: expect.any(String) }])
+      expect(h.repo.triggers.disposition('2')!.handbacks).toEqual([{ ticketId, reason: 'A new request', at: expect.any(String) as unknown }])
       h.decide(h.requests.at(-1)!, { kind: 'ignore', reason: 'chat' })
       expect(() => h.engine.handback(ticketId, '2', 'Again')).toThrow(new UserError('handedBack'))
       expect(h.engine.handback(ticketId, '3', 'A guest asks for more')).toBe(true); h.pump()
@@ -421,7 +421,7 @@ describe('hand-back', () => {
       for (const id of ['2', '3', '4']) expect(h.engine.handback(ticketId, id, 'Not this ticket')).toBe(false)
       expect([h.repo.threads.get('chat:t1')!.pending, h.repo.threads.get('chat:issue')!.pending]).toEqual([[], []])
       // The hand-back is recorded all the same, so the main Session does not attach the message back.
-      expect(h.repo.triggers.disposition('4')!.handbacks).toEqual([{ ticketId, reason: 'Not this ticket', at: expect.any(String) }])
+      expect(h.repo.triggers.disposition('4')!.handbacks).toEqual([{ ticketId, reason: 'Not this ticket', at: expect.any(String) as unknown }])
       expect(() => h.engine.attach(ticketId, '4')).toThrow(new UserError('handedBackHere'))
     })
   it('leaves a message the main Session attached to a ticket to its worker, whose hand-back sends it to Eval', () => {
@@ -664,7 +664,7 @@ describe('follow-up owners', () => {
     // attached goes back with the later one, and each candidate says why.
     h.engine.markUnrelated(ticketId, 'chat:x', 'about something else')
     expect(h.repo.threads.get('chat:x')!.pending).toEqual(['2', '3'])
-    expect(h.repo.triggers.disposition('3')!.handbacks).toEqual([{ ticketId, reason: 'about something else', at: expect.any(String) }])
+    expect(h.repo.triggers.disposition('3')!.handbacks).toEqual([{ ticketId, reason: 'about something else', at: expect.any(String) as unknown }])
     h.pump()
     expect(h.requests.at(-1)!.triggers.map(item => item.id)).toEqual(['2', '3'])
   })
@@ -713,7 +713,7 @@ describe('interrupted assignments', () => {
     const ticket = h.repo.tickets.get(interrupted)!
     expect(ticket.assignments).toEqual([expect.objectContaining({ id: first.id, state: 'ended', endedReason: 'hostRestarted' }),
       expect.objectContaining({ state: 'pending' })])
-    expect(ticket.inputs).toEqual([expect.objectContaining({ kind: 'text', text: expect.stringContaining('The host restarted') })])
+    expect(ticket.inputs).toEqual([expect.objectContaining({ kind: 'text', text: expect.stringContaining('The host restarted') as unknown })])
     expect(ticket.undelivered).toEqual([ticket.inputs[0]!.id])
     expect(h.executor.start).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ id: interrupted }), ticket.assignments[1])
     // A worker that waits keeps its Session and gets what waits for it.
@@ -812,7 +812,7 @@ describe('worker reports', () => {
     expect(outcome('ready', false)).toMatchObject({ ended: { outcome: 'completed' } })
     expect(outcome('ready', false)).not.toHaveProperty('attention')
     expect(outcome('ready', true)).toMatchObject({ follows: [{ thread: 'gh:pr-9', own: false }, { thread: 'gh:pr-10', own: true }],
-      assignments: [expect.objectContaining({ report: expect.objectContaining({ state: 'ready' }) })] })
+      assignments: [expect.objectContaining({ report: expect.objectContaining({ state: 'ready' }) as unknown })] })
     expect(outcome('ready', true)).not.toHaveProperty('ended')
     expect(outcome('ready', true)).not.toHaveProperty('attention')
     expect(outcome('ready', true, true)).toMatchObject({ ended: { outcome: 'merged' } })
@@ -1123,7 +1123,7 @@ describe('ticket commands', () => {
     expect(h.repo.tickets.get(ticketId)!.inputs).toEqual([])
     h.engine.report(ticketId, { state: 'waiting', summary: 'idle' })
     expect(h.engine.requestStatus(ticketId)).toBe(true)
-    expect(h.repo.tickets.get(ticketId)!.inputs).toEqual([expect.objectContaining({ kind: 'text', text: expect.stringContaining('status-only') })])
+    expect(h.repo.tickets.get(ticketId)!.inputs).toEqual([expect.objectContaining({ kind: 'text', text: expect.stringContaining('status-only') as unknown })])
     h.engine.report(ticketId, { state: 'failed', summary: 'broke' })
     const retried = h.engine.retryTicket(ticketId)
     expect(retried.assignments).toEqual([expect.objectContaining({ state: 'ended', endedReason: 'retried' }), expect.objectContaining({ state: 'pending' })])

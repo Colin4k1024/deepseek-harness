@@ -26,13 +26,13 @@ it('delivers a follow-up to the worker and tells the main Session with a card, w
     text: '顺便把标题也改了',
     replies_to: { trigger_id: ticket.origin.triggerId, preview: '@bot 修一下回归' },
     delivered_to: [{ ticket_id: ticket.id, title: ticket.title, state: 'working' }],
-    note: expect.stringContaining('worker has it and decides') }])
+    note: expect.stringContaining('worker has it and decides') as unknown }])
   // No candidate, no Eval, no Decision: nothing waits on the main Session, and the Thread's queue stays free.
   expect(h.candidates()).toEqual([])
   expect(h.runtime.store.threads.get(THREAD)).toMatchObject({ pending: [] })
   expect(h.runtime.store.threads.get(THREAD)).not.toHaveProperty('evaluating')
   expect(h.runtime.store.decisions.byThread(THREAD)).toHaveLength(1)
-  expect(h.runtime.store.triggers.disposition(message.id)).toEqual({ fanout: [ticket.id], at: expect.any(String) })
+  expect(h.runtime.store.triggers.disposition(message.id)).toEqual({ fanout: [ticket.id], at: expect.any(String) as unknown })
 })
 
 it('sends a person\'s message that reaches no ticket, such as only one a person stopped, to Eval as before', async () => {
@@ -74,7 +74,7 @@ it('leaves a delivered follow-up to its ticket\'s worker: the main Session may s
     await expect(h.route({ kind: 'attach', ticket_id: other.ticket.id, trigger_id: attach })).rejects.toThrow(decides)
     await h.runTool(sessionId, 'orchestrator_trigger_handback', { trigger_id: attach, reason: 'It is about the other request.' })
     expect(await h.route({ kind: 'attach', ticket_id: other.ticket.id, trigger_id: attach }))
-      .toMatchObject({ ticket: expect.objectContaining({ ticket_id: other.ticket.id }) })
+      .toMatchObject({ ticket: expect.objectContaining({ ticket_id: other.ticket.id }) as unknown })
     const work = await settle('6', '另外把导出按钮也加上')
     const request = { trigger_id: work, title: '导出按钮', worktree_name: 'export', acknowledgement: '收到，加导出按钮。' }
     await expect(h.route({ kind: 'accept', ...request })).rejects.toThrow(decides)
@@ -274,7 +274,7 @@ it('keeps a listed member\'s request on a ticket\'s thread to that ticket, so it
   // The worker has it and decides; the main Session hears of it and cannot open a second ticket for it.
   expect(h.relays(sessionId)).toEqual([expect.objectContaining({ trigger_id: request.id })])
   expect(notices(h)).toEqual([expect.objectContaining({ trigger_id: request.id,
-    note: expect.stringContaining('orchestrator_route kind stop') })])
+    note: expect.stringContaining('orchestrator_route kind stop') as unknown })])
   await expect(h.route({ kind: 'accept', trigger_id: request.id, title: '概览页按钮',
     worktree_name: 'overview-button', acknowledgement: '收到。' })).rejects.toThrow(/its worker decides whether it belongs there/)
   // The worker takes it as within its ticket and says so.
