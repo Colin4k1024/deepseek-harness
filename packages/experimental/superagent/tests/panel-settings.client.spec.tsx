@@ -1,11 +1,12 @@
 // @vitest-environment jsdom
 // The Settings groups, drafts, save bars and history.
-import { act } from 'react'
+import { Component, act, useState, type ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
-import { Fields } from '../src/client/settings-kit.tsx'
+import { Fields, ModelField, SourceField, numberOf, useSettings } from '../src/client/settings-kit.tsx'
 import { expect, it, onTestFinished } from 'vitest'
 import { zh } from '../src/client/locales.ts'
-import { usePanel, mount, remount, settle, all, find, tab, click, type, text, field } from './fixtures/panel.client.tsx'
+import { PanelProvider } from '../src/client/provider.tsx'
+import { translator, usePanel, mount, remount, settle, all, find, tab, click, type, text, field } from './fixtures/panel.client.tsx'
 import { server } from './fixtures/panel-server.client.ts'
 
 usePanel()
@@ -145,3 +146,135 @@ it('lists the settings groups stages first, opens each stage\'s group from its s
     await click(tab(zh['tab.settings']))
     expect(document.querySelector('.dt-settings-link[aria-current="page"]')?.textContent).toBe(zh['promptPart.runtime/work'])
   })
+
+
+it('renders every Source field form and reports their edits, including rows, refreshes, and facts', async () => {
+  const routes: object[] = []
+  const container = document.createElement('div'); document.body.append(container)
+  const root = createRoot(container)
+  onTestFinished(() => { act(() => { root.unmount() }); container.remove() })
+  const refreshes: (string[] | Error)[] = [['新群'], [], new Error('lark-cli: token expired')]
+  let refreshCall = 0
+  const initial = {
+    switch: false,
+    select: undefined,
+    number: 0,
+    choose: 'unknown',
+    readonly: 'fixed',
+    fact: undefined,
+    rows: [{ id: 'one', name: 'One' }, ...Array.from({ length: 6 }, (_, index) => ({ id: `r${index}`, name: `R${index}` }))],
+    plainRows: [{ id: 'saved', name: 'Saved' }],
+  }
+  function Harness() {
+    const [value, setValue] = useState(initial)
+    const edit = (key: keyof typeof initial) => (next: unknown) => { setValue({ ...value, [key]: next }) }
+    return <PanelProvider t={translator(zh)} navigate={(route) => { routes.push(route) }}>
+      <SourceField field={{ type: 'switch', key: 'switch', label: { zh: '开关', en: 'Switch' } }} value={value.switch} saved={false} fact={undefined}
+        labels={{}} onChange={edit('switch')} />
+      <SourceField field={{ type: 'select', key: 'select', label: { zh: '选择', en: 'Select' }, options: [{ value: 'a', label: { zh: '甲', en: 'A' } },
+        { value: 'b', label: { zh: '乙', en: 'B' } }] }} value={value.select} saved={undefined} fact={undefined} labels={{}}
+      onChange={edit('select')} />
+      <SourceField field={{ type: 'number', key: 'number', label: { zh: '数量', en: 'Count' }, min: 0, max: 10 }} value={value.number}
+        saved={0} fact={undefined} labels={{}} onChange={edit('number')} />
+      <SourceField field={{ type: 'text', key: 'choose', label: { zh: '已选', en: 'Chosen' }, choose: { zh: '选择成员', en: 'Choose' } }}
+        value={value.choose} saved={'unknown'} fact={undefined} labels={{ known: '已知' }} onChange={edit('choose')} />
+      <SourceField field={{ type: 'text', key: 'readonly', label: { zh: '只读', en: 'Read-only' }, readonly: true }} value={value.readonly}
+        saved={'fixed'} fact={undefined} labels={{}} onChange={edit('readonly')} />
+      <SourceField field={{ type: 'fact', key: 'fact', label: { zh: '事实', en: 'Fact' }, settings: 'deployment' }} value={undefined}
+        saved={undefined} fact={{ zh: '部署完成', en: 'Deployed' }} labels={{}} onChange={edit('fact')} />
+      <SourceField field={{ type: 'rows', key: 'rows', label: { zh: '行', en: 'Rows' }, hint: { zh: '提示', en: 'Hint' }, columns: [
+        { key: 'id', label: { zh: '标识', en: 'ID' }, type: 'text', choose: { zh: '选择行', en: 'Choose row' }, refresh: { zh: '刷新', en: 'Refresh' } },
+        { key: 'name', label: { zh: '名称', en: 'Name' }, type: 'text', optional: true },
+        { key: 'mode', label: { zh: '模式', en: 'Mode' }, type: 'select', options: [{ value: 'auto', label: { zh: '自动', en: 'Auto' } },
+          { value: 'manual', label: { zh: '手动', en: 'Manual' } }] },
+      ] }} value={value.rows} saved={[{ id: 'one', name: 'One' }]} fact={undefined}
+      labels={{ one: '一号', r0: '零号' }} refreshLabels={async () => {
+        const next = refreshes[refreshCall++]!
+        return next instanceof Error ? Promise.reject(next) : next
+      }} onChange={edit('rows')} />
+      <SourceField field={{ type: 'rows', key: 'plainRows', label: { zh: '普通行', en: 'Plain rows' }, columns: [
+        { key: 'id', label: { zh: '普通标识', en: 'Plain ID' }, type: 'text' },
+        { key: 'name', label: { zh: '普通名称', en: 'Plain name' }, type: 'text' },
+      ] }} value={value.plainRows} saved={[{ id: 'saved', name: 'Saved' }]} fact={undefined} labels={{ saved: '已保存' }}
+      onChange={edit('plainRows')} />
+    </PanelProvider>
+  }
+  await act(async () => { root.render(<Harness />) }); await settle()
+
+  await click('开关')
+  expect([...document.querySelectorAll('[role="switch"]')].at(-1)!.getAttribute('aria-checked')).toBe('true')
+  await click('乙')
+  const number = field<HTMLInputElement>('数量')
+  await type(number, ''); expect(number.value).toBe('')
+  await type(number, '7'); expect(number.value).toBe('7')
+  expect(numberOf('')).toBeNull(); expect(numberOf(' 4 ')).toBe(4)
+  expect(field<HTMLInputElement>('只读').readOnly).toBe(true)
+  expect(text()).toContain('部署完成')
+  await click(zh['openSettingsOf.deployment'])
+  expect(routes).toEqual([{ page: 'settings', query: { group: 'deployment', focus: undefined } }])
+
+  const summary = document.querySelector('.dt-rows-summary')!
+  expect(summary.getAttribute('aria-expanded')).toBe('false')
+  expect(summary.textContent).toContain('One')
+  await click(summary as HTMLElement)
+  expect(summary.getAttribute('aria-expanded')).toBe('true')
+  expect([...document.querySelectorAll('.dt-rows')].at(-2)!.children.length).toBe(7)
+  await click(summary as HTMLElement)
+  await click(find('刷新', '.dt-subhead-actions button'))
+  expect([...document.querySelectorAll('.dt-toast')].at(-1)?.textContent).toBe('列表已更新，新增：新群')
+  await click(find('刷新', '.dt-subhead-actions button'))
+  expect([...document.querySelectorAll('.dt-toast')].at(-1)?.textContent).toBe(zh.labelsCurrent)
+  await click(find('刷新', '.dt-subhead-actions button'))
+  expect([...document.querySelectorAll('.dt-toast')].at(-1)?.textContent).toBe('读取失败，列表保持不变：lark-cli: token expired')
+
+  const plain = document.querySelector('.dt-rows .dt-row-label')!
+  expect(plain.textContent).toBe('已保存')
+  const plainRows = () => [...document.querySelectorAll('.dt-rows')].at(-1)!
+  const plainField = plainRows().closest('.dt-field')!
+  await click([...plainField.querySelectorAll('.dt-subhead-actions button')].find(button => button.textContent === zh.addRow)!)
+  await type(plainRows().querySelector('.dt-rows-item input[aria-label="普通名称"]') as HTMLInputElement, 'Added')
+  expect((plainRows().querySelector('.dt-rows-item input[aria-label="普通标识"]') as HTMLInputElement).value).toBe('')
+  await click(plainRows().querySelector('.dt-rows-item button')!)
+  expect([...plainRows().children].length).toBe(1)
+})
+
+it('reports a failed model catalog read and clears a model by clearing every part', async () => {
+  const container = document.createElement('div'); document.body.append(container)
+  const root = createRoot(container)
+  onTestFinished(() => { act(() => { root.unmount() }); container.remove() })
+  server.down = true
+  function ModelHarness() {
+    const [value, setValue] = useState<{ provider: string; model: string; reasoningEffort?: string } | null>({ provider: 'other', model: 'other-model',
+      reasoningEffort: 'low' })
+    return <PanelProvider t={translator(zh)}>
+      <ModelField id="test-model" value={value} onChange={setValue} />
+      <pre aria-label="model value">{JSON.stringify(value)}</pre>
+    </PanelProvider>
+  }
+  await act(async () => { root.render(<ModelHarness />) }); await settle()
+  expect(text()).toContain(zh.defaultModelUnavailable)
+  expect(text()).toContain(zh.modelCatalogError.replace('{error}', zh.hostNotRunning))
+
+  server.down = false
+  await act(async () => { root.render(<ModelHarness key="catalog" />) }); await settle()
+  expect(text()).toContain(zh.defaultModel.replace('{model}', 'host / default'))
+  expect([...document.querySelectorAll<HTMLOptionElement>('#test-model-providers option')].map(option => option.value)).toEqual(['worker-provider'])
+  const [provider, model, effort] = all<HTMLInputElement>('.dt-model input')
+  await type(provider, ''); await type(model, ''); await type(effort, '')
+  expect(text()).toContain('host / default')
+  expect(find('model value', '[aria-label="model value"]')?.textContent).toBe('null')
+})
+
+it('refuses a settings hook outside its provider', () => {
+  const container = document.createElement('div'); document.body.append(container)
+  const root = createRoot(container)
+  onTestFinished(() => { act(() => { root.unmount() }); container.remove() })
+  class Boundary extends Component<{ children: ReactNode }, { message?: string }> {
+    override state: { message?: string } = {}
+    override render() { return this.state.message ?? this.props.children }
+    override componentDidCatch(failure: Error) { this.setState({ message: failure.message }) }
+  }
+  function Outside() { useSettings(); return null }
+  act(() => { root.render(<Boundary><Outside /></Boundary>) })
+  expect(container.textContent).toBe('A settings block rendered outside the settings')
+})

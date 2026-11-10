@@ -508,3 +508,73 @@ it('gives a worker the other messages of the request its ticket was accepted fro
   expect(page).toMatchObject({ batch: [{ trigger_id: other, read: `trigger/${other}` }] })
   expect(await h.runTool(`worker-${ticket.id}`, 'orchestrator_read', { resource: `trigger/${other}` })).toMatchObject({ trigger_id: other })
 })
+
+
+it('reads GitHub and Feishu originals from offset zero, then later offsets from the session cache', async () => {
+  const { trigger } = await h.acceptedTicket(feishu('1', '@bot 修一下回归'))
+  vi.spyOn(Commands.prototype, 'gh').mockResolvedValue({
+    id: 101, number: 1, state: 'open', html_url: 'https://github.com/acme/widgets/issues/1', user: { login: 'bob' },
+    created_at: '2026-09-09T00:00:00Z', title: 'One', body: 'Body',
+  })
+  await expect(read('github/issues/1', { offset: 1 })).rejects.toThrow('Read this GitHub resource from offset 0 first')
+  expect(await read('github/issues/1')).toMatchObject({ resource: 'github/issues/1', next_offset: null })
+  expect(await read('github/issues/1', { offset: 1 })).toMatchObject({ offset: 1 })
+
+  const source = { message_id: trigger.meta.messageId, chat_id: CHAT, root_id: 'om_1' }
+  const message = { message_id: 'om_1', chat_id: CHAT, msg_type: 'text', content: 'hello',
+    sender: { id: 'ou_alice', sender_type: 'user' }, create_time: '2026-09-09 00:00:01' }
+  vi.spyOn(Commands.prototype, 'lark')
+    .mockResolvedValueOnce({ items: [source] })
+    .mockResolvedValueOnce({ messages: [message] })
+  const resource = `feishu/${trigger.id}/root`
+  await expect(read(resource, { offset: 1 })).rejects.toThrow('Read this Feishu resource from offset 0 first')
+  expect(await read(resource)).toMatchObject({ resource })
+  expect(await read(resource, { offset: 1 })).toMatchObject({ offset: 1 })
+})
+
+it('reads prompt revisions and previews, and keeps workers to revisions their Session may read', async () => {
+  expect(await read('prompts/0')).toMatchObject({ resource: 'prompts/0' })
+  expect(await read('prompts/current')).toMatchObject({ resource: 'prompts/0' })
+  await expect(read('prompts/missing')).rejects.toThrow('Unknown or inaccessible prompt version')
+  const preview = await h.runTool(h.runtime.masterId, 'orchestrator_prompts_save',
+    { config: defaultPrompts(), preview: true }) as { previews: { read: string }[] }
+  expect(preview.previews).toHaveLength(2)
+  expect(await read(preview.previews[0]!.read)).toMatchObject({ resource: preview.previews[0]!.read })
+  await expect(read('prompt-preview/missing')).rejects.toThrow('Unknown preview for this Session')
+
+  const { ticket, sessionId } = await h.acceptedTicket(feishu('2', '@bot 修另一个'))
+  expect(await h.runTool(sessionId, 'orchestrator_read', { resource: 'prompts/current' }))
+    .toMatchObject({ resource: 'prompts/0' })
+  await expect(h.runTool(sessionId, 'orchestrator_read', { resource: 'prompts/defaults' }))
+    .rejects.toThrow('Unknown or inaccessible prompt version')
+  h.runtime.store.set(KV.sessions.prompts(sessionId), [h.runtime.prompts.current().revision])
+  const before = h.runtime.prompts.current().revision
+  const saved = h.runtime.prompts.save({ ...defaultPrompts(), scope: `Scope ${before + 1}.` }, before, 'panel')
+  await expect(h.runTool(sessionId, 'orchestrator_read', { resource: `prompts/${saved.revision}` }))
+    .rejects.toThrow('Unknown or inaccessible prompt version')
+  expect(h.runtime.store.tickets.get(ticket.id)?.id).toBe(ticket.id)
+})
+
+it('refuses malformed ticket sections and records a worker only on its own ticket', async () => {
+  const { ticket, sessionId } = await h.acceptedTicket(feishu('3', '@bot 修第三个'))
+  const base = `ticket/${ticket.id}`
+  for (const resource of [
+    `${base}/assignments/extra`, `${base}/inputs/extra`, `${base}/message/not-a-number`, `${base}/message/999`,
+    `${base}/report/missing`, `${base}/input/missing`, `${base}/unknown`, `${base}/assignment/extra`,
+  ]) await expect(read(resource), resource).rejects.toThrow('Unknown')
+  await expect(read('ticket')).rejects.toThrow('Unknown context resource')
+  await expect(read('ticket/missing')).rejects.toThrow('Unknown ticket')
+  await expect(h.runTool(sessionId, 'orchestrator_read', { resource: 'ticket/other' })).rejects.toThrow('Ticket does not belong to this worker')
+})
+
+it('refuses unknown decisions, model providers, and triggers a worker did not reach', async () => {
+  const { ticket, sessionId } = await h.acceptedTicket(feishu('4', '@bot 修第四个'))
+  await expect(read('decision/missing')).rejects.toThrow('Unknown decision')
+  Object.assign(h.controller, { modelCatalog: vi.fn(async () => ({ default: { provider: 'p', model: 'm1' }, groups: [{ id: 'p', name: 'Provider', models: [{ id: 'm1', name: 'One' }] }], failures: [] })) })
+  await expect(read('models/missing')).rejects.toThrow('Unknown model provider')
+  await expect(read('trigger/missing')).rejects.toThrow('Unknown trigger')
+  const other = feishu('5', '@bot 另一个话题', { root_id: 'om_5' })
+  h.runtime.receive(other)
+  await expect(h.runTool(sessionId, 'orchestrator_read', { resource: `trigger/${other.id}` })).rejects.toThrow('Trigger does not belong to this worker')
+  expect(h.runtime.store.tickets.get(ticket.id)?.id).toBe(ticket.id)
+})

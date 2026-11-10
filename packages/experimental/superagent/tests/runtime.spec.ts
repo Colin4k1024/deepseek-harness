@@ -1,6 +1,6 @@
 import { Context } from '@deepseek-ai/cordis'
 import { bindScopeParent } from '@deepseek-ai/dsh-scope'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, rmSync, utimesSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { DatabaseSync } from 'node:sqlite'
 import { join } from 'node:path'
@@ -18,7 +18,8 @@ import { SCHEMA_VERSION, Store } from '../src/app/store.ts'
 import { TextCache } from '../src/app/cache.ts'
 import { KV } from '../src/kv.ts'
 import { SettingsSchema, policyVersion, type SettingsOrigin } from '../src/policy.ts'
-import type { Settings } from '../src/app/settings.ts'
+import { Settings } from '../src/app/settings.ts'
+import { Sessions } from '../src/app/sessions.ts'
 import { readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { feishuKind } from '../src/sources/feishu.ts'
 import { githubKind, pollRound } from '../src/sources/github.ts'
@@ -54,6 +55,7 @@ let controller: {
   rename: ReturnType<typeof vi.fn>
   prompt: ReturnType<typeof vi.fn>
   inspect: ReturnType<typeof vi.fn>
+  modelCatalog: ReturnType<typeof vi.fn>
 }
 type RegisteredTool = {
   name: string
@@ -362,6 +364,7 @@ beforeEach(async () => {
       throw new Error('Plugin delivery must not use user RPC')
     }),
     inspect: vi.fn(async () => ({ events: [] })),
+    modelCatalog: vi.fn(async () => ({ default: 'deepseek-chat', groups: [], failures: [] })),
   }
   jobs = jobRegistry()
   services = {
@@ -2148,4 +2151,229 @@ it('keeps the Policy the main Session judges by in its prompt, after admission a
   await runtime.settings.save('policy', { ...saved.policy, rules: rules.map(rule => ({ ...rule, enabled: false })) }, runtime.store.blockRevision('policy'), 'panel')
   expect(policy()).toContain('No rule is enabled: a proactive candidate can only be ignored.')
   expect(policy()).toContain('The accept mode and the rules decide proactive candidates only')
+})
+
+it('reports an after-commit failure without failing the committed transaction', () => {
+  const warn = vi.spyOn(runtime.ctx.logger, 'warn')
+  runtime.store.atomic(() => {
+    runtime.store.afterCommit(() => { throw new Error('after-commit callback failed') })
+  })
+  expect(warn.mock.calls.at(-1)).toEqual(['dsh-superagent: %s', 'Error: after-commit callback failed'])
+})
+
+it('reads a Feishu message page with the configured Source page size', async () => {
+  const message = feishu('31', '读一下这条消息')
+  await receive(message)
+  vi.spyOn(Commands.prototype, 'lark').mockImplementation(async (args) => {
+    if (args[0] === 'api') {
+      return { items: [{ message_id: 'om_31', chat_id: CHAT }] }
+    }
+    return { messages: [{ message_id: 'om_31', chat_id: CHAT, msg_type: 'text', sender: { id: MEMBER, sender_type: 'user' }, create_time: '1760000000' }] }
+  })
+  const page = await runTool(runtime.masterId, 'orchestrator_read', { resource: `feishu/${message.id}/message` })
+  expect(JSON.parse(String(page.text))).toMatchObject({ status: 'available', message: { id: 'om_31', from: 'ou_alice' } })
+})
+
+it('exposes Source setup state through the scoped Source context', () => {
+  const context = runtime.context(feishuKind)
+  expect(context.configured()).toBe(true)
+  expect(context.problem).toBeUndefined()
+})
+
+it('serves setup checks, model catalogs, and trigger requeues through the management routes', async () => {
+  const message = feishu('32', '@bot 检查一下')
+  await receive(message)
+  const request = vi.spyOn(runtime.passes, 'request')
+  expect(await api('POST', `triggers/${message.id}/requeue`)).toMatchObject({ status: 200, body: { queued: false } })
+  expect(await api('POST', 'setup/check')).toMatchObject({ status: 400, body: { code: 'setupComplete' } })
+  expect(await api('GET', 'models')).toMatchObject({ status: 200, body: { default: 'deepseek-chat' } })
+  expect(request).toHaveBeenCalled()
+  expect(controller.modelCatalog).toHaveBeenCalled()
+})
+
+it('reports Session resolution failures from ensure and prompt', async () => {
+  controller.resolveAgent.mockResolvedValueOnce({ error: { code: 'session/unavailable' } })
+  await expect(runtime.sessions.ensure('session-unavailable', directory, 'Unavailable', 'worker')).rejects.toEqual({ code: 'session/unavailable' })
+  controller.resolveAgent.mockResolvedValueOnce({ error: { code: 'session/unavailable' } })
+  await expect(runtime.sessions.prompt('session-unavailable', 'request', 'text', 'queue')).rejects.toEqual({ code: 'session/unavailable' })
+})
+
+it('injects a notice as complete when the main Session does not exist yet', async () => {
+  agents.delete(runtime.masterId)
+  runtime.sessions.notify('missing-main', { value: 1 }, 'Missing main')
+  await expect(runtime.sessions.delivery('missing-main')).resolves.toBe('injected')
+})
+
+it('clears a disposed Session and reports an active model budget retry', async () => {
+  const { sessionId } = await acceptedTicket()
+  const agent = agents.get(sessionId)!
+  expect(runtime.sessions.modelRetry(undefined)).toEqual({})
+  runtime.ctx.emit('session/event', agent.session, {
+    type: 'llm/retry', seq: 1, time: Date.now(), data: { turn: 1, step: 1, retryId: 'retry-1', provider: 'deepseek', retry: 1, failure: { type: 'budget_exceeded' } },
+  } as never)
+  expect(runtime.sessions.modelRetry(sessionId)).toMatchObject({ model_retry: { sessionId, provider: 'deepseek', attempts: 1 } })
+  expect(runtime.health.models).toMatchObject({ state: 'error' })
+  runtime.ctx.emit('agent/disposed', { agent } as never)
+  expect(tools.get(sessionId)?.size).toBe(0)
+  expect(runtime.sessions.modelRetry(sessionId)).toEqual({})
+})
+
+it('renders tool output as JSON, and an output image as a DSH image block', async () => {
+  const { sessionId } = await acceptedTicket()
+  const tool = tools.get(sessionId)!.get('orchestrator_read')!
+  const textOnly = tool.output.render({}, { image: 'not an image' }) as { type: string; text: string }[]
+  expect(textOnly).toHaveLength(1)
+  expect(textOnly[0]).toMatchObject({ type: 'text', text: JSON.stringify({ image: 'not an image' }) })
+  const image = tool.output.render({}, { image: {
+    attachmentId: 'attachment-1', bytes: 12, width: 3, height: 4, mediaType: 'image/png', name: 'chart.png',
+    originalDimensions: { width: 6, height: 8 },
+  } }) as { type: string; text: string; attachment: Record<string, unknown> }[]
+  expect(image).toHaveLength(2)
+  expect(image[1]).toMatchObject({ type: 'image', attachment: { attachmentId: 'attachment-1', name: 'chart.png', originalDimensions: { width: 6, height: 8 } } })
+})
+
+it('binds the current prompt revision only once until it changes', () => {
+  const section = sections.get(runtime.masterId)!
+  const first = section.text({ signal: new AbortController().signal })
+  const second = section.text({ signal: new AbortController().signal })
+  expect(second).toBe(first)
+})
+
+it('releases a Session disposed while its skill scope opens, reporting each failed release', async () => {
+  const warn = vi.spyOn(runtime.ctx.logger, 'warn')
+  let resolveScope!: (scope: unknown) => void
+  const skillScope = new Promise<void>((resolve) => { resolveScope = resolve }) as Promise<void> & { dispose: () => Promise<void> }
+  skillScope.dispose = () => Promise.reject(new Error('scope release failed'))
+  const inject = vi.fn(() => skillScope)
+  const agent = {
+    id: runtime.masterId, status: 'running', session: { snapshotEvents: () => [], header: {} },
+    ctx: { inject, systemPrompt: { section: () => () => { throw new Error('prompt release failed') } } },
+  } as never
+  runtime.ctx.emit('agent/created', { agent } as never)
+  await vi.waitFor(() => { expect(inject).toHaveBeenCalled() })
+  runtime.ctx.emit('agent/disposed', { agent } as never)
+  resolveScope(undefined)
+  await vi.waitFor(() => {
+    expect(warn.mock.calls.map(call => String(call[1]))).toEqual(expect.arrayContaining(['Error: scope release failed', 'Error: prompt release failed']))
+  })
+  runtime.ctx.emit('agent/disposed', { agent: { id: 'never-bound' } } as never)
+})
+
+it('marks the Runtime unhealthy and aborts its lifetime when the state directory lock is compromised', async () => {
+  await runtime.stop()
+  const ctx = new Context()
+  for (const [name, service] of Object.entries(services)) ctx.reflect.provide(name, service)
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+  const next = new Runtime(ctx, testMachine({ stateDir: directory }), restarts)
+  await next.ready
+  const stale = new Date(Date.now() - 31_000)
+  utimesSync(`${directory}.lock`, stale, stale)
+  await vi.advanceTimersByTimeAsync(16_000)
+  vi.useRealTimers()
+  expect(next.health.runtime).toMatchObject({ state: 'error', detail: expect.stringContaining('lock') as unknown })
+  expect(next.lifetime.aborted).toBe(true)
+  runtime = next
+})
+
+it('keeps the Runtime ready when a Source member sync fails after startup', async () => {
+  await runtime.stop()
+  vi.spyOn(Settings.prototype, 'sync').mockRejectedValue(new Error('member sync failed'))
+  const ctx = new Context()
+  for (const [name, service] of Object.entries(services)) ctx.reflect.provide(name, service)
+  const next = new Runtime(ctx, testMachine({ stateDir: directory }), restarts)
+  next.sources.register(feishuKind)
+  next.sources.register(githubKind)
+  await next.ready
+  expect(next.health.runtime).toMatchObject({ state: 'ready' })
+  runtime = next
+})
+
+it('does not start background loops when stop completes while initialization is still creating the main Session', async () => {
+  await runtime.stop()
+  let releaseEnsure!: (agent: undefined) => void
+  const ensure = vi.spyOn(Sessions.prototype, 'ensure').mockImplementation(() => new Promise<void>((resolve) => {
+    releaseEnsure = resolve
+  }))
+  const ctx = new Context()
+  for (const [name, service] of Object.entries(services)) ctx.reflect.provide(name, service)
+  const next = new Runtime(ctx, testMachine({ stateDir: directory }), restarts)
+  await vi.waitFor(() => { expect(ensure).toHaveBeenCalled() })
+  await next.stop()
+  releaseEnsure(undefined)
+  await next.ready
+  expect(next.health.runtime).toMatchObject({ state: 'starting' })
+  runtime = next
+})
+
+it('builds prompt defaults both while setup is pending and after it is configured', async () => {
+  runtime.prompts.current()
+  const unconfigured = await restart({}, { github: { cli: join(directory, 'missing-gh') }, feishu: null })
+  await unconfigured.ready
+  expect(unconfigured.setupProblem).toBeDefined()
+  expect(unconfigured.prompts.current()).toMatchObject({ revision: 0, source: 'defaults' })
+})
+
+it('does not queue a member sync for a Source kind without policy sync', () => {
+  const dispose = runtime.sources.register({
+    kind: 'nosync', title: { zh: 'No sync', en: 'No sync' }, description: { zh: 'No sync', en: 'No sync' },
+    schema: undefined as never, fields: [], health: [],
+  })
+  dispose()
+})
+
+it('reads a ticket environment with and without its origin Trigger, and ends a ticket whose Trigger is gone', async () => {
+  const { ticket, trigger } = await acceptedTicket()
+  expect(runtime.ticketEnvironment(ticket)).toBeInstanceOf(Array)
+  runtime.store.db.prepare('DELETE FROM trigger WHERE id = ?').run(trigger.id)
+  expect(runtime.ticketEnvironment(ticket)).toBeInstanceOf(Array)
+  runtime.engine.stopTicket(ticket.id)
+  expect(runtime.store.tickets.get(ticket.id)!.ended).toBeDefined()
+})
+
+it('keeps a notice pending when injecting it into the main Session fails', async () => {
+  agents.get(runtime.masterId)!.inject.mockImplementationOnce(() => { throw new Error('injection failed') })
+  runtime.sessions.notify('injection-failed', { value: 1 }, 'Injection failed')
+  await expect(runtime.sessions.delivery('injection-failed')).resolves.toBe('pending')
+})
+
+it('lists only loaded Sessions and authorizes their active or earlier prompt revisions', async () => {
+  await acceptedTicket()
+  const master = runtime.masterId
+  runtime.store.set(KV.sessions.prompts('gone'), [0])
+  runtime.store.set(KV.sessions.prompts(master), [0])
+  expect(runtime.sessions.status().sessions).toEqual([{ sessionId: master, revision: 0 }])
+  expect(runtime.sessions.promptVersion('gone').revision).toBe(0)
+  expect(runtime.sessions.promptVersion(master).revision).toBe(0)
+  expect(runtime.sessions.mayRead(master, 0)).toBe(true)
+  expect(runtime.sessions.mayRead(master, 1)).toBe(false)
+})
+
+it('registers bundled and custom skills, including a custom skill with no text', () => {
+  const section = sections.get(runtime.masterId)!
+  const first = runtime.prompts.current()
+  runtime.prompts.save({ ...first.config, skills: { custom: 'Use the team custom procedure.' } }, first.revision, 'panel')
+  section.text({ signal: new AbortController().signal })
+  const second = runtime.prompts.current()
+  runtime.prompts.save({ ...second.config, skills: { custom: '' } }, second.revision, 'panel')
+  section.text({ signal: new AbortController().signal })
+  expect(Object.keys(runtime.prompts.current().config.skills)).toContain('custom')
+})
+
+it('does not start background loops when stop completes while initialization is syncing Source members', async () => {
+  await runtime.stop()
+  let releaseSync!: () => void
+  const sync = vi.spyOn(Settings.prototype, 'sync').mockImplementation(() => new Promise<void>((resolve) => {
+    releaseSync = resolve
+  }))
+  const ctx = new Context()
+  for (const [name, service] of Object.entries(services)) ctx.reflect.provide(name, service)
+  const next = new Runtime(ctx, testMachine({ stateDir: directory }), restarts)
+  next.sources.register(feishuKind)
+  next.sources.register(githubKind)
+  await vi.waitFor(() => { expect(sync).toHaveBeenCalled() })
+  await next.stop()
+  releaseSync()
+  await next.ready
+  expect(next.health.runtime).toMatchObject({ state: 'starting' })
+  runtime = next
 })

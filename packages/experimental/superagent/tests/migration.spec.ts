@@ -5,7 +5,7 @@ import { DatabaseSync } from 'node:sqlite'
 import { afterEach, beforeEach, expect, it } from 'vitest'
 import { SCHEMA_VERSION, Store } from '../src/app/store.ts'
 import { KV } from '../src/kv.ts'
-import { basisOf, reasonsOf, withoutCopies } from '../src/app/migration.ts'
+import { basisOf, migrateSettings, migrateTo11, reasonsOf, ticketOf, withoutCopies } from '../src/app/migration.ts'
 import { Prompts, composePrompt, defaultPrompts } from '../src/app/prompts.ts'
 import { masterPrompt } from '../src/app/context.ts'
 
@@ -619,5 +619,156 @@ it('delivers the candidate of an Eval in progress at the upgrade again, so its d
   const store = new Store(path)
   const effects: Array<[string, unknown]> = (store.db.prepare("SELECT key, value FROM effect WHERE kind = 'assessment'").all() as Array<{ key: string; value: string }>).map(row => [row.key, JSON.parse(row.value)])
   expect(effects).toEqual([['e9', { triggerId: 'issue-9' }]])
+  store.close()
+})
+
+it('imports each legacy main-Session queue into the effect queue in order', () => {
+  const store = opened({
+    [KV.queues.relays]: [{ id: 'r1', text: 'Steer the orchestrator.' }],
+    [KV.queues.unsubscribed]: ['feishu:oc_1:om_1'],
+    [KV.queues.prompts]: 2,
+    [KV.queues.settings]: 3,
+  })
+  expect(store.db.prepare('SELECT kind, key, value, seq FROM effect ORDER BY seq').all()).toEqual([
+    { kind: 'relay', key: 'r1', value: JSON.stringify({ text: 'Steer the orchestrator.' }), seq: 1 },
+    { kind: 'notice', key: 'subscription:feishu:oc_1:om_1', value: JSON.stringify({ value: { subscription_changes: [{ thread: 'feishu:oc_1:om_1', removed: true }] }, summary: 'Removed the subscriptions on thread feishu:oc_1:om_1' }), seq: 2 },
+    { kind: 'notice', key: 'prompts', value: JSON.stringify({ value: { prompt_config_saved: 2, effect: 'next-request', read: 'prompts/2' }, summary: 'Prompt configuration saved (revision 2)' }), seq: 3 },
+    { kind: 'notice', key: 'settings', value: JSON.stringify({ value: { settings_saved: true, read: 'settings' }, summary: 'Settings saved' }), seq: 4 },
+  ])
+  store.close()
+})
+
+it('reads flat settings, including an admission list that was off and partial member identities', () => {
+  expect(migrateSettings('not an object')).toBe('not an object')
+  const value = migrateSettings({
+    allowedChats: ['oc_mentions'],
+    admission: { mode: 'off', chats: ['oc_all'], rules: [{ visual: true, text: 'Route screenshots.' }, 'kept'] },
+    members: [{ feishuId: 'ou_alice', github: 'alice', name: 'Alice' }, { feishuId: 'ou_bob' }],
+  }) as {
+    sources: { feishu: { config: { chats: unknown[] } }; github: { config: { pollSeconds: number } } }
+    policy: { rules: unknown[]; sources: { feishu: { allowed: unknown[] }; github: { allowed: unknown[] } } }
+    eval: { mode: string }
+  }
+  expect(value.sources.feishu.config.chats).toEqual([{ chatId: 'oc_mentions', listen: 'mentions' }])
+  expect(value.sources.github.config.pollSeconds).toBe(60)
+  expect(value.eval.mode).toBe('off')
+  expect(value.policy.rules).toEqual([{ text: 'Route screenshots.' }, 'kept'])
+  expect(value.policy.sources.feishu.allowed).toEqual([{ id: 'ou_alice', name: 'Alice' }, { id: 'ou_bob' }])
+  expect(value.policy.sources.github.allowed).toEqual([{ id: 'alice' }])
+})
+
+it('reads a schema 10 ticket with the default answer, human, and closed-PR readers', () => {
+  const ticket = ticketOf(ticket10('t-default'))
+  expect(ticket.inputs).toEqual([])
+  expect(ticket.follows).toBeUndefined()
+})
+
+it('keeps a Feishu topic record already in map form and does not redeliver an evaluation marked delivered', () => {
+  const evaluating = { id: 'e10', threadKey: 'feishu:oc_1:om_1', triggerIds: ['trig-10'], strength: 'explicit', actor, policyVersion: 'v1',
+    startedAt: '1', deadline: '2', basis: { via: 'listed' }, delivered: true }
+  const store = opened({ [KV.feishu.topics('oc_1')]: { omt_1: '2026-10-01T00:00:00.000Z' } }, {
+    thread: [{ key: 'feishu:oc_1:om_1', ref: { source: 'feishu', id: 'oc_1:om_1' }, createdAt: '', subscriptions: [], correlated: [], pending: [], evaluating, meta: {} }],
+  })
+  expect(store.get(KV.feishu.topics('oc_1'))).toEqual({ omt_1: '2026-10-01T00:00:00.000Z' })
+  expect(store.db.prepare("SELECT COUNT(*) AS count FROM effect WHERE kind = 'assessment'").get()).toEqual({ count: 0 })
+  store.close()
+})
+
+it('wraps a migration step that throws a value other than an Error', () => {
+  const store = new Store(join(directory, 'thrown.sqlite'))
+  const keys = store.keys.bind(store)
+  ;(store as unknown as { keys: (prefix: string) => string[] }).keys = (prefix) => {
+    if (prefix === 'settings-version:') throw 'settings keys failed'
+    return keys(prefix)
+  }
+  expect(() => { migrateTo11(store) }).toThrow('the settings: settings keys failed')
+  store.close()
+})
+
+it('reads bases without an object, a Scope, or an admission mode as their safe defaults', () => {
+  expect(basisOf(null)).toEqual({ via: 'listed' })
+  expect(basisOf({ source: 'github', scope: 'not an object', row: '7', sender: 'alice', addressed: 'mention' })).toEqual({
+    via: 'addressed', source: 'github', row: '7', sender: 'alice', addressed: 'mention',
+  })
+  expect(basisOf({ admission: 'unlistedUnaddressed', observation: true })).toEqual({
+    via: 'admission', cell: 'unlistedUnaddressed', observation: { mode: 'auto' },
+  })
+})
+
+it('fills every optional field of flat settings only when the older build recorded it', () => {
+  const empty = migrateSettings({ admission: {} }) as { eval: Record<string, unknown>; executor: Record<string, unknown> }
+  expect(empty.policy).toEqual({})
+  expect(empty.eval).toEqual({ model: null })
+  expect(empty.executor).toEqual({ model: null })
+  expect(migrateSettings({
+    allowedChats: [], admission: { mode: 'on', timeoutSeconds: 30, rules: [] }, models: { orchestrator: 'eval-model', worker: 'worker-model' },
+    maxWorkers: 5, paused: true,
+  })).toMatchObject({ eval: { mode: 'on', timeoutSeconds: 30, model: 'eval-model' }, executor: { model: 'worker-model', maxWorkers: 5 }, paused: true })
+  expect(migrateSettings({ members: [] })).toMatchObject({ policy: { sources: { feishu: { allowed: [] }, github: { allowed: [] } } } })
+  expect(migrateSettings({ policy: { members: [], memberChat: 'oc_sync' } })).toMatchObject({ policy: { sources: { feishu: { syncChat: 'oc_sync' } } } })
+  expect(migrateSettings({ sources: { github: { enabled: true } } })).toEqual({ sources: { github: { enabled: true } } })
+})
+
+it('uses the default answer, human, and closed-PR readers while reconstructing execution defaults', () => {
+  const ticket = ticketOf(ticket10('t-default', {
+    inputs: [{ id: 'i1', kind: 'trigger', triggerId: 'trig-1', at: '1' }],
+    channels: [{ source: 'github', thread: 'github:8', address: { number: '8' } }],
+    meta: { sourceTriggerId: 'trig-1', workspace: '/w/no-name' },
+  }))
+  expect(ticket.inputs).toEqual([{ id: 'i1', kind: 'trigger', triggerId: 'trig-1', at: '1' }])
+  expect(ticket.execution).toEqual({ name: 'no-name', directory: '/w/no-name', assignment: '' })
+  expect(ticket.follows).toEqual([{ thread: 'github:8', own: true }])
+})
+
+it('infers both matching and unknown end outcomes', () => {
+  expect(ticketOf(ticket10('t-merged', { ended: { at: '2', by: 'executor', reason: 'merged' } })).ended).toEqual({ at: '2', by: 'executor', reason: 'merged', outcome: 'merged' })
+  expect(ticketOf(ticket10('t-unknown', { ended: { at: '2', by: 'executor', reason: 'Not needed' } })).ended).toEqual({ at: '2', by: 'executor', reason: 'Not needed', outcome: 'closed' })
+})
+
+it('reads a ticket accepted earlier and unknown free-form filter and end reasons', () => {
+  expect(reasonsOf('Already accepted as ticket t8')).toEqual([{ code: 'startedTicket', values: { ticket: 't8' } }])
+  expect(reasonsOf(12)).toEqual([{ code: 'said', values: { text: '' } }])
+})
+
+it('keeps invalid PR end records as no close state, and records answers ready to report', () => {
+  const path = join(directory, 'pr-ends.sqlite')
+  const ticket = ticket10('t1', {
+    channels: [7, 8, 9].map(number => ({ source: 'github', thread: `github:${number}`, address: { number: String(number) } })),
+    meta: { sourceTriggerId: 'trig-1' },
+  })
+  schema10(path, {
+    'answer-ready:t1:trig-1': true,
+    'github-ended:7': 7,
+    'github-ended:8': { reason: 'merged' },
+    'github-ended:9': { at: '2026-10-01T00:00:00.000Z', reason: 'Not needed' },
+  }, { ticket: [ticket] })
+  const store = new Store(path)
+  expect(store.tickets.get('t1')!.follows).toEqual([7, 8, 9].map(number => ({ thread: `github:${number}`, own: true })))
+  expect(store.tickets.get('t1')!.answers).toEqual(['trig-1'])
+  store.close()
+})
+
+it('keeps source retry and cursor records only when they are still useful', () => {
+  const at = Date.now()
+  const old = new Date(at - 100_000).toISOString(), now = new Date(at).toISOString(), oldSince = new Date(at - 200_000).toISOString()
+  const store = opened({
+    'github-issue-pending': {
+      7: { number: 7, at: old },
+      8: { number: 8, at: now },
+    },
+    [KV.github.retries]: {
+      7: { since: oldSince, pr: true },
+      8: { since: now, pr: false },
+    },
+    'github-thread:7': null,
+    'thread-since:github:8': '2026-10-01T00:00:00.000Z',
+    'github-cursor:8': '2026-10-02T00:00:00.000Z',
+  })
+  expect(store.get(KV.github.retries)).toEqual({
+    7: { since: oldSince, pr: true },
+    8: { since: now, pr: false },
+  })
+  expect(store.get(KV.github.cursor(8))).toBe('2026-10-02T00:00:00.000Z')
+  expect(store.get('github-thread:7')).toBeUndefined()
   store.close()
 })

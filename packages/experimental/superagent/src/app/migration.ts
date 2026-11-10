@@ -143,7 +143,8 @@ function queueEarlierWork(store: Store): void {
  * row for that `kind` and `key` untouched.
  */
 function effectQueue(store: Store) {
-  let seq = Number(store.db.prepare('SELECT IFNULL(MAX(seq), 0) AS seq FROM effect').get()?.seq ?? 0)
+  const initial = store.db.prepare('SELECT IFNULL(MAX(seq), 0) AS seq FROM effect').get() as { seq: number }
+  let seq = initial.seq
   return <K extends EffectKind>(kind: K, key: string, payload: EffectPayloads[K], failed = { attempts: 0, error: '' }) =>
     store.db.prepare('INSERT OR IGNORE INTO effect (kind, key, value, seq, attempts, error, due, since) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
       .run(kind, key, JSON.stringify(payload), ++seq, failed.attempts, failed.error, Date.now(), new Date().toISOString())
@@ -798,7 +799,8 @@ function assessmentTriggers(store: Store): void {
   }
   // Re-enqueue active evaluations that predate delivery tracking so delivery starts their timeout deadline instead of leaving the thread
   // stuck.
-  let seq = Number(store.db.prepare('SELECT COALESCE(MAX(seq), 0) AS seq FROM effect').get()?.seq ?? 0)
+  const initial = store.db.prepare('SELECT COALESCE(MAX(seq), 0) AS seq FROM effect').get() as { seq: number }
+  let seq = initial.seq
   for (const thread of store.threads.active()) {
     const evaluation = thread.evaluating
     if (!evaluation || evaluation.delivered || !evaluation.triggerIds[0]) continue

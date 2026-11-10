@@ -2,7 +2,7 @@
 // The Prompts settings.
 import { act } from 'react'
 import { builtInBase, builtInParts, defaultPrompts } from '../src/app/prompts.ts'
-import { expect, it } from 'vitest'
+import { expect, it, vi } from 'vitest'
 import { zh } from '../src/client/locales.ts'
 import { usePanel, mount, settle, all, tab, click, type, text, field, at } from './fixtures/panel.client.tsx'
 import { server, promptVersion } from './fixtures/panel-server.client.ts'
@@ -235,4 +235,93 @@ it('loads a version from the history without its overrides of parts this version
   server.prompts.current = saved
   await click(zh.save)
   expect(server.prompts.current.config.overrides).toEqual({ 'runtime/dispatch': dispatch })
+})
+
+
+it('names every kind of prompt section a conflicting save changed', async () => {
+  at({ page: 'settings', query: { group: 'prompts' } })
+  await mount()
+  await type(field<HTMLTextAreaElement>(zh.promptBody), 'Team, ours.')
+  await type(field<HTMLInputElement>(zh.promptAddSkill), 'testing')
+  await click(zh.promptAddSkillAction)
+  await type(field<HTMLTextAreaElement>(zh.promptBody), 'Skill, ours.')
+  await click(builtInItem(zh['promptPart.runtime/shared']))
+  await type(field<HTMLTextAreaElement>(zh.promptBody), 'Shared, ours.')
+  server.prompts.revision = 1
+  server.prompts.current = promptVersion(1, { ...defaultPrompts(), communication: 'Team, theirs.', skills: { testing: 'Skill, theirs.' },
+    overrides: { 'runtime/shared': { text: 'Shared, theirs.', base: builtInBase(builtInParts()['runtime/shared'].text) } } })
+  await click(zh.save)
+  const bar = document.querySelector('.dt-savebar')?.textContent ?? ''
+  for (const expected of ['版本 1', '沟通方式', 'dsh-superagent-testing', zh['promptPart.runtime/shared']]) expect(bar).toContain(expected)
+  await click(zh.save)
+  expect(server.prompts.current.config).toMatchObject({ communication: 'Team, ours.', skills: { testing: 'Skill, ours.' },
+    overrides: { 'runtime/shared': { text: 'Shared, ours.', base: builtInBase(builtInParts()['runtime/shared'].text) } } })
+})
+
+it('says a saved prompt is still pending delivery to the running Sessions', async () => {
+  at({ page: 'settings', query: { group: 'prompts' } })
+  await mount()
+  await type(field<HTMLTextAreaElement>(zh.promptBody), 'Pending delivery')
+  vi.mocked(globalThis.fetch).mockImplementationOnce(async () => new Response(JSON.stringify({ revision: 1, context_delivery: 'pending' }), {
+    status: 200, headers: { 'content-type': 'application/json' },
+  }))
+  await click(zh.save)
+  expect([...document.querySelectorAll('.dt-toast')].at(-1)?.textContent).toBe(zh.promptSavedPending)
+})
+
+it('removes a team skill from the draft and returns to the first team section', async () => {
+  at({ page: 'settings', query: { group: 'prompts' } })
+  await mount()
+  await type(field<HTMLInputElement>(zh.promptAddSkill), 'temporary')
+  await click(zh.promptAddSkillAction)
+  expect(text()).toContain('dsh-superagent-temporary')
+  await click(zh.remove)
+  expect(text()).not.toContain('dsh-superagent-temporary')
+  expect(field<HTMLTextAreaElement>(zh.promptBody).value).toBe(defaultPrompts().communication)
+})
+
+it('reports a failed prompt preview and a failed discard reload', async () => {
+  at({ page: 'settings', query: { group: 'prompts' } })
+  await mount()
+  server.down = true
+  await click(tab(zh.promptViewFull))
+  expect(text()).toContain(zh.hostNotRunning)
+  await click(tab(zh.promptViewEdit))
+  server.down = false
+  await type(field<HTMLTextAreaElement>(zh.promptBody), 'Draft to discard')
+  server.down = true
+  await click(zh.discard)
+  expect([...document.querySelectorAll('.dt-toast')].at(-1)?.textContent).toBe(zh.hostNotRunning)
+})
+
+it('copies the full prompt and reports the copy', async () => {
+  const writeText = vi.fn().mockResolvedValue(undefined)
+  Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+  at({ page: 'settings', query: { group: 'prompts' } })
+  await mount()
+  await click(tab(zh.promptViewFull))
+  const expected = all('.dt-preview-part').map(part => part.querySelector('pre')?.textContent ?? '').join('\n\n')
+  await click(zh.promptCopyAll)
+  expect(writeText).toHaveBeenCalledWith(expected)
+  expect([...document.querySelectorAll('.dt-toast')].at(-1)?.textContent).toBe(zh.copied)
+})
+
+it('loads older prompt history and lists the Sessions still using saved versions', async () => {
+  server.prompts.sessions = [{ sessionId: 'session-1', revision: 0 }]
+  server.prompts.next_offset = 0
+  at({ page: 'settings', query: { group: 'prompts' } })
+  await mount()
+  await click(tab(zh.promptViewHistory))
+  const older = { ...server.prompts, revisions: [{ ...server.prompts.revisions[0]!, revision: 1,
+    savedAt: '2026-09-24T00:00:00Z', source: 'panel', changed: ['communication'] }], next_offset: null }
+  vi.mocked(globalThis.fetch).mockImplementationOnce(async () => new Response(JSON.stringify(older), {
+    status: 200, headers: { 'content-type': 'application/json' },
+  }))
+  const calls = vi.mocked(globalThis.fetch).mock.calls.length
+  await click(zh.promptOlder)
+  expect(vi.mocked(globalThis.fetch).mock.calls.length).toBeGreaterThan(calls)
+  const request = vi.mocked(globalThis.fetch).mock.calls.at(-1)?.[0] as URL | string | undefined
+  expect(request instanceof URL ? request.href : (request ?? '')).toContain('prompts?offset=0')
+  expect(all('.dt-row-title').map(title => title.textContent)).toHaveLength(2)
+  expect(text()).toContain(zh.promptSessionItem.replace('{session}', 'session-1').replace('{revision}', '0'))
 })

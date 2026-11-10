@@ -16,6 +16,8 @@ function setup(
   strength: 'explicit' | 'inferred' = 'inferred',
   bodies = Array.from({ length: 5 }, (_, i) => `comment ${i}`),
   threadContext?: AssessorHost['threadContext'],
+  fileBody = 'export const value = 1\n',
+  paused = false,
 ) {
   const comments = bodies.map((body, i) => ({
     id: i,
@@ -34,6 +36,7 @@ function setup(
     gh: vi.fn(async (args: string[]) => {
       await gate.issue
       const number = Number(/issues\/(\d+)/.exec(args[1]!)?.[1])
+      if (args[1]!.startsWith('contents/')) return [{ name: 'value.ts' }]
       return args[1]!.includes('/comments')
         ? comments
         : {
@@ -47,11 +50,11 @@ function setup(
           body: 'body',
         }
     }),
-    run: vi.fn(async () => 'export const value = 1\n'),
+    run: vi.fn(async () => fileBody),
     // A string first argument is a raw file path; otherwise validate the fake gh response against the schema.
     api: vi.fn(async (schema: unknown, ...rest: string[]) =>
       typeof schema === 'string'
-        ? 'export const value = 1\n'
+        ? fileBody
         : (schema as { parse(value: unknown): unknown }).parse(
           await (commands as unknown as { gh(args: string[]): Promise<unknown> }).gh(['api', rest[0]!]),
         ),
@@ -61,16 +64,17 @@ function setup(
   const sources = new SourceRegistry(() => SettingsSchema.parse({}))
   sources.register(githubKind)
   const engines: { engine?: Engine } = {}
+  const effects = { enqueue: vi.fn(), handle: vi.fn() }
   const host: AssessorHost = {
     get engine() {
       return engines.engine as Engine
     },
     commands,
     deployment: testDeployment(),
-    settings: () => SettingsSchema.parse({}),
+    settings: () => SettingsSchema.parse({ eval: { mode: 'auto' } }),
     threadContext: threadContext ?? (trigger => sources.threadContext(trigger)),
-    effects: { enqueue: () => {}, handle: () => {} },
-    paused: () => false,
+    effects,
+    paused: () => paused,
     deliver: async () => {},
     candidateCard: async candidate => ({ eval_id: candidate.evalId }),
   }
@@ -97,7 +101,7 @@ function setup(
   // Per-Eval state retained by the assessor and released when the Eval ends.
   const kept = assessor as unknown as { evals: Map<string, unknown> }
   const size = () => kept.evals.size
-  return { repo, engine, assessor, tools, size, gate }
+  return { repo, engine, assessor, tools, size, gate, effects }
 }
 const issue = (n: number): Trigger => ({ id: `issue-${n}`, source: 'github', threads: [{ source: 'github', id: String(n) }], actor: { source: 'github', id: 'bob' }, human: true,
   at: new Date(Date.UTC(2026, 8, 9, 0, 0, n)).toISOString(), text: `issue ${n}`, url: `https://github.com/acme/widgets/issues/${n}`, meta: { number: n } })
@@ -220,4 +224,120 @@ it('lets the main Session read on from the cursor its loaded window ends with, a
   s2.engine.receive(long); s2.engine.receive({ ...issue(3), threads: issue(1).threads }); s2.engine.evaluateDue()
   const other = await s2.assessor.context('issue-3', signal) as { batch: Record<string, unknown>[] }
   expect(other.batch).toEqual([expect.objectContaining({ trigger_id: 'long', chars: long.text.length, read: 'trigger/long' })])
+})
+
+
+it('rejects assessment and read arguments the tools cannot accept', () => {
+  const direction = { implementation_requested: true, target_basis: 'specified', requires_design_decision: false, evidence: 'e' }
+  const assessment = { decision: 'ignore', direction, title: 't', scope: 's', reason: 'r' }
+  expect(AssessmentSchema.safeParse({ ...assessment, rule_assessments: [
+    { rule_id: 'copy', reason: 'one', matched: true }, { rule_id: 'copy', reason: 'two', matched: false },
+  ] }).success).toBe(false)
+  expect(EvalReadSchema.safeParse({ trigger_id: 't', resource: 'file' }).success).toBe(false)
+  expect(EvalReadSchema.safeParse({ trigger_id: 't', resource: 'message', path: 'x' }).success).toBe(false)
+  expect(EvalReadSchema.safeParse({ trigger_id: 't', resource: 'message', cursor: 'c' }).success).toBe(false)
+  expect(EvalReadSchema.safeParse({ trigger_id: 't', resource: 'image' }).success).toBe(false)
+})
+
+it('ignores an assessment effect whose eval no longer owns the trigger, and pauses new deliveries while processing is paused', async () => {
+  const s = setup('inferred', undefined, undefined, undefined, true)
+  s.engine.receive(issue(1)); s.engine.evaluateDue()
+  await s.assessor.context('issue-1', signal)
+  const [kind, handler, options] = s.effects.handle.mock.calls[0] as [string,
+    (value: { triggerId: string }, evalId: string) => Promise<void>, { limit: () => number }]
+  expect(kind).toBe('assessment')
+  expect(options.limit()).toBe(0)
+  await handler({ triggerId: 'issue-1' }, 'another-eval')
+  expect(s.size()).toBe(1)
+})
+
+it('refuses reads for a trigger with no active evaluation', async () => {
+  const s = setup()
+  await expect(s.assessor.context('not-running', signal)).rejects.toThrow('No assessment is in progress')
+})
+
+it('exposes and reads image references from thread context, and refuses stale or unknown reads', async () => {
+  let context: AssessorHost['threadContext'] = {
+    messageId: 'm0',
+    read: async () => ({
+      messages: [
+        { id: 'm0', from: 'bob', at: '2026-09-09T00:00:00Z', text: 'look at image-key', bot: true },
+        { id: 'm1', from: 'bob', at: '2026-09-09T00:00:01Z', text: 'deleted', deleted: true },
+      ],
+      body: {},
+    }),
+    images: (text: string) => text.includes('image-key') ? ['image-key'] : [],
+    image: vi.fn(async (...args: unknown[]) => ({ delivered: args.length })),
+  }
+  const s = setup('inferred', undefined, () => context)
+  s.engine.receive({ ...issue(1), url: undefined }); s.engine.evaluateDue()
+  const initial = await s.assessor.context('issue-1', signal) as { images?: string[]; source: { url?: string }; thread: { messages: unknown[] } }
+  expect(initial.source).not.toHaveProperty('url')
+  expect(initial.thread.messages).toEqual(expect.arrayContaining([
+    expect.objectContaining({ id: 'm0', bot: true }),
+    expect.objectContaining({ id: 'm1', deleted: true }),
+  ]))
+  expect(await s.tools.orchestrator_eval_read!({ trigger_id: 'issue-1', resource: 'image', image_id: 'm0/image-key' }, signal))
+    .toEqual({ delivered: 6 })
+  await expect(s.tools.orchestrator_eval_read!({ trigger_id: 'issue-1', resource: 'image', image_id: 'm0/image-key', offset: 1 }, signal))
+    .rejects.toThrow('Images are not paginated')
+  await expect(s.tools.orchestrator_eval_read!({ trigger_id: 'issue-1', resource: 'image', image_id: 'missing/image-key' }, signal))
+    .rejects.toThrow('Unknown image reference')
+  await expect(s.tools.orchestrator_eval_read!({ trigger_id: 'issue-1', resource: 'message', message_id: 'missing' }, signal))
+    .rejects.toThrow('Unknown message reference')
+  await expect(s.tools.orchestrator_eval_read!({ trigger_id: 'issue-1', resource: 'thread', cursor: 'unknown' }, signal))
+    .rejects.toThrow('Unknown thread cursor')
+  context = undefined
+  await expect(s.tools.orchestrator_eval_read!({ trigger_id: 'issue-1', resource: 'image', image_id: 'm0/image-key' }, signal))
+    .rejects.toThrow('gives no Thread context')
+})
+
+it('serves repository pages from offset zero and later offsets from the cache', async () => {
+  const s = setup('inferred', undefined, undefined, 'x'.repeat(5000))
+  s.engine.receive(issue(1)); s.engine.evaluateDue()
+  await s.assessor.context('issue-1', signal)
+  await expect(s.tools.orchestrator_eval_read!({ trigger_id: 'issue-1', resource: 'file', path: 'src/value.ts', offset: 1 }, signal))
+    .rejects.toThrow('Read this resource at offset 0 first')
+  const first = await s.tools.orchestrator_eval_read!({ trigger_id: 'issue-1', resource: 'file', path: 'src/value.ts', offset: 0 }, signal) as { text: string; next_offset: number | null }
+  const next = await s.tools.orchestrator_eval_read!({ trigger_id: 'issue-1', resource: 'file', path: 'src/value.ts', offset: first.next_offset ?? 0 }, signal) as { offset: number }
+  expect(first.next_offset).toBe(4000)
+  expect(next.offset).toBe(4000)
+  expect(await s.tools.orchestrator_eval_read!({ trigger_id: 'issue-1', resource: 'directory', path: 'src', offset: 0 }, signal))
+    .toMatchObject({ resource: 'directory' })
+})
+
+it('records a failed initial thread read instead of losing the evaluation', async () => {
+  const context: AssessorHost['threadContext'] = {
+    messageId: 'm0',
+    read: async () => { throw new Error('Feishu unavailable') },
+    images: () => [],
+    image: async () => { throw new Error('No images') },
+  }
+  const s = setup('inferred', undefined, () => context)
+  s.engine.receive(issue(1)); s.engine.evaluateDue()
+  const result = await s.assessor.context('issue-1', signal) as { thread: { error: string } }
+  expect(result.thread.error).toContain('Thread context unavailable: Error: Feishu unavailable')
+})
+
+it('records an accepted assessment with its acknowledgement and ticket', async () => {
+  const s = setup()
+  s.engine.receive(issue(1)); s.engine.evaluateDue()
+  await s.assessor.context('issue-1', signal)
+  const decision = {
+    decision: 'accept',
+    rule_assessments: [
+      { rule_id: 'copy', reason: 'A person asked for a wording fix.', matched: true },
+      { rule_id: 'visual', reason: 'No visual evidence.', matched: false },
+    ],
+    direction: { implementation_requested: true, target_basis: 'specified', requires_design_decision: false, evidence: 'The message asks to fix the label.' },
+    title: 'Fix label',
+    worktree_name: 'fix-label',
+    scope: 'Fix the settings label.',
+    intent_evidence: '“修一下标签”',
+    acknowledgement: '收到。',
+    reason: 'A person asked for a copy fix.',
+  }
+  const result = await s.tools.orchestrator_eval_decide!({ trigger_id: 'issue-1', ...decision }, signal) as { state: string; ticket_id?: string }
+  expect(result).toMatchObject({ state: 'accept', ticket_id: expect.any(String) as unknown })
+  expect(s.repo.tickets.get(result.ticket_id ?? '')?.mandate.strength).toBe('inferred')
 })

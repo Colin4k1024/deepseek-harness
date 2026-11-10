@@ -1,7 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Engine, key, type Assessor, type Executor, type Thread, type Ticket, type Trigger } from '../src/core/index.ts'
-import { backfillChat, consumerRetry, feishuKind, feishuTriggerId, feishuRef, feishuTime, feishuTrigger, historyEvent }
-  from '../src/sources/feishu.ts'
+import {
+  backfillChat, consumerRetry, feishuKind, feishuTriggerId, feishuRef, feishuTime, feishuTrigger,
+  historyEvent, refreshChatNames, threadRef,
+} from '../src/sources/feishu.ts'
 import { KV } from '../src/kv.ts'
 import { apply as applyFeishu, pollThreads as pollFeishuThreads } from '../src/sources/feishu.ts'
 import { runFeishu } from '../src/sources/feishu-loops.ts'
@@ -192,6 +194,15 @@ describe('feishu source', () => {
     expect(feishuTrigger({ message_id: 'om_3', chat_id: 'oc_1', chat_type: 'p2p', sender_id: 'ou_bot', sender_type: 'bot', content: 'me', create_time: '1' }, 'ou_bot', 'cli_bot')).toBeUndefined()
     expect(feishuTrigger(historyEvent({ message_id: 'om_4', chat_id: 'oc_1', create_time: '2', sender: { id: 'ou_x', sender_type: 'app' }, body: { content: '{"text":"from app"}' } }, 'oc_1', false), 'ou_bot', 'cli_bot')).toMatchObject({ human: false, text: 'from app', threads: [{ id: 'oc_1:om_4' }] })
   })
+  it('refreshes chat names, keeping only chats that report one', async () => {
+    const h = host()
+    vi.spyOn(h.commands, 'lark').mockResolvedValue({ chats: [
+      { chat_id: 'oc_team', name: 'Team' }, { chat_id: 'oc_empty', name: null }, { chat_id: 'oc_unnamed' }] })
+    await expect(refreshChatNames(h)).resolves.toEqual({ oc_team: 'Team' })
+    expect(h.store.get(KV.sources.labels('feishu'))).toEqual({ oc_team: 'Team' })
+    h.store.close()
+  })
+
   it('polls subscribed threads and stores unseen replies as triggers on that thread', async () => {
     const h = host()
     const source = feishuTrigger({ message_id: 'om_root', chat_id: 'oc_1', chat_type: 'group', sender_id: MEMBER, sender_type: 'user', content: '@bot fix', create_time: '1', mentions: [{ id: 'ou_bot' }] }, 'ou_bot', 'cli_bot')!
@@ -318,7 +329,7 @@ describe('feishu source', () => {
     const reply = (id: string) => ({ message_id: id, chat_id: 'oc_1', msg_type: 'text', content: `reply ${id}`, create_time: String(Date.now()),
       sender: { id: 'ou_guest', sender_type: 'user' }, thread_id: 'omt_1', root_id: 'om_root' })
     const lark = vi.spyOn(h.commands, 'lark').mockImplementation(async (args) => {
-      if (args[0] === 'api') return { items: [{ message_id: 'om_root', chat_id: 'oc_1', thread_id: 'omt_1' }] }
+      if (args[0] === 'api') return { items: [{ message_id: 'om_root', chat_id: 'oc_1', root_id: 'om_root', parent_id: 'om_parent', thread_id: 'omt_1' }] }
       if (args[1] === '+messages-mget') return { messages: [] }
       // Newest first: a new reply, then the one the Thread knew, and an older page that is not read.
       return { thread_id: 'omt_1', has_more: true, page_token: 'older', messages: [reply('om_3'), reply('om_2')] }
@@ -328,6 +339,162 @@ describe('feishu source', () => {
     expect(lark.mock.calls.filter(([args]) => args[1] === '+threads-messages-list')).toHaveLength(1)
     h.store.close()
   })
+  it('resolves a retained thread reference only while its meta or latest trigger names a source message', () => {
+    const h = host()
+    subscribed(h, { source: 'feishu', id: 'oc_1:om_root' })
+    expect(threadRef(h, h.store.threads.get('feishu:oc_1:om_root')!)).toBeUndefined()
+    h.store.close()
+  })
+
+  it('refuses to poll a subscribed thread without a retained source message', async () => {
+    const h = host()
+    subscribed(h, { source: 'feishu', id: 'oc_1:om_root' })
+    await pollFeishuThreads(h)
+    expect(h.store.threads.get('feishu:oc_1:om_root')?.meta.pollError).toContain('no retained source message')
+    h.store.close()
+  })
+
+  it('does not read a subscribed thread while the Feishu Source is off', async () => {
+    const h = host()
+    const source = feishuTrigger({ message_id: 'om_root', chat_id: 'oc_1', chat_type: 'group', sender_id: MEMBER,
+      sender_type: 'user', content: '@bot fix', create_time: '1', mentions: [{ id: 'ou_bot' }] }, 'ou_bot', 'cli_bot')!
+    h.store.triggers.save(source)
+    subscribed(h, source.threads[0]!)
+    h.store.saveSettings({ ...h.store.settings(), sources: { ...h.store.settings().sources,
+      feishu: { enabled: false, config: {} } } })
+    const lark = vi.spyOn(h.commands, 'lark')
+    await pollFeishuThreads(h)
+    expect(lark).not.toHaveBeenCalled()
+    h.store.close()
+  })
+
+  it("marks the root and parent of a thread's first poll as known history", async () => {
+    const h = host()
+    const source = feishuTrigger({ message_id: 'om_root', chat_id: 'oc_1', chat_type: 'group', sender_id: MEMBER,
+      sender_type: 'user', content: '@bot fix', create_time: '1', mentions: [{ id: 'ou_bot' }] }, 'ou_bot', 'cli_bot')!
+    h.store.triggers.save(source)
+    subscribed(h, source.threads[0]!, { chatId: 'oc_1', messageId: 'om_root', sourceTriggerId: source.id })
+    h.store.threads.save({ ...h.store.threads.get(`feishu:${source.threads[0]!.id}`)!, lastAt: new Date().toISOString() })
+    const message = (id: string) => ({ message_id: id, chat_id: 'oc_1', msg_type: 'text', content: `message ${id}`,
+      sender: { id: MEMBER, sender_type: 'user' }, create_time: String(Date.now()) })
+    vi.spyOn(h.commands, 'lark').mockImplementation(async (args) => {
+      if (args[0] === 'api') return { items: [{ message_id: 'om_root', chat_id: 'oc_1', root_id: 'om_root', parent_id: 'om_parent', thread_id: 'omt_1' }] }
+      if (args[1] === '+messages-mget') return { messages: [message(args[3]!)] }
+      return { thread_id: 'omt_1', has_more: false, messages: [] }
+    })
+    await pollFeishuThreads(h)
+    expect(h.store.get('thread-seen:feishu:oc_1:om_root')).toEqual(['om_root', 'om_parent'])
+    h.store.close()
+  })
+
+  it('counts unreadable topic replies and does not repatch the thread it already names', async () => {
+    const h = host()
+    const source = feishuTrigger({ message_id: 'om_root', chat_id: 'oc_1', chat_type: 'group', sender_id: MEMBER,
+      sender_type: 'user', content: '@bot fix', create_time: '1', mentions: [{ id: 'ou_bot' }] }, 'ou_bot', 'cli_bot')!
+    h.store.triggers.save(source)
+    subscribed(h, source.threads[0]!, { chatId: 'oc_1', messageId: 'om_root', sourceTriggerId: source.id, threadId: 'omt_1' })
+    h.store.threads.save({ ...h.store.threads.get(`feishu:${source.threads[0]!.id}`)!, lastAt: new Date().toISOString() })
+    h.store.set('thread-initialized:feishu:oc_1:om_root', true)
+    vi.spyOn(h.commands, 'lark').mockImplementation(async (args) => {
+      if (args[0] === 'api') return { items: [{ message_id: 'om_root', chat_id: 'oc_1', root_id: 'om_root', parent_id: 'om_parent', thread_id: 'omt_1' }] }
+      return { thread_id: 'omt_1', has_more: false, messages: [{ message_id: 'om_root' }] }
+    })
+    const tally = { skipped: 0 }
+    await pollFeishuThreads(h, undefined, tally)
+    expect(tally.skipped).toBe(1)
+    expect(h.store.threads.get('feishu:oc_1:om_root')?.meta.threadId).toBe('omt_1')
+    h.store.close()
+  })
+
+  it('stops a topic poll before it reads or delivers further messages once its signal aborts', async () => {
+    const h = host()
+    const controller = new AbortController()
+    const source = feishuTrigger({ message_id: 'om_root', chat_id: 'oc_1', chat_type: 'group', sender_id: MEMBER,
+      sender_type: 'user', content: '@bot fix', create_time: '1', mentions: [{ id: 'ou_bot' }] }, 'ou_bot', 'cli_bot')!
+    h.store.triggers.save(source)
+    subscribed(h, source.threads[0]!, { chatId: 'oc_1', messageId: 'om_root', sourceTriggerId: source.id })
+    h.store.threads.save({ ...h.store.threads.get(`feishu:${source.threads[0]!.id}`)!, lastAt: new Date().toISOString() })
+    const message = (id: string) => ({ message_id: id, chat_id: 'oc_1', msg_type: 'text', content: `message ${id}`,
+      sender: { id: MEMBER, sender_type: 'user' }, create_time: String(Date.now()) })
+    vi.spyOn(h.commands, 'withSignal').mockReturnValue(h.commands)
+    vi.spyOn(h.commands, 'lark').mockImplementation(async (args) => {
+      if (args[0] === 'api') { controller.abort(); return { items: [{ message_id: 'om_root', chat_id: 'oc_1', root_id: 'om_root', parent_id: 'om_parent', thread_id: 'omt_1' }] } }
+      if (args[1] === '+messages-mget') return { messages: [message(args[3]!)] }
+      return { thread_id: 'omt_1', has_more: false, messages: [] }
+    })
+    await pollFeishuThreads(h, controller.signal)
+    expect(h.receive).not.toHaveBeenCalled()
+    h.store.close()
+  })
+
+  it('stops delivering topic replies after an abort during an earlier delivery', async () => {
+    const h = host()
+    const controller = new AbortController()
+    const source = feishuTrigger({ message_id: 'om_root', chat_id: 'oc_1', chat_type: 'group', sender_id: MEMBER,
+      sender_type: 'user', content: '@bot fix', create_time: '1', mentions: [{ id: 'ou_bot' }] }, 'ou_bot', 'cli_bot')!
+    h.store.triggers.save(source)
+    subscribed(h, source.threads[0]!, { chatId: 'oc_1', messageId: 'om_root', sourceTriggerId: source.id })
+    h.store.threads.save({ ...h.store.threads.get(`feishu:${source.threads[0]!.id}`)!, lastAt: new Date().toISOString() })
+    h.store.set('thread-initialized:feishu:oc_1:om_root', true)
+    h.receive.mockImplementationOnce(async () => { controller.abort() })
+    const reply = (id: string) => ({ message_id: id, chat_id: 'oc_1', msg_type: 'text', content: `reply ${id}`,
+      sender: { id: 'ou_guest', sender_type: 'user' }, create_time: String(Date.now()), thread_id: 'omt_1', root_id: 'om_root' })
+    vi.spyOn(h.commands, 'withSignal').mockReturnValue(h.commands)
+    vi.spyOn(h.commands, 'lark').mockImplementation(async (args) => {
+      if (args[0] === 'api') return { items: [{ message_id: 'om_root', chat_id: 'oc_1', root_id: 'om_root', parent_id: 'om_parent', thread_id: 'omt_1' }] }
+      return { thread_id: 'omt_1', has_more: false, messages: [reply('om_1'), reply('om_2')] }
+    })
+    await pollFeishuThreads(h, controller.signal)
+    expect(h.receive).toHaveBeenCalledTimes(1)
+    h.store.close()
+  })
+
+  it('requires a working bot CLI when history recovery finds a message to take in', async () => {
+    const h = host({ deployment: testDeployment({ feishu: undefined }) })
+    vi.spyOn(h.commands, 'withSignal').mockReturnValue(h.commands)
+    vi.spyOn(h.commands, 'lark').mockResolvedValue({ has_more: false, items: [{ message_id: 'om_1', chat_id: 'oc_1',
+      create_time: String(Date.now()), sender: { id: MEMBER, sender_type: 'user' }, body: { content: '{"text":"hi"}' } }] })
+    await expect(backfillChat(h, 'oc_1', false, new Date(Date.now() - 60_000).toISOString(), new Date().toISOString(),
+      new AbortController().signal)).rejects.toThrow('no working bot CLI')
+    h.store.close()
+  })
+
+  it('takes in a message without a chat id but does not describe a thread for it', async () => {
+    const h = host()
+    vi.spyOn(h.commands, 'withSignal').mockReturnValue(h.commands)
+    vi.spyOn(h.commands, 'lark').mockResolvedValue({ has_more: false, items: [{ message_id: 'om_empty', chat_id: '',
+      create_time: String(Date.now()), sender: { id: MEMBER, sender_type: 'user' }, body: { content: '{"text":"hi"}' } }] })
+    await backfillChat(h, '', false, new Date(Date.now() - 60_000).toISOString(), new Date().toISOString(), new AbortController().signal)
+    expect(h.receive).toHaveBeenCalledTimes(1)
+    h.store.close()
+  })
+
+  it('skips deleted history and messages from the bot itself', async () => {
+    const h = host()
+    vi.spyOn(h.commands, 'withSignal').mockReturnValue(h.commands)
+    vi.spyOn(h.commands, 'lark').mockResolvedValue({ has_more: false, items: [
+      { message_id: 'om_deleted', chat_id: 'oc_1', create_time: String(Date.now()), deleted: true,
+        sender: { id: MEMBER, sender_type: 'user' } },
+      { message_id: 'om_bot', chat_id: 'oc_1', create_time: String(Date.now()), sender: { id: 'ou_bot', sender_type: 'app' },
+        body: { content: '{"text":"mine"}' } },
+    ] })
+    await backfillChat(h, 'oc_1', false, new Date(Date.now() - 60_000).toISOString(), new Date().toISOString(), new AbortController().signal)
+    expect(h.receive).not.toHaveBeenCalled()
+    h.store.close()
+  })
+
+  it('refuses to start a history scan after its signal has aborted', async () => {
+    const h = host()
+    const controller = new AbortController()
+    controller.abort()
+    vi.spyOn(h.commands, 'withSignal').mockReturnValue(h.commands)
+    const lark = vi.spyOn(h.commands, 'lark')
+    await expect(backfillChat(h, 'oc_1', false, new Date(Date.now() - 60_000).toISOString(), new Date().toISOString(),
+      controller.signal)).rejects.toBe(controller.signal.reason)
+    expect(lark).not.toHaveBeenCalled()
+    h.store.close()
+  })
+
   it('recovers the topics of a chat while they had a message in the last two weeks, and forgets quieter ones', async () => {
     const h = host()
     const day = 24 * 3600_000
@@ -1138,6 +1305,7 @@ describe('feishu event consumer', () => {
     warn) echo '[event] ready' >&2; echo 'WARN the connection was reset' >&2; exec sleep 60 ;;
     ready) echo '[event] ready' >&2; exec sleep 60 ;;
     flaky) echo '[event] ready' >&2; [ "$n" -gt 1 ] && exec sleep 60; exit 1 ;;
+    noise) echo '[event] ready' >&2; echo 'INFO connected' >&2; exec sleep 60 ;;
     events) echo '[event] ready' >&2; cat '${dir}/events'; touch '${dir}/printed'; exec sleep 60 ;;
     late) echo '[event] ready' >&2; sleep 1; cat '${dir}/events'; touch '${dir}/printed'; exec sleep 60 ;;
   esac
@@ -1188,6 +1356,100 @@ describe('feishu event consumer', () => {
       create_time: String(Date.now()),
       ...(type === 'group' ? { mentions: [{ id: 'ou_bot', name: 'Bot' }] } : {}),
     })
+  it('reports an event line larger than 1 MiB without stopping the consumer', async () => {
+    writeFileSync(join(dir, 'events'), `${Buffer.alloc(1_048_577, 120).toString()}\n`)
+    const { ctx, health, store } = consumerSource(cli('events'))
+    running = runFeishu(ctx, controller.signal)
+    await vi.waitFor(() =>{ expect(health.feishu).toMatchObject({ state: 'error',
+      detail: expect.stringContaining('Feishu event exceeds 1 MiB') as unknown }) }, until)
+    controller.abort(); await running; store.close()
+  }, 20_000)
+
+  it('stays ready after a diagnostic line that is neither a warning, drop, nor error', async () => {
+    const { ctx, health, store } = consumerSource(cli('noise'))
+    running = runFeishu(ctx, controller.signal)
+    await vi.waitFor(() =>{ expect(health.feishu).toMatchObject({ state: 'ready', detail: 'Listening for bot events' }) }, until)
+    controller.abort(); await running; store.close()
+  }, 20_000)
+
+  it('keeps all three loops paused while the Feishu Source is off', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] })
+    const { ctx, health, store, turnOff } = consumerSource(cli('ready'))
+    turnOff()
+    const lark = vi.spyOn(ctx.commands, 'lark')
+    running = runFeishu(ctx, controller.signal)
+    await vi.advanceTimersByTimeAsync(0)
+    await vi.advanceTimersByTimeAsync(5000)
+    expect(health.feishu).toMatchObject({ state: 'paused', code: 'sourceOff' })
+    expect(health.history).toMatchObject({ state: 'paused', code: 'sourceOff' })
+    expect(lark).not.toHaveBeenCalled()
+    controller.abort(); await running; store.close()
+  }, 20_000)
+
+  it('records a chat history cursor on its first round before backfilling that chat', async () => {
+    const { ctx, store } = consumerSource(cli('ready'), { chats: [{ chatId: 'oc_a', listen: 'all' }], directMessages: true })
+    store.set(KV.feishu.chats, { oc_a: false })
+    running = runFeishu(ctx, controller.signal)
+    await vi.waitFor(() =>{ expect(store.get(KV.feishu.history('oc_a'))).toBeDefined() }, until)
+    controller.abort(); await running; store.close()
+  }, 20_000)
+
+  it('reports unreadable history messages from the background loop', async () => {
+    const { ctx, health, store } = consumerSource(cli('ready'), { chats: [{ chatId: 'oc_a', listen: 'all' }], directMessages: true })
+    store.set(KV.feishu.chats, { oc_a: false })
+    store.set(KV.feishu.history('oc_a'), new Date(Date.now() - 60_000).toISOString())
+    vi.spyOn(ctx.commands, 'withSignal').mockReturnValue(ctx.commands)
+    vi.spyOn(ctx.commands, 'lark').mockImplementation(async (args) => {
+      if (args[0] !== 'api') return { chats: [] }
+      return { has_more: false, items: [{ message_id: 'om_bad', chat_id: 'oc_a' }] }
+    })
+    running = runFeishu(ctx, controller.signal)
+    await vi.waitFor(() =>{ expect(health.history).toMatchObject({ state: 'ready',
+      detail: expect.stringContaining('1 unreadable messages skipped') as unknown }) }, until)
+    controller.abort(); await running; store.close()
+  }, 20_000)
+
+  it('does not advance a chat cursor when its signal aborts after the history read', async () => {
+    const { ctx, store } = consumerSource(cli('ready'), { chats: [{ chatId: 'oc_a', listen: 'all' }], directMessages: true })
+    const hour = new Date(Date.now() - 3_600_000).toISOString()
+    store.set(KV.feishu.chats, { oc_a: false })
+    store.set(KV.feishu.history('oc_a'), hour)
+    vi.spyOn(ctx.commands, 'withSignal').mockReturnValue(ctx.commands)
+    vi.spyOn(ctx.commands, 'lark').mockImplementation(async (args) => {
+      if (args[0] !== 'api') return { chats: [] }
+      controller.abort()
+      return { has_more: false, items: [] }
+    })
+    running = runFeishu(ctx, controller.signal)
+    await running
+    expect(store.get(KV.feishu.history('oc_a'))).toBe(hour)
+    store.close()
+  }, 20_000)
+
+  it('breaks out of chat recovery and suppresses errors after an abort', async () => {
+    const { ctx, health, store } = consumerSource(cli('ready'), { chats: [{ chatId: 'oc_a', listen: 'all' }], directMessages: true })
+    const hour = new Date(Date.now() - 3_600_000).toISOString()
+    store.set(KV.feishu.chats, { oc_a: true, oc_b: true })
+    store.set(KV.feishu.history('oc_a'), hour)
+    store.set(KV.feishu.history('oc_b'), hour)
+    const reads: string[] = []
+    vi.spyOn(ctx.commands, 'withSignal').mockReturnValue(ctx.commands)
+    vi.spyOn(ctx.commands, 'lark').mockImplementation(async (args) => {
+      if (args[0] !== 'api') return { chats: [] }
+      const parameters = JSON.parse(args[args.indexOf('--params') + 1]!) as { container_id: string }
+      reads.push(parameters.container_id)
+      controller.abort()
+      return { has_more: false, items: [{ message_id: 'om_outside', chat_id: 'oc_other',
+        create_time: String(Date.now()), sender: { id: MEMBER, sender_type: 'user' }, body: { content: '"outside"' } }] }
+    })
+    running = runFeishu(ctx, controller.signal)
+    await running
+    expect(reads).toEqual(['oc_a'])
+    expect(health.history?.state).not.toBe('error')
+    expect(store.get(KV.feishu.history('oc_a'))).toBe(hour)
+    store.close()
+  }, 20_000)
+
   it('takes in the event lines it reads, records each chat as direct or not, and reports a malformed line without stopping', async () => {
     writeFileSync(
       join(dir, 'events'),
@@ -1281,6 +1543,8 @@ describe('feishu event consumer', () => {
     running = runFeishu(ctx, controller.signal)
     await vi.waitFor(() =>{  expect(health.feishu).toMatchObject({ state: 'ready', detail: 'Listening for bot events' }) }, until)
     const pid = Number(readFileSync(join(dir, 'pid'), 'utf8'))
+    await vi.advanceTimersByTimeAsync(5000)
+    expect(alive(pid)).toBe(true)
     turnOff()
     await vi.advanceTimersByTimeAsync(5000)
     await vi.waitFor(() =>{  expect(health.feishu).toMatchObject({ state: 'paused', code: 'sourceOff' }) }, until)

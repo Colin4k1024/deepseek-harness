@@ -1,10 +1,13 @@
 // @vitest-environment jsdom
 // The Execution status, a Ticket, and the Execution settings.
 import { act } from 'react'
-import { expect, it } from 'vitest'
+import { createRoot } from 'react-dom/client'
+import { expect, it, onTestFinished } from 'vitest'
 import { en, zh } from '../src/client/locales.ts'
-import { usePanel, mount, remount, all, find, tab, click, type, text, field, at } from './fixtures/panel.client.tsx'
-import { MEMBER, server, ticketSummary, threadSummary } from './fixtures/panel-server.client.ts'
+import { PanelProvider } from '../src/client/provider.tsx'
+import { TicketPage } from '../src/client/ticket.tsx'
+import { translator, usePanel, mount, remount, settle, all, find, tab, click, type, text, field, at } from './fixtures/panel.client.tsx'
+import { MEMBER, actor, server, ticketSummary, threadSummary } from './fixtures/panel-server.client.ts'
 
 usePanel()
 it('lists Tickets under Execution by who they wait on, with the Executor state and its pause as an action', async () => {
@@ -221,4 +224,76 @@ it('sends one stop for a double click on Confirm', async () => {
   const confirm = find(zh.confirm)
   await act(async () => { confirm.click(); confirm.click() })
   expect(server.requests.filter(request => request.path === 'tickets/t1/stop')).toHaveLength(1)
+})
+
+
+it('shows a resumed Ticket\'s assignments, every Mandate fact, and its paused Inputs', async () => {
+  const routes: object[] = []
+  const base = server.ticketDetails.t1!
+  server.ticketDetails.t5 = {
+    ...base,
+    id: 't5', title: '丰富工单', actions: { retry: true, stop: false }, sessionId: undefined, directory: undefined,
+    stage: 'person', action: 'failed', summary: 'LlmError: no adapter registered', paused: true,
+    threads: [{ ...threadSummary(), url: 'https://example.test/thread' }],
+    assignments: [
+      { id: 'a4', state: 'pending', createdAt: '2026-09-22T00:00:00Z' },
+      { id: 'a3', state: 'running', createdAt: '2026-09-22T00:00:00Z', startedAt: '2026-09-22T00:01:00Z',
+        turnEndedAt: '2026-09-22T00:04:00Z', report: { state: 'failed', summary: 'failed', at: '2026-09-22T00:04:00Z' } },
+      { id: 'a2', state: 'ended', createdAt: '2026-09-22T00:00:00Z', startedAt: '2026-09-22T00:01:00Z',
+        endedAt: '2026-09-22T00:03:00Z', endedReason: 'Human asked to stop', ref: 'worker-other',
+        report: { state: 'blocked', summary: 'blocked', at: '2026-09-22T00:02:00Z' } },
+      { id: 'a1', state: 'ended', createdAt: '2026-09-22T00:00:00Z', endedAt: '2026-09-22T00:02:00Z',
+        endedReason: 'Nothing to run', report: { state: 'ready', summary: 'ready', at: '2026-09-22T00:01:00Z' } },
+    ],
+    inputs: [
+      { id: 'i3', kind: 'text', text: 'A person added context', at: '2026-09-22T00:05:00Z', delivered: true },
+      { id: 'i2', kind: 'note', text: '', at: '2026-09-22T00:04:00Z', delivered: true },
+      { id: 'i1', kind: 'trigger', triggerId: 'e2', at: '2026-09-22T00:03:00Z', delivered: false,
+        trigger: { id: 'e2', actor: actor('feishu', MEMBER), human: true, preview: 'resume it', thread: 'feishu:oc_1:om_root' } },
+    ],
+    basis: {
+      facts: [
+        { name: 'sender', value: 'Alice' }, { name: 'bot' }, { name: 'mode', value: 'auto' },
+        { name: 'addressed', value: 'mention' }, { name: 'admission', value: 'unlistedAddressed' },
+        { name: 'rules', value: [{ id: 'r1', name: '文案修改' }] }, { name: 'followup' },
+      ],
+      legacy: false,
+    },
+    decision: {
+      ...base.decision!,
+      preview: '',
+      rules: [{ id: 'r1', name: '文案修改', matched: true, reason: 'matches wording' },
+        { id: 'r2', name: '交付要求', matched: false, reason: 'does not apply' }],
+      direction: { implementation_requested: true, target_basis: 'human', requires_design_decision: true, evidence: 'the message asks for it' },
+    },
+  }
+  const container = document.createElement('div'); document.body.append(container)
+  const root = createRoot(container)
+  onTestFinished(() => { act(() => { root.unmount() }); container.remove() })
+  const Harness = ({ id, name }: { id: string; name: string }) => (
+    <PanelProvider t={translator(zh)} navigate={(route) => { routes.push(route) }}>
+      <TicketPage key={name} id={id} />
+    </PanelProvider>
+  )
+  await act(async () => { root.render(<Harness id="t5" name="current" />) }); await settle()
+  for (const expected of ['第 4 次派工', '报告：失败', '报告：受阻', zh.inputPausedHint, '文案修改 · 匹配：matches wording',
+    '交付要求 · 不匹配：does not apply', '实施意图：已明确；修改依据：human；仍需产品／视觉设计决策', zh.failedPrefix]) expect(text()).toContain(expected)
+  await click(document.querySelector('.dt-trigger-link') as HTMLElement)
+  expect(routes.at(-1)).toEqual({ page: 'trigger', id: 'feishu:oc_1:om_root', query: { trigger: 'e1' } })
+  await click(document.querySelector('.dt-textlink.dt-mono') as HTMLElement)
+  expect(routes.at(-1)).toEqual({ page: 'settings', query: { group: 'eval', version: 'abcdef1234567890' } })
+  await click(zh.retry); await click(zh.confirm)
+  expect(server.requests.some(request => request.path === 'tickets/t5/retry' && request.method === 'POST')).toBe(true)
+
+  server.ticketDetails.t5 = {
+    ...server.ticketDetails.t5!,
+    mandate: { ...server.ticketDetails.t5!.mandate, scope: 'legacy scope' },
+    basis: { facts: [{ name: 'legacyAuthority', value: 'old authority' }], legacy: true },
+    decision: { ...server.ticketDetails.t5!.decision!, direction: { implementation_requested: false, target_basis: 'rule',
+      requires_design_decision: false, evidence: 'the rule says so' } },
+  }
+  await act(async () => { root.render(<Harness id="t5" name="legacy" />) }); await settle()
+  expect(document.querySelector('.dt-textlink.dt-mono')).toBeNull()
+  expect(text()).toContain(zh.legacyScopeShort)
+  expect(text()).toContain('实施意图：未明确'); expect(text()).toContain('无需新增设计决策')
 })

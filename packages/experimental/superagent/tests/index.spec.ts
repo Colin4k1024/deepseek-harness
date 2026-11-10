@@ -3,7 +3,8 @@ import { Config, type Machine } from '../src/deployment.ts'
 import { apply } from '../src/index.ts'
 
 // Stub Runtime to capture the resolved Machine settings and restart callback.
-const runtimes = vi.hoisted(() => [] as { machine: Machine; restart: () => void }[])
+const runtimes = vi.hoisted(() => [] as { machine: Machine; restart: () => void; stop: ReturnType<typeof vi.fn> }[])
+const configured = vi.hoisted(() => ({ value: true }))
 vi.mock('../src/app/runtime.ts', () => ({
   Runtime: class {
     ready = Promise.resolve()
@@ -15,9 +16,10 @@ vi.mock('../src/app/runtime.ts', () => ({
       runtimes.push(this)
     }
     configured() {
-      return true
+      return configured.value
     }
-    async stop() {}
+    setupProblem = { detail: 'no state directory is configured' }
+    stop = vi.fn(async () => {})
   },
 }))
 /** Simulate the Cordis loader updating a volatile configuration reference in place. */
@@ -27,6 +29,7 @@ const commit = (reference: unknown, value: unknown) => {
 
 function context() {
   const handlers = new Map<string, () => void>()
+  const effects: Array<() => unknown> = []
   const configure = vi.fn(() => () => {})
   const describe = vi.fn(() => [])
   const ctx = {
@@ -36,12 +39,12 @@ function context() {
     inject: vi.fn((_services: string[], callback: (child: unknown) => void) => {
       callback({ effect: (effect: () => unknown) => effect(), settings: { configure } })
     }),
-    effect: vi.fn(),
+    effect: vi.fn((effect: () => unknown) => effects.push(effect())),
     fiber: { restart: vi.fn(async () => {}) },
     get: vi.fn((name: string) => (name === 'settings' ? { describe } : undefined)),
     logger: { info: vi.fn(), error: vi.fn() },
   }
-  return { ctx, handlers, configure, describe }
+  return { ctx, handlers, configure, describe, effects }
 }
 
 it('reads a limit DSH commits a new value of without a restart, and asks DSH to generate no settings page', async () => {
@@ -68,6 +71,26 @@ it('asks DSH to read its settings entry again once a restart it started finished
   expect(describe).not.toHaveBeenCalled()
   finish()
   await vi.waitFor(() => { expect(describe).toHaveBeenCalledTimes(1) })
+})
+
+it('stops the Runtime when the plugin is disposed', async () => {
+  const { ctx, effects } = context()
+  await apply(ctx as never, Config({ stateDir: '/srv/state' }))
+  const stop = effects.find(effect => typeof effect === 'function')
+  if (stop === undefined) throw new Error('plugin registered no disposal effect')
+  await stop()
+  expect(runtimes.at(-1)!.stop).toHaveBeenCalledOnce()
+})
+
+it('reports a failed restart and a Runtime waiting for setup', async () => {
+  const { ctx, describe } = context()
+  configured.value = false
+  ctx.fiber.restart.mockRejectedValueOnce(new Error('fiber stopped'))
+  await apply(ctx as never, Config({ stateDir: '/srv/state' }))
+  expect(ctx.logger.info).toHaveBeenCalledWith(expect.stringContaining('waiting for setup: no state directory is configured'))
+  runtimes.at(-1)!.restart()
+  await vi.waitFor(() => { expect(ctx.logger.error).toHaveBeenCalledWith('dsh-superagent restart failed: %s', 'Error: fiber stopped') })
+  expect(describe).not.toHaveBeenCalled()
 })
 
 it('refuses keys of the previous configuration before registering anything', async () => {
