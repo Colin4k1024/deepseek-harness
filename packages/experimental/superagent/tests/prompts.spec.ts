@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, relative } from 'node:path'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { Store } from '../src/app/store.ts'
 import { Prompts, builtInBase, composePrompt, composeSkill, defaultPrompts, policySection, promptParts, type PromptConfig } from '../src/app/prompts.ts'
 import { USER_ERRORS, UserError } from '../src/core/index.ts'
@@ -77,6 +77,35 @@ it('reads a prompt file whatever its line ends and blank lines, and names a miss
     expect(() => promptFile(name('blank'))).toThrow(`Empty packaged file: ${join(dir, 'blank.md')}`)
     expect(() => promptFile(name('absent'))).toThrow(`Missing packaged file: ${join(dir, 'absent.md')}`)
   } finally { rmSync(dir, { recursive: true, force: true }) }
+})
+
+it('passes a packaged file read failure that is not a missing file through', async () => {
+  vi.resetModules()
+  vi.doMock('../src/infra/paths.ts', () => ({ packagePath: (...parts: string[]) => join(...parts) }))
+  vi.doMock('node:fs', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('node:fs')>()
+    return { ...actual, readFileSync: () => { throw new Error('permission denied') } }
+  })
+  try {
+    await expect(import('../src/app/skill-files.ts')).rejects.toThrow('permission denied')
+  } finally {
+    vi.doUnmock('node:fs'); vi.doUnmock('../src/infra/paths.ts'); vi.resetModules()
+  }
+})
+
+it('refuses a packaged skill whose front matter does not match the built-in shape', async () => {
+  vi.resetModules()
+  const skill = join('skills', 'dsh-superagent-feishu', 'SKILL.md')
+  vi.doMock('../src/infra/paths.ts', () => ({ packagePath: (...parts: string[]) => join(...parts) }))
+  vi.doMock('node:fs', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('node:fs')>()
+    return { ...actual, readFileSync: () => 'not front matter' }
+  })
+  try {
+    await expect(import('../src/app/skill-files.ts')).rejects.toThrow(`Invalid packaged skill: ${skill}`)
+  } finally {
+    vi.doUnmock('node:fs'); vi.doUnmock('../src/infra/paths.ts'); vi.resetModules()
+  }
 })
 
 it('leaves the UI before-and-after evidence to the delivery requirements, which a team can change', () => {

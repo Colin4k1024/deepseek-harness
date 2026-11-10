@@ -8,7 +8,7 @@ import { threadKey, type Thread, type Trigger } from '../core/index.ts'
 import { feishuChatLink } from './feishu-channel.ts'
 import type { FeishuBot } from '../deployment.ts'
 import { validItems, type Tally } from '../infra/commands.ts'
-import { readFeishu, type FeishuRef } from './feishu-read.ts'
+import { readFeishu, type FeishuMessage, type FeishuPage, type FeishuRef } from './feishu-read.ts'
 import { feishuRef, feishuTime, feishuTrigger, HistoricalMessageSchema, historyEvent, HistoryPageSchema, SOURCE, topicEvent }
   from './feishu-trigger.ts'
 import { health, type SourceContext } from './host.ts'
@@ -248,8 +248,8 @@ async function pollThread(ctx: SourceContext, thread: Thread, signal?: AbortSign
   let resource: string | null = `feishu/${ref.triggerId}/thread`
   while (resource) {
     if (signal?.aborted) return
-    const result = await readFeishu(commands, ref, resource, pageSize, 'desc')
-    if (!('messages' in result)) throw new Error('Expected Feishu thread messages')
+    // A thread resource always returns a page; the union covers the other resource sections.
+    const result = await readFeishu(commands, ref, resource, pageSize, 'desc') as FeishuPage<FeishuMessage>
     if (tally && 'skipped' in result) tally.skipped += result.skipped
     if ('thread_id' in result && result.thread_id && thread.meta.threadId !== result.thread_id) {
       ctx.threads.patch(thread.key, { threadId: result.thread_id })

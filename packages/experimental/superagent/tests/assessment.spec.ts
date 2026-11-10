@@ -251,6 +251,33 @@ it('lets the main Session read on from the cursor its loaded window ends with, a
 })
 
 
+it('runs the candidate effect by hand and stops the assessor', async () => {
+  const s = setup()
+  s.engine.receive(issue(1)); s.engine.evaluateDue()
+  const candidate = s.engine.candidate('issue-1')!
+  const handler = s.effects.handle.mock.calls[0]![1] as (payload: { triggerId: string }, key: string) => Promise<void>
+  await handler({ triggerId: 'issue-1' }, candidate.evalId)
+  const options = s.effects.handle.mock.calls[0]![2] as { limit: () => number }
+  expect(options.limit()).toBe(4)
+  const paused = setup('inferred', undefined, undefined, undefined, true)
+  const pausedOptions = paused.effects.handle.mock.calls[0]![2] as { limit: () => number }
+  expect(pausedOptions.limit()).toBe(0)
+  s.assessor.stop()
+})
+
+it('skips a deleted message when it caches the initial window, so it cannot be read in full', async () => {
+  const deleted = { id: 'deleted', from: 'bob', at: new Date(Date.UTC(2026, 8, 9, 0, 0, 0)).toISOString(), text: 'gone', deleted: true }
+  const live = { id: 'live', from: 'bob', at: new Date(Date.UTC(2026, 8, 9, 0, 0, 1)).toISOString(), text: 'still here' }
+  const context = { messageId: 'live', read: async () => ({ messages: [deleted, live] }), images: () => [],
+    image: async () => { throw new Error('No images') } }
+  const s = setup('inferred', undefined, () => context)
+  s.engine.receive({ ...issue(1), id: 'live' }); s.engine.evaluateDue()
+  const result = await s.assessor.context('live', signal) as { thread: { messages: Record<string, unknown>[] } }
+  expect(result.thread.messages).toEqual([{ id: 'deleted', from: 'bob', deleted: true }, expect.objectContaining({ id: 'live', trigger: true })])
+  await expect(s.tools.orchestrator_eval_read!({ trigger_id: 'live', resource: 'message', message_id: 'deleted' }, signal))
+    .rejects.toThrow('Unknown message reference')
+})
+
 it('rejects assessment and read arguments the tools cannot accept', () => {
   const direction = { implementation_requested: true, target_basis: 'specified', requires_design_decision: false, evidence: 'e' }
   const assessment = { decision: 'ignore', direction, title: 't', scope: 's', reason: 'r' }
@@ -343,6 +370,24 @@ it('records a failed initial thread read instead of losing the evaluation', asyn
   s.engine.receive(issue(1)); s.engine.evaluateDue()
   const result = await s.assessor.context('issue-1', signal) as { thread: { error: string } }
   expect(result.thread.error).toContain('Thread context unavailable: Error: Feishu unavailable')
+})
+
+it('records an ignored assessment without a ticket', async () => {
+  const s = setup()
+  s.engine.receive(issue(1)); s.engine.evaluateDue()
+  await s.assessor.context('issue-1', signal)
+  const decision = {
+    decision: 'ignore',
+    rule_assessments: [{ rule_id: 'copy', reason: 'No request.', matched: false },
+      { rule_id: 'visual', reason: 'No visual evidence.', matched: false }],
+    direction: { implementation_requested: false, target_basis: 'undetermined', requires_design_decision: false, evidence: 'No request.' },
+    title: 'Not a request',
+    scope: 'No work.',
+    reason: 'No request.',
+  }
+  const result = await s.tools.orchestrator_eval_decide!({ trigger_id: 'issue-1', ...decision }, signal)
+  expect(result).toMatchObject({ state: 'ignore' })
+  expect(result).not.toHaveProperty('ticket_id')
 })
 
 it('records an accepted assessment with its acknowledgement and ticket', async () => {

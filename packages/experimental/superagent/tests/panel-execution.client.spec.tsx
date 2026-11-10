@@ -177,6 +177,24 @@ it('tells a Ticket or Thread that does not exist from a dsh-superagent that is n
   expect(text()).toContain(zh.hostNotRunning)
 })
 
+it('says when the Execution list has no Tickets', async () => {
+  server.tickets.open = []
+  await mount()
+  await click(zh['tab.execution'])
+  expect(text()).toContain(zh.none)
+})
+
+it('keeps the Execution status while the Ticket list itself fails to load', async () => {
+  await mount()
+  const original = vi.mocked(globalThis.fetch).getMockImplementation()!
+  vi.mocked(globalThis.fetch).mockImplementation(async (url: string | URL, init?: RequestInit) => String(url).includes('/tickets?')
+    ? new Response(null, { status: 500 })
+    : original(url, init))
+  await click(zh['tab.execution'])
+  expect(text()).toContain(zh.serverError.replace('{status}', '500'))
+  expect(text()).toContain(zh.executorRunning)
+})
+
 it('gives a Ticket a bot\'s message started its basis, marks a Thread it follows for context, and an Input it handed back', async () => {
   const t1 = server.ticketDetails.t1!
   server.ticketDetails.t1 = { ...t1, mandate: { ...t1.mandate, strength: 'inferred', basis: { via: 'bot', sender: '评审机器人',
@@ -353,4 +371,69 @@ it('names an environment variable owner that is no longer listed as a Source', a
   const variables = [...container.querySelectorAll<HTMLElement>('[data-disclosure-row]')].find(row => row.textContent?.includes(zh.environmentVariables))!
   await act(async () => { variables.click() })
   expect(text()).toContain('removed')
+})
+
+it('shows a Ticket without a Decision, an empty scope, mixed Inputs, and a plain blocked summary', async () => {
+  const base = server.ticketDetails.t1!
+  server.ticketDetails.t6 = {
+    ...base, id: 't6', title: '等待仓库维护者', actions: { retry: true, stop: false }, summary: 'waiting for repository owner',
+    stage: 'person', action: 'review', decision: undefined, threads: [], environment: [], channels: [],
+    mandate: { ...base.mandate, scope: '' }, basis: { facts: [], legacy: false },
+    assignments: [
+      { id: 'a2', state: 'ended', createdAt: '2026-09-22T00:00:00Z', startedAt: '2026-09-22T00:01:00Z',
+        endedAt: '2026-09-22T00:03:00Z', report: { state: 'ready', summary: 'ready', at: '2026-09-22T00:02:00Z' } },
+      { id: 'a1', state: 'running', createdAt: '2026-09-22T00:00:00Z', startedAt: '2026-09-22T00:01:00Z',
+        report: { state: 'progress', summary: 'working', at: '2026-09-22T00:02:00Z' } },
+    ],
+    inputs: [
+      { id: 'i4', kind: 'text', at: '2026-09-22T00:06:00Z', delivered: true },
+      { id: 'i3', kind: 'policy-changed', at: '2026-09-22T00:05:00Z', delivered: true,
+        from: 'aaaaaaaaaaaaaaaa', to: 'bbbbbbbbbbbbbbbb' },
+      { id: 'i2', kind: 'trigger', triggerId: 'missing', at: '2026-09-22T00:04:00Z', delivered: false },
+      { id: 'i1', kind: 'note', text: 'A person added context', at: '2026-09-22T00:03:00Z', delivered: false },
+      { id: 'i0', kind: 'trigger', triggerId: 'empty', at: '2026-09-22T00:02:00Z', delivered: false,
+        trigger: { id: 'empty', actor: actor('feishu', MEMBER), human: true, preview: '', thread: 'feishu:oc_1:om_root' } },
+    ],
+  }
+  at({ page: 'execution', id: 't6' })
+  await mount()
+  expect(text()).toContain(`${zh.blockedPrefix}waiting for repository owner`)
+  expect(text()).not.toContain(zh.failedPrefix)
+  expect(all('.dt-kv > div').find(row => row.querySelector('dt')?.textContent === zh['term.scope'])?.querySelector('dd')?.textContent).toBe(zh.empty)
+  expect(text()).toContain(zh['input.note'])
+  expect(text()).toContain(zh['input.trigger'])
+  await click(zh.deliveredInputs.replace('{count}', '2'))
+  expect(text()).toContain(zh['input.policy-changed'])
+  expect(all('.dt-list .dt-row .dt-tag').map(tag => tag.textContent)).toContain(zh['assignment.running'])
+})
+
+it('opens the Thread of a Decision that names no Trigger', async () => {
+  const base = server.ticketDetails.t1!
+  const routes: object[] = []
+  server.ticketDetails.t7 = { ...base, id: 't7', decision: { ...base.decision!, triggerIds: [], preview: '' } }
+  const container = document.createElement('div'); document.body.append(container)
+  const root = createRoot(container)
+  onTestFinished(() => { act(() => { root.unmount() }); container.remove() })
+  await act(async () => {
+    root.render(<PanelProvider t={translator(zh)} navigate={(route) => { routes.push(route) }}><TicketPage id="t7" /></PanelProvider>)
+  })
+  await settle()
+  await click(document.querySelector<HTMLElement>('.dt-trigger-link')!)
+  expect(routes.at(-1)).toEqual({ page: 'trigger', id: 'feishu:oc_1:om_root', query: { trigger: '' } })
+})
+
+it('keeps showing a Ticket after a later poll fails', async () => {
+  vi.useFakeTimers({ shouldAdvanceTime: true })
+  onTestFinished(() => { vi.useRealTimers() })
+  at({ page: 'execution', id: 't1' })
+  await mount()
+  const original = vi.mocked(globalThis.fetch).getMockImplementation()!
+  vi.mocked(globalThis.fetch).mockImplementation(async (url: string | URL, init?: RequestInit) =>
+    String(url).includes('/tickets/t1')
+      ? new Response(JSON.stringify({ error: 'ticket read failed' }), { status: 500, headers: { 'content-type': 'application/json' } })
+      : original(url, init))
+  await act(async () => { await vi.advanceTimersByTimeAsync(5000) }); await settle()
+  expect(text()).toContain('修复回归')
+  expect(text()).toContain('ticket read failed')
+  vi.mocked(globalThis.fetch).mockImplementation(original)
 })

@@ -194,6 +194,10 @@ describe('feishu source', () => {
       .toMatchObject({ sender_id: 'ou_user', root_id: 'om_root' })
     expect(topicEvent({ ...base, root_id: 'om_root', sender: { id: 'ou_user', open_bot_id: 'ou_bot', sender_type: 'app' } }, 'oc_1', true, 'om_root'))
       .toMatchObject({ sender_id: 'ou_bot', sender_type: 'bot', root_id: 'om_root' })
+    const { content: _content, ...withoutContent } = base
+    const root = topicEvent({ ...withoutContent, sender: { id: 'ou_user', sender_type: 'user' } }, 'oc_1', false, 'om_2') as { content?: string; root_id?: string }
+    expect(root.content).toBe('')
+    expect(root.root_id).toBeUndefined()
   })
 
   it('translates live events into triggers keyed by root message, and drops the bot\'s own messages', () => {

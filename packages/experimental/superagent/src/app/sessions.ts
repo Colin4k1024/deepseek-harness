@@ -410,8 +410,7 @@ export class Sessions {
   private promptFor(agent: Agent, bind: boolean): PromptVersion {
     const version = this.host.prompts.current()
     if (!bind) return version
-    const binding = this.bindings.get(agent)
-    if (binding) this.bindSkills(binding, version)
+    this.bindSkills(required(this.bindings.get(agent)), version)
     const { store } = this.host
     const revisions = store.get(KV.sessions.prompts(agent.id)) ?? []
     const bound = [...revisions.filter(revision => revision !== version.revision), version.revision]

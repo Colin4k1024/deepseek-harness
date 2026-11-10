@@ -209,6 +209,7 @@ it('keeps each message as a receipt of what became of it, with why one was dropp
   message('ignored', 1, { dropped: { at: '2026-09-02T00:00:00.000Z', reason: 'The Source no longer listens to this conversation' } })
   message('sent', 1)
   message('waiting', 0)
+  message('bare', 0, { attempts: undefined, error: 12 })
   db.close()
   const store = new Store(path)
   expect(store.read.droppedReplies().map(item => [item.id, item.dropped.reason])).toEqual([
@@ -226,6 +227,7 @@ it('keeps each message as a receipt of what became of it, with why one was dropp
   })
   expect(store.db.prepare('SELECT kind, key, attempts, error FROM effect').all()).toEqual([
     { kind: 'reply', key: 'waiting', attempts: 2, error: 'offline' },
+    { kind: 'reply', key: 'bare', attempts: 0, error: '' },
   ])
   expect(
     store.db
@@ -375,6 +377,15 @@ it('writes the removed auto-merge threshold and member identities into the promp
   expect(new Prompts(own, () => 100000, () => undefined, () => true).current().config.delivery)
     .toBe('Deliver PRs.\nEnable auto-merge only on a PR that changes fewer than 80 lines (additions plus deletions).')
   own.close()
+  const defaultThreshold = opened({ 'prompt-revision': 1,
+    'prompt-version:1': { revision: 1, previousRevision: 0, savedAt: '', source: 'panel', config: { ...defaultPrompts(), delivery: 'Deliver PRs.' } } })
+  expect(new Prompts(defaultThreshold, () => 100000, () => undefined, () => true).current().config.delivery).toBe('Deliver PRs.')
+  defaultThreshold.close()
+  const nameless = opened({ 'settings-before-9': { policy: { autoMergeLineLimit: 350,
+    members: [{ feishuId: 'ou_nameless', github: 'nameless' }] } } })
+  expect(new Prompts(nameless, () => 100000, () => undefined, () => true).current().config.skills.identities)
+    .toContain('- ou_nameless (Feishu ou_nameless) is @nameless on GitHub')
+  nameless.close()
   const done = opened({ 'settings-before-9': before, 'prompt-settings-text': 1 })
   expect(new Prompts(done, () => 100000, () => undefined, () => true).current().revision).toBe(0)
   done.close()
@@ -553,6 +564,31 @@ it('dates each Thread from its Triggers, and keeps every Trigger\'s time in the 
   store.close()
 })
 
+it('normalizes a Thread without last activity and keeps one whose saved last activity is newer', () => {
+  const path = join(directory, 'db.sqlite')
+  const comment = (id: string, at: string, thread: string) => ({ id, source: 'github', threads: [{ source: 'github', id: thread }],
+    actor, human: true, at, text: id, meta: {} })
+  const newer = [comment('first8', '2026-10-01T00:00:00Z', '8'), comment('last8', '2026-10-09T00:00:00.000Z', '8')]
+  const sparse = [comment('first9', '2026-10-01T00:00:00Z', '9')]
+  schema10(path, {}, { trigger: [...newer, ...sparse],
+    thread: [
+      { key: 'github:8', ref: { source: 'github', id: '8' }, createdAt: '2026-10-01T00:00:00Z', lastAt: '2026-10-10T00:00:00.000Z',
+        subscriptions: [], correlated: [], pending: [], meta: {} },
+      { key: 'github:9', ref: { source: 'github', id: '9' }, createdAt: '2026-10-05T00:00:00Z',
+        subscriptions: [], correlated: [], pending: [], meta: {} },
+      { key: 'github:10', ref: { source: 'github', id: '10' }, createdAt: '2026-10-05T00:00:00Z',
+        subscriptions: [], correlated: [], pending: [], meta: {} },
+    ] })
+  indexed(path, [...newer, ...sparse])
+  const store = new Store(path)
+  expect(store.threads.get('github:8')).toMatchObject({ createdAt: '2026-10-01T00:00:00.000Z', lastAt: '2026-10-10T00:00:00.000Z' })
+  expect(store.threads.get('github:9')).toMatchObject({ createdAt: '2026-10-01T00:00:00.000Z' })
+  expect(store.threads.get('github:9')!.lastAt).toBe('2026-10-01T00:00:00.000Z')
+  expect(store.threads.get('github:10')).toMatchObject({ createdAt: '2026-10-05T00:00:00.000Z' })
+  expect(store.threads.get('github:10')!.lastAt).toBeUndefined()
+  store.close()
+})
+
 it('names the ticket it stopped at when a ticket does not read, and leaves the database at schema 10 as it was', () => {
   const path = join(directory, 'db.sqlite')
   const { inputs: _inputs, ...broken } = ticket10('t9')
@@ -580,14 +616,15 @@ it('makes the newest saved revision the current settings when it holds them, and
 it('reads the reasons a Trigger\'s filter and an Assignment\'s end stored in words as codes, and keeps an end\'s reason once', () => {
   const path = join(directory, 'db.sqlite')
   const assignment = (id: string, endedReason: string) => ({ id, ticketId: 't1', ref: '', state: 'ended', createdAt: '1', endedAt: '2', endedReason })
-  schema10(path, {}, { ticket: [ticket10('t1', { assignments: [assignment('a1', 'Retried by a person'), assignment('a2', 'host restarted'),
-    { id: 'a3', ticketId: 't1', ref: '', state: 'running', createdAt: '2' }] })] })
+  schema10(path, { 'problem-dismissed:missing': true }, { ticket: [ticket10('t1', { assignments: [assignment('a1', 'Retried by a person'), assignment('a2', 'host restarted'),
+    { id: 'a3', ticketId: 't1', ref: '', state: 'running', createdAt: '2' }, assignment('a4', 'Not needed')] })] })
   const db = new DatabaseSync(path)
   db.prepare('INSERT INTO disposition VALUES (?, ?)').run('trig-1', JSON.stringify({ filtered: 'Sender is not an authorized human member', fanout: [], at: '' }))
   db.prepare('INSERT INTO disposition VALUES (?, ?)').run('trig-2', JSON.stringify({ filtered: 'A reason this build never stored', fanout: [], at: '' }))
   db.close()
   const store = new Store(path)
-  expect(store.tickets.get('t1')!.assignments.map(item => item.endedReason)).toEqual(['retried', 'hostRestarted', undefined])
+  expect(store.tickets.get('t1')!.assignments.map(item => item.endedReason)).toEqual(['retried', 'hostRestarted', undefined, 'Not needed'])
+  expect(store.keys('problem-dismissed:')).toEqual([])
   expect(store.triggers.disposition('trig-1')).toMatchObject({ filtered: { code: 'senderNotMember' } })
   expect(store.triggers.disposition('trig-2')).toMatchObject({ filtered: { code: 'A reason this build never stored' } })
   store.close()
@@ -625,6 +662,27 @@ it('delivers the candidate of an Eval in progress at the upgrade again, so its d
   const store = new Store(path)
   const effects: Array<[string, unknown]> = (store.db.prepare("SELECT key, value FROM effect WHERE kind = 'assessment'").all() as Array<{ key: string; value: string }>).map(row => [row.key, JSON.parse(row.value)])
   expect(effects).toEqual([['e9', { triggerId: 'issue-9' }]])
+  store.close()
+})
+
+it('keeps Source state that needs no change: a topic without history, a non-direct chat, an empty chat id, and an active Thread without an Eval', () => {
+  const path = join(directory, 'db.sqlite')
+  const group = { id: 'group', source: 'feishu', threads: [{ source: 'feishu', id: 'oc_group:om_1' }], actor, human: true,
+    at: '2026-10-01T00:00:00.000Z', text: 'hi', channel: { source: 'feishu', thread: 'feishu:oc_group:om_1',
+      address: { chatId: 'oc_group', messageId: 'om_1' } }, meta: {} }
+  schema10(path, {
+    'feishu-chats': { oc_dm: true },
+    'answer-ready:t1:': true,
+    [KV.feishu.topics('oc_no-history')]: ['omt_1'],
+  }, { trigger: [group], thread: [
+    { key: 'feishu::om_1', ref: { source: 'feishu', id: ':om_1' }, createdAt: '', subscriptions: [], correlated: [], pending: [], meta: {} },
+    { key: 'github:11', ref: { source: 'github', id: '11' }, createdAt: '', subscriptions: [], correlated: [], pending: ['x'], meta: {} },
+  ] })
+  const store = new Store(path)
+  expect(store.get(KV.feishu.topics('oc_no-history'))).toEqual({ omt_1: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/) as unknown })
+  expect(store.triggers.get('group')!.channel!.address).toEqual({ chatId: 'oc_group', messageId: 'om_1' })
+  expect(store.threads.get('feishu::om_1')!.meta).not.toHaveProperty('url')
+  expect(store.threads.get('github:11')).toMatchObject({ pending: ['x'] })
   store.close()
 })
 

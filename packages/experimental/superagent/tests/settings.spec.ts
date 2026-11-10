@@ -11,8 +11,14 @@ import { Setup } from '../src/app/setup.ts'
 import { SettingsConflict } from '../src/app/settings.ts'
 import { startRuntime, type Host } from './fixtures/host.ts'
 import { testMachine } from './fixtures/deployment.ts'
-import { SettingsSchema } from '../src/policy.ts'
+import { SettingsSchema, type SettingsBlock } from '../src/policy.ts'
 import type { SubprocessRuntime } from '@deepseek-ai/dsh-subprocess'
+import { writeEnvironment } from '../src/infra/environment.ts'
+
+vi.mock('../src/infra/environment.ts', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/infra/environment.ts')>()
+  return { ...actual, writeEnvironment: vi.fn(actual.writeEnvironment) }
+})
 
 let h: Host | undefined
 afterEach(async () => { await h?.stop(); h = undefined })
@@ -100,6 +106,10 @@ it('syncs a Policy part again after a failed sync, a minute later and then after
     // A success ends the retries.
     await vi.advanceTimersByTimeAsync(3_600_000)
     expect(calls()).toBe(before + 2)
+    const revision = h.runtime.store.blockRevision('policy')
+    lark.mockResolvedValueOnce({ users: [{ member_id: 'ou_alice', name: 'Alice' }], has_more: false })
+    await expect(h.runtime.settings.sync('feishu')).resolves.toMatchObject({ allowed: [{ id: 'ou_alice', name: 'Alice' }] })
+    expect(h.runtime.store.blockRevision('policy')).toBe(revision)
   } finally { vi.useRealTimers() }
 })
 it('records nothing for a pause that changes nothing, refuses a sync while setup waits, and names an unknown block', async () => {
@@ -115,6 +125,8 @@ it('records nothing for a pause that changes nothing, refuses a sync while setup
   await expect(settings.sync('feishu')).rejects.toThrow(new UserError('nothingToSync', { source: 'feishu' }))
   vi.spyOn(Setup.prototype, 'configured').mockRestore()
   expect(() => settings.block('source:x')).toThrow(new UserError('unknownBlock', { block: 'source:x' }))
+  await expect(settings.save('unknown' as SettingsBlock, {}, 0, 'panel'))
+    .rejects.toThrow(new UserError('unknownBlock', { block: 'unknown' }))
 })
 
 it('exposes the current settings, unchanged syncs, label refreshes, and validation failures', async () => {
@@ -131,6 +143,12 @@ it('exposes the current settings, unchanged syncs, label refreshes, and validati
     .rejects.toThrow(new UserError('modelUnavailable', { block: 'executor', error: 'provider unavailable' }))
   await vi.waitFor(() =>{  expect(h!.runtime.health['sync:feishu']).toMatchObject({ state: 'ready' }) })
   expect(await settings.sync('feishu')).toEqual(store.settings().policy.sources.feishu)
+  const part = store.settings().policy.sources.feishu!
+  const sync = h.runtime.sources.kind('feishu')!.policy!.sync!
+  const run = vi.spyOn(sync, 'run').mockResolvedValueOnce(part)
+  await expect(settings.sync('feishu')).resolves.toEqual(part)
+  expect(store.blockRevision('policy')).toBe(store.blockRevision('policy'))
+  run.mockRestore()
   expect(await settings.refreshLabels('feishu')).toEqual({ added: [] })
   vi.spyOn(Commands.prototype, 'lark').mockResolvedValueOnce({ chats: [
     { chat_id: 'oc_zulu', name: 'Zulu' }, { chat_id: 'oc_alpha', name: 'Alpha' }, { chat_id: 'oc_nameless' },
@@ -233,7 +251,11 @@ it('resolves setup through worker probes and reports account and environment fai
     const invalidFeishu = settings({ sources: { github: { enabled: true, config: { repository: 'acme/widgets', cli: gh } },
       feishu: { enabled: true, config: { cli: 123 } } } })
     await expect(new Setup(host()).run(invalidFeishu)).rejects.toThrow()
-    process.env.PATH = undefined
+    vi.mocked(writeEnvironment).mockRejectedValueOnce('worker environment failed')
+    const nonError = new Setup(host())
+    expect(await nonError.run(settings())).toBe(false)
+    expect(nonError.problem).toMatchObject({ code: 'environmentFailed', values: { output: 'worker environment failed' } })
+    delete process.env.PATH
     expect(new Setup(host()).commandEnvironment).toHaveProperty('PATH')
   } finally {
     if (oldPath !== undefined) process.env.PATH = oldPath

@@ -1,9 +1,12 @@
 // @vitest-environment jsdom
 // The Trigger status and a Thread.
 import { act } from 'react'
+import { createRoot } from 'react-dom/client'
 import { expect, it, onTestFinished, vi } from 'vitest'
 import { en, zh } from '../src/client/locales.ts'
-import { usePanel, mount, remount, settle, all, find, click, text, at } from './fixtures/panel.client.tsx'
+import { PanelProvider } from '../src/client/provider.tsx'
+import { ThreadPage } from '../src/client/thread.tsx'
+import { translator, usePanel, mount, remount, settle, all, find, click, text, at } from './fixtures/panel.client.tsx'
 import { server, trigger, threadSummary, ticketSummary, acceptDecision } from './fixtures/panel-server.client.ts'
 
 usePanel()
@@ -291,4 +294,71 @@ it('keeps the Thread page and reports a later polling failure', async () => {
   await act(async () => { await vi.advanceTimersByTimeAsync(5000) }); await settle()
   expect(text()).toContain(zh.hostNotRunning)
   expect(document.querySelector('.dt-page-title h2')?.textContent).toBe('这个文案好奇怪')
+})
+
+it('ends a gap fill at the start of a Thread when the filled page has no overlap', async () => {
+  server.threadPages = (_key, { before, around }) => {
+    const page = (timeline: ReturnType<typeof trigger>[], earlier: string | null) => ({ ...threadSummary(), tickets: [],
+      correlated: [], decisions: [], context: [], url: undefined, timeline, earlier })
+    if (around === 'old') return page([trigger('old', '2026-09-20T00:00:00Z')], null)
+    if (before) return page([], null)
+    return page([trigger('new', '2026-09-23T00:00:00Z')], 'cursor')
+  }
+  at({ page: 'trigger', id: 'feishu:oc_1:om_root', query: { trigger: 'old' } })
+  await mount()
+  expect(all('.dt-event .dt-event-text').map(item => item.textContent)).toEqual(['message new', 'message old'])
+  expect(all('button').some(button => button.textContent === zh.loadEarlier)).toBe(false)
+})
+
+async function renderInactiveThread(fail: boolean, gap: boolean) {
+  const original = vi.mocked(globalThis.fetch).getMockImplementation()!
+  const oldPage = { ...threadSummary(), tickets: [], correlated: [], decisions: [], context: [], url: undefined,
+    earlier: null, timeline: [trigger('old', '2026-09-20T00:00:00Z')] }
+  let aroundStarted = false
+  let gapStarted = false
+  let finish!: () => void
+  const late = new Promise<Response>((resolve, reject) => {
+    finish = fail
+      ? () => { reject(new Error('late thread read')) }
+      : () => { resolve(Response.json(gap ? { ...oldPage, timeline: [] } : oldPage)) }
+  })
+  vi.mocked(globalThis.fetch).mockImplementation(async (input: string | URL, init?: RequestInit) => {
+    const url = String(input)
+    if (url.includes('before=') && gap) {
+      gapStarted = true
+      return late
+    }
+    if (url.includes('around=old')) {
+      aroundStarted = true
+      return gap ? Response.json(oldPage) : late
+    }
+    return original(input, init)
+  })
+  const container = document.createElement('div'); document.body.append(container)
+  const root = createRoot(container)
+  await act(async () => {
+    root.render(<PanelProvider t={translator(zh)}><ThreadPage id="feishu:oc_1:om_root" target="old" /></PanelProvider>)
+  })
+  await act(async () => { await vi.waitFor(() => { expect(gap ? gapStarted : aroundStarted).toBe(true) }) })
+  act(() => { root.unmount() }); container.remove()
+  finish()
+  await act(async () => { await Promise.resolve() })
+  expect(text()).not.toContain('late thread read')
+  vi.mocked(globalThis.fetch).mockImplementation(original)
+}
+
+it('drops a deep-linked Thread read that finishes after its page unmounts', async () => {
+  await renderInactiveThread(false, false)
+})
+
+it('drops a failed deep-linked Thread read that finishes after its page unmounts', async () => {
+  await renderInactiveThread(true, false)
+})
+
+it('drops a Thread gap fill that finishes after its page unmounts', async () => {
+  await renderInactiveThread(false, true)
+})
+
+it('drops a failed Thread gap fill that finishes after its page unmounts', async () => {
+  await renderInactiveThread(true, true)
 })

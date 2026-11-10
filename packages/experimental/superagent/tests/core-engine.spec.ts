@@ -406,7 +406,7 @@ describe('subscription fan-out', () => {
     const h = harness()
     const decision = accepted(h)
     expect(h.engine.unsubscribe('chat:t1')).toBe(true)
-    h.engine.receive(trigger('2')); h.pump()
+    h.engine.receive(trigger('2', { at: '' })); h.pump()
     expect(h.repo.tickets.get(decision.ticketId!)!.inputs).toEqual([])
   })
   it('lets an Executor drop a thread attached to its ticket, keeping the thread\'s other tickets, but not its own threads', async () => {
@@ -975,6 +975,19 @@ describe('worker reports', () => {
     expect(report({ answers: '4' })).toThrow(new UserError('notAnswerable'))
     expect(report({ answers: '1' })()).toMatchObject({ answers: ['1'] })
   })
+  it('leaves a Trigger Input with no read timestamp for Eval when its ticket stops', () => {
+    const h = harness()
+    const ticketId = accepted(h).ticketId!
+    h.engine.receive(trigger('2')); h.pump()
+    const current = h.repo.tickets.get(ticketId)!
+    const input = current.inputs.find(item => item.kind === 'trigger')
+    if (input === undefined || input.kind !== 'trigger') throw new Error('accepted ticket has no Trigger Input')
+    delete input.readAt
+    input.deliveredAt = input.at
+    h.repo.tickets.save(current)
+    h.engine.stopTicket(ticketId)
+    expect(h.repo.threads.get('chat:t1')?.pending).toEqual(['2'])
+  })
   it('refuses a report on an ended ticket', () => {
     const h = harness()
     const ticketId = accepted(h).ticketId!
@@ -1079,6 +1092,12 @@ describe('direct decisions', () => {
     expect(h.engine.decide('1', { kind: 'accept', title: 'Fix', scope: 'small', reason: 'again' })).toEqual(decision)
     expect(h.repo.tickets.list()).toHaveLength(1)
     expect(() => h.engine.reevaluate('missing')).toThrow(new UserError('unknownTrigger'))
+  })
+  it('keeps the first accept Decision for a Trigger a later Decision repeats', () => {
+    const h = harness()
+    const decision = accepted(h)
+    h.repo.decisions.save({ ...decision, id: 'later' })
+    expect(h.engine.decide('1', { kind: 'accept', title: 'Again', scope: 'small', reason: 'again' })).toEqual(decision)
   })
   it('keeps a replayed Trigger that started a ticket out of the Eval of the Triggers queued with it', () => {
     const h = harness()
@@ -1836,7 +1855,7 @@ describe('what a worker read', () => {
     const input = ticket.inputs.find(item => item.id === message)
     if (input?.kind !== 'trigger') throw new Error('expected trigger input')
     input.readAt = undefined
-    input.deliveredAt = '2026-09-23T00:00:01.000Z'
+    input.deliveredAt = new Date(Date.parse(input.at) + 1000).toISOString()
     input.triggerId = 'gone'
     h.repo.tickets.save(ticket)
     h.engine.stopTicket(ticketId)

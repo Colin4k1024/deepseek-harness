@@ -23,6 +23,17 @@ it('refuses databases newer than this build and rolls back failed atomic work', 
   store.set('schema', SCHEMA_VERSION + 1); store.close()
   expect(() => new Store(path)).toThrow('Unsupported')
 })
+it('adds the effect generation column to a current-schema database that predates it', () => {
+  const path = join(directory, 'effect-generation.sqlite')
+  new Store(path).close()
+  const db = new DatabaseSync(path)
+  db.exec('DROP TABLE effect; CREATE TABLE effect (kind TEXT NOT NULL, key TEXT NOT NULL, value TEXT NOT NULL, seq INTEGER NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, error TEXT NOT NULL DEFAULT \'\', due INTEGER NOT NULL, since TEXT NOT NULL, PRIMARY KEY (kind, key))')
+  db.close()
+  const store = new Store(path)
+  expect(store.db.prepare("SELECT name FROM pragma_table_xinfo('effect')").all().map(row => String(row.name))).toContain('generation')
+  store.close()
+})
+
 it('finds triggers by thread', () => {
   const store = new Store(join(directory, 'orchestrator.sqlite'))
   store.triggers.save({ id: 'a', source: 'feishu', threads: [{ source: 'feishu', id: 'oc_1:om_%_x' }], actor: { source: 'feishu', id: 'u' }, human: true, at: '2', text: 'later', meta: {} })
@@ -120,6 +131,8 @@ it('links a Thread to the page its Source named, or else to the message that sta
   store.triggers.save({ id: 'f1', source: 'feishu', threads: [{ source: 'feishu', id: 'oc_1:om_1' }], actor: { source: 'feishu', id: 'ou_a' }, human: true, at: '1', text: 'hi', url: 'https://applink.feishu.cn/client/message/link/open?token=t', meta: {} })
   expect(threadFacts(store, store.threads.get('github:7')!).url).toBe('https://github.com/acme/widgets/pull/7')
   expect(threadFacts(store, store.threads.get('feishu:oc_1:om_1')!).url).toBe('https://applink.feishu.cn/client/message/link/open?token=t')
+  store.threads.describe('github:7', { url: 'https://github.com/acme/widgets/pull/8' })
+  expect(threadFacts(store, store.threads.get('github:7')!).url).toBe('https://github.com/acme/widgets/pull/8')
   store.close()
 })
 

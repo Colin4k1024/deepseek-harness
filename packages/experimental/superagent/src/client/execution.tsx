@@ -46,9 +46,9 @@ export function ExecutionStatus({ filter: current, state, reload }: {
     </div>
     {current === 'idle' && <Hint>{t('idleHint')}</Hint>}
     <LoadState error={error} loading={!data} />
-    {data && (data.items.length ? <ul className="dt-list">{data.items.map(ticket => ticket.stage === 'person'
+    {data ? (data.items.length ? <ul className="dt-list">{data.items.map(ticket => ticket.stage === 'person'
       ? <TicketLine key={ticket.id} ticket={ticket} question
-        onChanged={reloadTickets} /> : <TicketLine key={ticket.id} ticket={ticket} />)}</ul> : <Hint>{t('none')}</Hint>)}
+        onChanged={reloadTickets} /> : <TicketLine key={ticket.id} ticket={ticket} />)}</ul> : <Hint>{t('none')}</Hint>) : null}
     {data?.next_offset != null && <LoadMore onMore={() => { setLimit(limit + 20) }} />}
   </>
 }
@@ -87,10 +87,10 @@ export function ExecutionSettings() {
   const edit = (next: Partial<typeof value>) => { draft.edit({ ...value, ...next }) }
   const prepare = useRef<HTMLTextAreaElement>(null)
   const insert = (key: string) => {
-    const field = prepare.current
-    const at = field?.selectionStart ?? value.prepare.length, to = field?.selectionEnd ?? at
+    const field = required(prepare.current)
+    const at = field.selectionStart, to = field.selectionEnd
     edit({ prepare: `${value.prepare.slice(0, at)}"$${key}"${value.prepare.slice(to)}` })
-    requestAnimationFrame(() => { field?.focus(); const caret = at + key.length + 3; field?.setSelectionRange(caret, caret) })
+    requestAnimationFrame(() => { field.focus(); const caret = at + key.length + 3; field.setSelectionRange(caret, caret) })
   }
   return <div className="dt-form">
     <form className="dt-form" onSubmit={(event) => { void draft.submit(event) }}>

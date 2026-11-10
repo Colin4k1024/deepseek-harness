@@ -20,23 +20,21 @@ export function threadWindow(messages: ContextMessage[], sourceId: string) {
  * only this loaded snapshot (never unread history), and `status` reports fallback modes such as `chat_neighbours`.
  */
 export async function admissionContext(context: TriggerContext, commands: Commands, maxPages: number) {
-  const messages: ContextMessage[] = []
-  const seen = new Set<string>()
+  const messagesById = new Map<string, ContextMessage>()
   const cursors = new Set<string>()
   let next: string | undefined
   let status: string | undefined
   let more = true
   for (let page = 0; more && page < maxPages; page++) {
     const result = await context.read(commands, 'thread', next)
-    for (const message of result.messages) if (!seen.has(message.id)) {
-      seen.add(message.id); messages.push(message)
-    }
+    for (const message of result.messages) messagesById.set(message.id, messagesById.get(message.id) ?? message)
     status ??= result.status
     next = result.next
     more = next !== undefined
     if (next !== undefined && cursors.has(next)) throw new Error('Thread pagination repeated a cursor; context is incomplete')
     if (next !== undefined) cursors.add(next)
   }
+  const messages = [...messagesById.values()]
   return { messages, window: threadWindow(messages, context.messageId), complete: !more, next: more ? next : null,
     ...status ? { status } : {} }
 }

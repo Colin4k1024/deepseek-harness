@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { TICKET_STATES } from '../src/app/cards.ts'
 import { builtInBase, builtInParts, defaultPrompts } from '../src/app/prompts.ts'
-import { UserError } from '../src/core/index.ts'
+import { UserError, type Decision } from '../src/core/index.ts'
 import { KV } from '../src/kv.ts'
 import { RESOURCES } from '../src/app/resources.ts'
 import { CliError, Commands } from '../src/infra/commands.ts'
@@ -183,6 +183,33 @@ it('routes several triggers in one call, in order, and answers a refused or fail
   expect(h.runtime.store.tickets.list()).toHaveLength(2)
 })
 
+it('reports an unexpected Error from a routing item without recording it', async () => {
+  const { ticket } = await h.acceptedTicket(feishu('1', '@bot 修一下回归'))
+  const more = feishu('7', '@bot 还有这个')
+  h.runtime.receive(more); await h.runtime.idle()
+  const attach = h.runtime.engine.attach.bind(h.runtime.engine)
+  vi.spyOn(h.runtime.engine, 'attach').mockImplementation((ticketId, triggerId, note) => {
+    if (triggerId === more.id) throw new Error('database is locked')
+    return attach(ticketId, triggerId, note)
+  })
+  const { results } = await h.runTool(h.runtime.masterId, 'orchestrator_route', { decisions: [
+    { kind: 'attach', trigger_id: more.id, ticket_id: ticket.id },
+  ] }) as { results: Record<string, unknown>[] }
+  expect(results).toEqual([{ trigger_id: more.id, kind: 'attach', refused: 'Not recorded: database is locked; retry this item' }])
+})
+
+it('refuses an accept whose Decision did not create a ticket', async () => {
+  const trigger = feishu('8', '@bot 修一下另一个')
+  h.runtime.receive(trigger); await h.runtime.idle()
+  const decision: Decision = { id: 'd1', evalId: 'e1', threadKey: `feishu:${CHAT}:om_8`, triggerIds: [trigger.id],
+    policyVersion: 'v1', at: '', kind: 'ignore', reason: [{ code: 'said', values: { text: 'not now' } }], strength: 'explicit' }
+  vi.spyOn(h.runtime.engine, 'decide').mockImplementationOnce(() => decision)
+  const { results } = await h.runTool(h.runtime.masterId, 'orchestrator_route', { decisions: [
+    { kind: 'accept', trigger_id: trigger.id, title: 'Fix', worktree_name: 'fix-other', acknowledgement: '收到。' },
+  ] }) as { results: Record<string, unknown>[] }
+  expect(results).toEqual([{ trigger_id: trigger.id, kind: 'accept', refused: expect.stringContaining('Ticket was not created:') as unknown }])
+})
+
 it('refuses alone an item that lacks a field its kind needs or breaks a field\'s limit, naming the field, and ignores unused fields', async () => {
   const triggers = ['2', '3', '4', '5', '6'].map(id => feishu(id, `@bot 请求 ${id}`))
   for (const trigger of triggers) h.runtime.receive(trigger)
@@ -292,12 +319,17 @@ it('serves an evaluation and its follow-up reads through the main Session tools'
 })
 
 it('returns where a reply stands: sent, or dropped when its conversation can no longer receive it', async () => {
-  const { ticket, sessionId } = await h.acceptedTicket(feishu('1', '@bot 修一下回归'))
+  const { ticket, trigger, sessionId } = await h.acceptedTicket(feishu('1', '@bot 修一下回归'))
   await h.runTool(sessionId, 'orchestrator_report', { state: 'ready', summary: 'Done.' })
   const reply = (text: string) => h.runTool(h.runtime.masterId, 'orchestrator_reply', { ticket_id: ticket.id, purpose: 'result', text })
   expect(await reply('修好了。')).toEqual({ status: 'sent' })
   vi.spyOn(Commands.prototype, 'lark').mockRejectedValue(new CliError('the message was withdrawn', 230011))
   expect(await reply('修好了，请看 PR。')).toEqual({ status: 'dropped' })
+  const missing = vi.spyOn(h.runtime.store, 'replyStatus').mockReturnValueOnce(undefined)
+  expect(await reply('状态未知。')).toEqual({ status: 'pending' })
+  missing.mockRestore()
+  expect(await h.runTool(h.runtime.masterId, 'orchestrator_reply', { trigger_id: trigger.id, purpose: 'result', text: '修好了。' }))
+    .toEqual({ status: expect.any(String) as unknown })
 })
 
 it('checks an acknowledgement against the IM word limit, not a character count', async () => {
@@ -488,6 +520,7 @@ it('tells the main Session of the settings, prompts, requeues and unsubscription
   h.runtime.receive(thanks); await h.runtime.idle()
   await h.route({ kind: 'ignore', trigger_id: thanks.id, reason: 'thanks' })
   expect(await h.runTool(h.runtime.masterId, 'orchestrator_trigger_requeue', { trigger_id: thanks.id })).toEqual({ queued: true })
+  await expect(h.runTool(h.runtime.masterId, 'orchestrator_trigger_requeue', { trigger_id: 'unknown' })).rejects.toThrow('Unknown trigger')
   expect(await h.runTool(h.runtime.masterId, 'orchestrator_thread_unsubscribe', { thread: `feishu:${CHAT}:om_1` })).toEqual({ removed: true, thread: `feishu:${CHAT}:om_1` })
   await h.runtime.idle()
   expect(notices().slice(before).filter(notice => !('ticket_ended' in notice))).toEqual([])
@@ -496,8 +529,11 @@ it('tells the main Session of the settings, prompts, requeues and unsubscription
 it('answers a policy sync with the counts and what changed, not the whole list', async () => {
   vi.spyOn(Commands.prototype, 'lark').mockResolvedValue({ users: [{ member_id: 'ou_alice', name: 'Alice' }, { member_id: 'ou_bob', name: 'Bob' }], has_more: false })
   expect(await h.runTool(h.runtime.masterId, 'orchestrator_policy_sync', { source: 'feishu' })).toEqual({ source: 'feishu', allowed: 2, added: ['Bob'], removed: [] })
-  vi.spyOn(h.runtime.settings, 'sync').mockResolvedValue({ source: 'feishu', allowed: [{ id: 'ou_new' }] })
+  const sync = vi.spyOn(h.runtime.settings, 'sync').mockResolvedValue({ source: 'feishu', allowed: [{ id: 'ou_new' }] })
   expect(await h.runTool(h.runtime.masterId, 'orchestrator_policy_sync', { source: 'feishu' })).toEqual({ source: 'feishu', allowed: 1, added: ['ou_new'], removed: ['Alice', 'Bob'] })
+  sync.mockRejectedValueOnce(new UserError('nothingToSync', { source: 'unknown' }))
+  await expect(h.runTool(h.runtime.masterId, 'orchestrator_policy_sync', { source: 'unknown' })).rejects.toThrow('nothing to sync from')
+  sync.mockRestore()
 })
 
 it('shows an Executor Session no id it cannot read: no Decision, no other ticket, no Trigger its ticket did not reach', async () => {

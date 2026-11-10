@@ -302,6 +302,14 @@ it('lists Source history under a Source block prefix', async () => {
   expect(all('.dt-row-title').map(item => item.textContent)).toContain('第 2 次保存 · 管理页')
 })
 
+it('says when the configuration history is empty', async () => {
+  server.history = { current: 0, policyVersion: 'abcdef1234567890', items: [] }
+  at({ page: 'settings', query: { group: 'eval' } })
+  await mount()
+  await click(zh.configHistory)
+  expect(text()).toContain(zh.historyEmpty)
+})
+
 it('highlights the save that made a focused Policy version and reports an unrecorded one', async () => {
   server.history = { current: 1, policyVersion: 'abcdef1234567890', items: [{ revision: 1, savedAt: '2026-09-22T00:00:00Z',
     source: 'sync', policyVersion: 'abcdef1234567890', policyChanged: true, notified: [], block: 'policy', changes: [] }] }

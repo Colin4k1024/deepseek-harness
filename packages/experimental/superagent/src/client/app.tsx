@@ -193,10 +193,9 @@ function Header({ masterId }: { masterId: string | undefined }) {
           icon={<Icon name="session" size={14} />}
           disabled={!masterId}
           onClick={() => {
-            if (masterId)
-              openSession(masterId).catch((failure: unknown) => {
-                notify(errorText(failure))
-              })
+            openSession(required(masterId)).catch((failure: unknown) => {
+              notify(errorText(failure))
+            })
           }}
         >
           {t('openMaster')}

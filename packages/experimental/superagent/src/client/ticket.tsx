@@ -2,6 +2,7 @@
 import { useState, type ReactNode } from 'react'
 import { ApiError, usePoll, type TicketPageView } from './api.ts'
 import { DisclosureRow, Dot, Icon, Tag, type IconName } from './controls.tsx'
+import { required } from '../core/required.ts'
 import { decisionMark, reportDot, ticketMark } from './marks.ts'
 import { usePanel } from './provider.tsx'
 import { settingsRoute } from './route.ts'
@@ -68,7 +69,8 @@ function InputList({ inputs }: { inputs: Input[] }) {
     input.kind === 'trigger' && input.trigger && !input.trigger.human
       ? `${input.trigger.actor.source}:${input.trigger.actor.id}`
       : undefined
-  const shown = (input: Input) => ({ id: input.id, at: input.at, preview: input.kind === 'trigger' ? (input.trigger?.preview ?? '') : '' })
+  // `earlier` only holds automated Trigger Inputs: non-trigger Inputs have no sender and never join a run.
+  const shown = (input: Input) => ({ id: input.id, at: input.at, preview: required(input.trigger).preview })
   return (
     <ul className="dt-list">
       {automatedRuns(inputs, sender).map(run => (

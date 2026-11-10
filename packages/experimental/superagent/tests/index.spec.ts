@@ -5,6 +5,7 @@ import { apply } from '../src/index.ts'
 // Stub Runtime to capture the resolved Machine settings and restart callback.
 const runtimes = vi.hoisted(() => [] as { machine: Machine; restart: () => void; stop: ReturnType<typeof vi.fn> }[])
 const configured = vi.hoisted(() => ({ value: true }))
+const setupProblemState = vi.hoisted(() => ({ value: { detail: 'no state directory is configured' } as { detail: string } | undefined }))
 vi.mock('../src/app/runtime.ts', () => ({
   Runtime: class {
     ready = Promise.resolve()
@@ -18,7 +19,7 @@ vi.mock('../src/app/runtime.ts', () => ({
     configured() {
       return configured.value
     }
-    setupProblem = { detail: 'no state directory is configured' }
+    setupProblem = setupProblemState.value
     stop = vi.fn(async () => {})
   },
 }))
@@ -91,6 +92,18 @@ it('reports a failed restart and a Runtime waiting for setup', async () => {
   runtimes.at(-1)!.restart()
   await vi.waitFor(() => { expect(ctx.logger.error).toHaveBeenCalledWith('dsh-superagent restart failed: %s', 'Error: fiber stopped') })
   expect(describe).not.toHaveBeenCalled()
+})
+
+it('reports an empty setup detail when the Runtime has no setup problem', async () => {
+  const { ctx } = context()
+  configured.value = false
+  setupProblemState.value = undefined
+  try {
+    await apply(ctx as never, Config({ stateDir: '/srv/state' }))
+    expect(ctx.logger.info).toHaveBeenCalledWith(expect.stringContaining('waiting for setup: '))
+  } finally {
+    setupProblemState.value = { detail: 'no state directory is configured' }
+  }
 })
 
 it('refuses keys of the previous configuration before registering anything', async () => {

@@ -3,7 +3,7 @@
 import { act } from 'react'
 import { expect, it, vi } from 'vitest'
 import { en, zh } from '../src/client/locales.ts'
-import { usePanel, mount, remount, settle, all, click, type, text, field } from './fixtures/panel.client.tsx'
+import { usePanel, mount, remount, settle, all, click, type, text, field, tab, at } from './fixtures/panel.client.tsx'
 import { server, found, threadSummary, ticketSummary } from './fixtures/panel-server.client.ts'
 
 usePanel()
@@ -73,11 +73,64 @@ it('closes search results on Escape and on a click outside the search', async ()
     'nothing'); await act(async () => { search.closest('form')!.requestSubmit() }); await settle() }
   await submit()
   expect(document.querySelector('.dt-search-results')).not.toBeNull()
+  await act(async () => { search.dispatchEvent(new KeyboardEvent('keydown', { key: 'a', bubbles: true })) })
+  expect(document.querySelector('.dt-search-results')).not.toBeNull()
+  await act(async () => { search.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true })) })
+  expect(document.querySelector('.dt-search-results')).not.toBeNull()
   await act(async () => { search.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })) })
   expect(document.querySelector('.dt-search-results')).toBeNull()
   await submit()
   await act(async () => { document.querySelector('main')!.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true })) })
   expect(document.querySelector('.dt-search-results')).toBeNull()
+})
+
+it("caps a large search and shows an ended Ticket, an empty Trigger, and a Trigger's Thread", async () => {
+  server.setup = { ...server.setup, accounts: null }
+  const fallback = globalThis.fetch
+  vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+    const query = new URL(url, 'http://127.0.0.1:3082').searchParams.get('q')
+    if (query === 'none') return Response.json({ tickets: [], threads: [], items: [] })
+    if (query === 'all') return Response.json({
+      tickets: [ticketSummary({ title: '旧工单' }, { stage: 'ended' })],
+      threads: [],
+      items: [
+        { ...found('empty', '2026-09-20T00:00:00Z', { preview: 'none', threadTitle: '相关线程' }), preview: '' },
+        ...Array.from({ length: 20 }, (_, index) => found(`e${index}`, '2026-09-21T00:00:00Z')),
+      ],
+    })
+    return fallback(url, init)
+  })
+  await mount()
+  const search = field<HTMLInputElement>(zh.searchLabel)
+  await type(search, 'none')
+  await act(async () => { search.closest('form')!.requestSubmit() }); await settle()
+  expect(text()).toContain(zh.searchNoneGithub)
+  await type(search, 'all')
+  await act(async () => { search.closest('form')!.requestSubmit() }); await settle()
+  expect(text()).toContain(zh.searchFoundCapped.replace('{tickets}', '1').replace('{threads}', '0').replace('{items}', '21'))
+  expect(text()).toContain(zh['ticket.ended'])
+  expect(all('.dt-search-results .dt-row-title').some(title => title.textContent === '—')).toBe(true)
+  expect(text()).toContain(zh.inThread.replace('{thread}', '相关线程'))
+})
+
+it('ignores a failed search response once a newer search has answered', async () => {
+  let failOld = () => {}
+  server.searching = query => query === 'old' ? new Promise<void>((_, reject) => { failOld = () => { reject(new Error('old search failed')) } }) : undefined
+  await mount()
+  const search = field<HTMLInputElement>(zh.searchLabel)
+  await type(search, 'old')
+  await act(async () => { search.closest('form')!.requestSubmit() })
+  await type(search, 'new')
+  await act(async () => { search.closest('form')!.requestSubmit() }); await settle()
+  await act(async () => { failOld() }); await settle()
+  expect(document.querySelector('.dt-toast')).toBeNull()
+})
+
+it('returns to the overview when a deep link has no back stack', async () => {
+  at({ page: 'execution', id: 't1' })
+  await mount()
+  await click(document.querySelector<HTMLElement>('.dt-page-head button')!)
+  expect(tab(zh['tab.overview']).getAttribute('aria-selected')).toBe('true')
 })
 
 it('shows the answer to the latest search only', async () => {

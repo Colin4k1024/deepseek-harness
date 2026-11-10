@@ -272,9 +272,10 @@ export class Evals extends EnginePart {
    */
   private accepted(threadKey: string): Map<string, Decision> {
     const accepted = new Map<string, Decision>()
-    for (const decision of this.repo.decisions.byThread(threadKey)) {
+    // Reverse order lets a later duplicate overwrite first, then the original first accept overwrite it again.
+    for (const decision of [...this.repo.decisions.byThread(threadKey)].reverse()) {
       if (decision.kind !== 'accept' || !decision.ticketId) continue
-      for (const id of decision.triggerIds) if (!accepted.has(id)) accepted.set(id, decision)
+      for (const id of decision.triggerIds) accepted.set(id, decision)
     }
     return accepted
   }

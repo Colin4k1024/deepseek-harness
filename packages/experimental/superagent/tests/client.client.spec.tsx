@@ -17,7 +17,15 @@ declare global {
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
 
 type Entry = {
-  options: { name: string; id?: string; key?: string; order?: number; locale?: string; label?: () => string }
+  options: {
+    name: string
+    id?: string
+    key?: string
+    order?: number
+    locale?: string
+    label?: () => string
+    inject?: () => Record<string, unknown>
+  }
   component: ComponentType<Record<string, unknown>>
 }
 const t = ((key: keyof typeof zh) => zh[key] ?? key) as never
@@ -83,6 +91,7 @@ it('registers a localized main panel, sidebar entry and Plugin Manager row page,
   expect(entries[2]!.options).toMatchObject({ key: 'dsh-superagent#dsh-superagent', locale: 'dshSuperagent' })
   expect(Object.keys(dictionaries)).toEqual(['dshSuperagent'])
   expect(main.options).toMatchObject({ key: 'dsh-superagent', locale: 'dshSuperagent' })
+  expect(main.options.inject?.()).toEqual({})
   expect(nav.options).toMatchObject({ id: 'dsh-superagent', order: 10, locale: 'dshSuperagent' })
   expect(nav.options.label?.()).toBe('Superagent')
 })
@@ -103,6 +112,17 @@ it('reports a Session missing from the catalog in the interface language', async
   await openMaster(view.container)
   expect(ctx.uiWorkspace.openSession).not.toHaveBeenCalled()
   expect(document.body.textContent).toContain(zh.sessionNotListed)
+  view.dispose()
+})
+
+it('reports an unexpected Session catalog failure without replacing it with a localized guess', async () => {
+  serve()
+  const { ctx, main } = fixture([])
+  ctx.sessions.refresh.mockRejectedValue(new Error('Session catalog failed'))
+  const view = await render(main, { t })
+  await openMaster(view.container)
+  expect(ctx.uiWorkspace.openSession).not.toHaveBeenCalled()
+  expect(document.body.textContent).toContain('Session catalog failed')
   view.dispose()
 })
 
@@ -263,7 +283,7 @@ it('renders the shared widgets, confirms actions, opens Sessions, and rechecks s
         action={<button type="button">section action</button>}><Hint>section body</Hint></Section>
       <LabelValue label="model" value="deepseek" />
       <KeyValues rows={[['provider', 'deepseek'], ['mode', 'auto']]} />
-      <MarkdownLite text={'# Title\n\nA **bold** `code` [link](https://example.com) paragraph.\n\n1. one\n2. two\n'} />
+      <MarkdownLite text={'# Title\n\nA **bold** `code` [link](https://example.com) paragraph.\n\n1. one\n2. two\n\n- unordered one\n- unordered two\n'} />
       <ClampText text={`long ${'x'.repeat(480)}`} />
       <ConfirmButton label="Confirm action" title="Confirm title" message="Confirm message"
         onConfirm={async () => { confirmed.push('action') }} variant="outline" icon="refresh" />
@@ -285,11 +305,19 @@ it('renders the shared widgets, confirms actions, opens Sessions, and rechecks s
   await act(async () => { root.render(<Suite />) })
   for (let i = 0; i < 5; i++) await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)) })
   expect(container.querySelector('ol')).not.toBeNull()
+  expect(container.querySelector('ul')).not.toBeNull()
   expect(container.textContent).toContain('section body')
   const expand = [...container.querySelectorAll('button')].find(button => button.textContent === zh.expand)!
   await act(async () => { expand.click() })
   expect(expand.textContent).toBe(zh.collapse)
   const confirm = [...container.querySelectorAll('button')].find(button => button.textContent === 'Confirm action')!
+  await act(async () => { confirm.click() })
+  const cancel = [...document.body.querySelectorAll('button')].find(button => button.textContent === zh.cancel)!
+  await act(async () => { cancel.click() })
+  expect(confirmed).toEqual([])
+  await act(async () => { confirm.click() })
+  await act(async () => { document.querySelector<HTMLElement>('.dt-modal-close')!.click() })
+  expect(confirmed).toEqual([])
   await act(async () => { confirm.click() })
   const accept = [...document.body.querySelectorAll('button')].find(button => button.textContent === zh.confirm)!
   await act(async () => { accept.click() })
@@ -416,5 +444,57 @@ it('renders ticket, thread, decision, and earlier rows with their navigation and
     { page: 'execution', id: 't1' },
     { page: 'trigger', id: 'feishu:oc_1:om_root', query: { trigger: 'd1' } },
   ])
+  act(() => { root.unmount() }); container.remove()
+})
+
+it('shows empty previews, extra fanout targets, and a Decision without a Trigger id', async () => {
+  const routes: unknown[] = []
+  const fanout = threadSummary({
+    tickets: [{ id: 't1', title: 'First', state: 'open' }, { id: 't2', title: 'Second', state: 'open' }],
+    latest: { actor: { source: 'feishu', id: MEMBER, name: { zh: 'Alice', en: 'Alice' } }, human: true,
+      at: '2026-11-09T12:00:00Z', preview: '' },
+  })
+  const bare = {
+    id: 'd2', kind: 'accept', outcome: 'accept', reason: [], at: '2026-11-09T12:00:00Z', strength: 'explicit',
+    ticketId: undefined, triggerIds: [], thread: 'feishu:oc_1:om_root', rules: [], threadTitle: undefined,
+    preview: '', ticketTitle: undefined,
+  } satisfies DecisionRow
+  const container = document.createElement('div'); document.body.append(container)
+  const root = createRoot(container)
+  await act(async () => {
+    root.render(<PanelProvider t={t} navigate={(route) => { routes.push(route) }}>
+      <ul><ThreadLine thread={fanout} /><DecisionLine decision={bare} /></ul>
+    </PanelProvider>)
+  })
+  expect(container.textContent).toContain(zh.empty)
+  expect(container.textContent).toContain('等 {count} 个')
+  const decision = [...container.querySelectorAll('button')].find(button => button.textContent === zh.empty)!
+  await act(async () => { decision.click() })
+  expect(routes).toEqual([{ page: 'trigger', id: 'feishu:oc_1:om_root', query: { trigger: '' } }])
+  act(() => { root.unmount() }); container.remove()
+})
+
+it('refreshes a Ticket row after its retry and stop actions complete', async () => {
+  const paths: string[] = []
+  serve()
+  const base = fetch
+  vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const path = new URL(input instanceof URL ? input.href : input, 'http://127.0.0.1').pathname
+    paths.push(path)
+    return path.includes('/tickets/t1/') ? Response.json({}) : base(input, init)
+  }))
+  let refreshed = 0
+  const ticket = ticketSummary({ actions: { retry: true, stop: true } }, { stage: 'person', action: 'answer' })
+  const container = document.createElement('div'); document.body.append(container)
+  const root = createRoot(container)
+  await act(async () => {
+    root.render(<PanelProvider t={t}><TicketLine ticket={ticket} onChanged={async () => { refreshed++ }} /></PanelProvider>)
+  })
+  for (const label of [zh.retry, zh.stop]) {
+    await act(async () => { [...container.querySelectorAll('button')].find(button => button.textContent === label)!.click() })
+    await act(async () => { [...document.querySelectorAll('button')].find(button => button.textContent === zh.confirm)!.click() })
+  }
+  expect(paths.filter(path => path.includes('/tickets/t1/'))).toEqual(['/orchestrator/api/tickets/t1/retry', '/orchestrator/api/tickets/t1/stop'])
+  expect(refreshed).toBe(2)
   act(() => { root.unmount() }); container.remove()
 })

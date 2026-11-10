@@ -96,6 +96,8 @@ export interface PanelServer {
   threadPages: (key: string, query: { before?: string; around?: string }) => ThreadPageView | undefined
   person: TicketRow[]
   search: Pick<ApiResponse<'GET search'>, 'items' | 'threads'>
+  /** When true, Source policy views omit admission rows to exercise a Source without an admission table. */
+  omitPolicyRows: boolean
   history: HistoryView
   requests: { path: string; method: string; body?: unknown }[]
   /** Requests with undeclared query params or invalid body presence; asserted empty after each test. */
@@ -145,7 +147,7 @@ function sourceSettings(): SourceView[] {
     const sync = kind.policy?.sync && { label: kind.policy.sync.label, ready: kind.policy.sync.ready(kind.policy.schema.parse(part)),
       health: server.health[`sync:${kind.kind}`] }
     const policy = kind.policy && { fields: kind.policy.fields, explicit: kind.policy.explicit, ...kind.policy.rows
-      ? { rows: kind.policy.rows(config) } : {}, ...sync ? { sync } : {} }
+      && !server.omitPolicyRows ? { rows: kind.policy.rows(config) } : {}, ...sync ? { sync } : {} }
     return { id: kind.kind, kind: kind.kind, title: kind.title, description: kind.description, installed: true,
       value: { enabled: server.settings.sources[kind.kind]?.enabled ?? true, config },
       revision: server.revisions[`source:${kind.kind}`] ?? 0,
@@ -455,6 +457,7 @@ function initial(): PanelServer {
       ),
     ],
     search: { items: [], threads: [] },
+    omitPolicyRows: false,
     history: {
       current: 3,
       policyVersion: 'abcdef1234567890',

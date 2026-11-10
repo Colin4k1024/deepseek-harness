@@ -280,6 +280,22 @@ describe('DshExecutor', () => {
     expect(h.engine.inputsDelivered).toHaveBeenCalledWith('t1', 'a1', ['i1'])
   })
 
+  it('stops delivering once a ticket ends between its queued Inputs', async () => {
+    const first = { id: 'i1', kind: 'trigger', triggerId: 'tr1', at: '' } as TicketInput
+    const second = { id: 'i2', kind: 'trigger', triggerId: 'tr2', at: '' } as TicketInput
+    const item = ticket('t1', [first, second], ['i1', 'i2'])
+    item.assignments[0]!.state = 'running'
+    const h = executorHost({ ticket: item, triggers: [trigger('tr1'), trigger('tr2')] })
+    h.engine.inputsDelivered = vi.fn((id: string, _assignmentId: string, inputIds: string[]) => {
+      const current = h.tickets.get(id)!
+      current.undelivered = current.undelivered.filter(inputId => !inputIds.includes(inputId))
+      if (inputIds.includes('i1')) current.ended = { at: '2026-11-02T00:00:00.000Z', by: 'human', outcome: 'stopped' }
+    })
+    await (h.executor as unknown as ExecutorInternals).deliverQueued('t1')
+    expect(h.sessions.prompt).toHaveBeenCalledTimes(1)
+    expect(h.engine.inputsDelivered).toHaveBeenCalledExactlyOnceWith('t1', 'a1', ['i1'])
+  })
+
   it('records and rethrows a delivery failure while the ticket stays live', async () => {
     const input = { id: 'i1', kind: 'trigger', triggerId: 'tr1', at: '' } as TicketInput
     const item = ticket('t1', [input], ['i1'])
@@ -442,6 +458,13 @@ describe('DshExecutor', () => {
     handler({ id: 'worker-t1' }, { type: 'user/message', data: { source: { kind: 'dsh-superagent' }, id: 'prompt-i1' } })
     await new Promise(resolve => setTimeout(resolve, 0))
     expect(h.engine.inputsRead).toHaveBeenCalledWith('t1', ['i1'])
+  })
+
+  it('ignores an idle agent that is not a worker session', () => {
+    const h = executorHost()
+    h.executor.install()
+    const handler = h.on.mock.calls.find(([kind]) => kind === 'agent/status')![1] as (event: { agent: { id: string }; status: string }) => void
+    expect(() => { handler({ agent: { id: 'main' }, status: 'idle' }) }).not.toThrow()
   })
 
   it('marks no stale ticket failed when a launch failure arrives after the ticket ended', () => {

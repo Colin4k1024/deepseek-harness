@@ -643,6 +643,21 @@ describe('policy effects', () => {
       requester: { source: 'feishu', id: 'cli_ci_bot' },
     })
   })
+  it('reports a disabled rule without also marking proactive work false while auto mode stays on', () => {
+    const auto = { ...base, eval: { ...base.eval, mode: 'auto' as const } }
+    const disabled = {
+      ...auto,
+      policy: { ...auto.policy, rules: auto.policy.rules.map(rule => ({ ...rule, enabled: rule.id !== 'copy' })) },
+    }
+    const rule = ticket('t7', {
+      strength: 'inferred',
+      actor: { source: 'feishu', id: 'ou_alice' },
+      basis: { via: 'listed', source: 'feishu', rules: ['copy'], observation: {} },
+    })
+    expect(policyEffects([rule], auto, disabled, scope).get('t7')).toEqual({
+      rules: [{ id: 'copy', name: 'Copy', change: 'disabled' }],
+    })
+  })
   it("keeps an inferred follow-up's Mandate only while candidates become work and its rules are on, as any inferred one", () => {
     const followup = ticket('t5', {
       strength: 'inferred',

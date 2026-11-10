@@ -72,6 +72,13 @@ it('saves an edit and shows it until its revision is read back, holding edits an
   expect(after([{ type: 'edit', value: mine, meta: undefined, saved, revision: undefined }])).toMatchObject({ draft: { revision: 0 } })
 })
 
+it('ignores a submit outside the editing phase and a saved event outside the saving phase', () => {
+  const clean: DraftState<Value, undefined> = { phase: 'clean', seen: 1 }
+  expect(after([{ type: 'submit' }], clean)).toBe(clean)
+  const editing = after([edit({ mode: 'auto', limit: 1 })])
+  expect(after([{ type: 'saved', revision: 2, restarting: true }], editing)).toBe(editing)
+})
+
 it('merges another saved revision into a draft, tells a merge from a conflict, and keeps only the conflict across an edit', () => {
   const editing = after([edit({ mode: 'auto', limit: 1 })])
   const merged = after([arrived({ mode: 'off', limit: 5 }, 2)], editing)

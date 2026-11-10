@@ -22,6 +22,8 @@ it('opens the Decisions under Policy from the flow line with their reasons, Deci
     expect(text()).toContain(zh.none)
     await click(zh.lastDayOnly)
     expect(server.requests.some(request => request.path === 'decisions?limit=30&kind=ignore')).toBe(true)
+    await click(zh['decisionFilter.work'])
+    expect(server.requests.some(request => request.path === 'decisions?limit=30&kind=accept,reopen')).toBe(true)
   })
 
 it('keeps a Policy draft across remounts, and merges another save into it sender by sender and rule by rule', async () => {
@@ -79,9 +81,20 @@ it('opens the rule list for an invalid field inside it only', async () => {
   const openRows = () => all('.dt-disclosure[data-open]').length
   await act(async () => { field(zh.evalTimeout).dispatchEvent(new Event('invalid', { bubbles: false })) })
   expect(openRows()).toBe(0)
+  await act(async () => { all('.dt-part input')[0]!.dispatchEvent(new Event('invalid')) })
+  expect(openRows()).toBe(0)
   await click(all('.dt-rule [data-disclosure-row]')[0]!)
   await act(async () => { all('.dt-rule input')[0]!.dispatchEvent(new Event('invalid')) })
   expect(openRows()).toBe(all('.dt-rule').length)
+})
+
+it('shows a Source policy without an admission table as its explicit-request rule', async () => {
+  server.omitPolicyRows = true
+  await mount()
+  await click(zh['tab.eval'])
+  await click(find(zh['tab.settings'], '.dt-status-head button'))
+  expect(text()).toContain(zh.explicitRequest)
+  expect(all('.dt-admission')).toHaveLength(0)
 })
 
 it('syncs a Source\'s list from where the Source keeps it, but not while a Policy draft is unsaved', async () => {

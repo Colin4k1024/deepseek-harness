@@ -735,8 +735,7 @@ function feishuDirectAddresses(store: Store): void {
   const chats = store.get(KV.feishu.chats) ?? {}
   const direct = (channel: unknown): channel is ChannelRef => isObject(channel) && channel.source === 'feishu' && isObject(channel.address)
     && chats[String(channel.address.chatId)] === true && channel.address.direct === undefined
-  const marked = (channel: ChannelRef): ChannelRef => direct(channel)
-    ? { ...channel, address: { ...channel.address, direct: 'true' } } : channel
+  const marked = (channel: ChannelRef): ChannelRef => ({ ...channel, address: { ...channel.address, direct: 'true' } })
   for (const table of ['trigger', 'outbox'] as const) {
     for (const row of store.db.prepare(`SELECT id, value FROM ${table} WHERE value ->> '$.channel.source' = 'feishu'`).all()) {
       const value = JSON.parse(String(row.value)) as Stored

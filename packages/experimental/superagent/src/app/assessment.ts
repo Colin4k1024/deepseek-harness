@@ -167,7 +167,8 @@ export class MasterAssessor implements Assessor {
           reads.context = context
           // Allow pagination to continue from the end of the initial window.
           if (context.next) reads.cache.cursors.add(context.next)
-          for (const message of context.messages) if (!message.deleted) {
+          for (const message of context.messages) {
+            if (message.deleted) continue
             reads.cache.messages.set(message.id, message.text)
             this.imageReferences(thread, trigger, message.text, message.id, reads.cache)
           }
