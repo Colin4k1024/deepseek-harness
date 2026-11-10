@@ -351,7 +351,7 @@ const currentNames = (value: string): string =>
     )
     .replace(
       /\borchestrator_(?:ticket_(accept|attach|stop)|trigger_(ignore))\b/g,
-      (_name, ticket?: string, trigger?: string) => `orchestrator_route (kind ${ticket ?? trigger ?? ''})`,
+      (_name, ticket?: string, trigger?: string) => `orchestrator_route (kind ${required(ticket ?? trigger)})`,
     )
 /** Rewrites a legacy skill body to current tool, argument, resource, section, skill, and variable names. */
 function legacyText(value: string): string {

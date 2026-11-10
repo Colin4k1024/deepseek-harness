@@ -220,10 +220,10 @@ export function SaveBar({
   const line = saveBarText(t, state, words)
   const shown = dirty || busy || !!line.error
   const bar = useRef<HTMLDivElement>(null)
-  const block = useRef<HTMLElement | null>(null)
+  const block = useRef<HTMLElement | null | undefined>(null)
   const focused = useRef(false)
   useLayoutEffect(() => {
-    if (shown) { block.current = bar.current?.parentElement ?? null; return }
+    if (shown) { block.current = bar.current?.parentElement; return }
     const lost = !document.activeElement || document.activeElement === document.body
     if (focused.current && block.current && lost) { block.current.tabIndex = -1; block.current.focus({ preventScroll: true }) }
     focused.current = false

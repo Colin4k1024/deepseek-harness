@@ -185,6 +185,17 @@ describe('feishu source', () => {
     expect(refused.health.feishu).toEqual({ state: 'paused', detail: problem.detail })
     expect((await run({ configured: () => false })).health.feishu).toEqual({ state: 'paused', detail: 'Waiting for the deployment check', code: 'setupPending' })
   })
+  it('reads a Feishu parent and a topic event with and without bot and root fields', () => {
+    const parent = feishuTrigger({ message_id: 'om_2', chat_id: 'oc_1', chat_type: 'group', sender_id: MEMBER, sender_type: 'user',
+      content: 'hi', create_time: '1', parent_id: 'om_1' }, 'ou_bot', 'cli_bot')!
+    expect(feishuParent(parent)).toBe(feishuTriggerId('om_1'))
+    const base = { message_id: 'om_2', chat_id: 'oc_1', create_time: '1', content: 'hi' }
+    expect(topicEvent({ ...base, sender: { id: 'ou_user', sender_type: 'user' } }, 'oc_1', false, 'om_root'))
+      .toMatchObject({ sender_id: 'ou_user', root_id: 'om_root' })
+    expect(topicEvent({ ...base, root_id: 'om_root', sender: { id: 'ou_user', open_bot_id: 'ou_bot', sender_type: 'app' } }, 'oc_1', true, 'om_root'))
+      .toMatchObject({ sender_id: 'ou_bot', sender_type: 'bot', root_id: 'om_root' })
+  })
+
   it('translates live events into triggers keyed by root message, and drops the bot\'s own messages', () => {
     const trigger = feishuTrigger({ message_id: 'om_2', chat_id: 'oc_1', chat_type: 'group', sender_id: MEMBER, sender_type: 'user', content: 'hi', create_time: '1757376000000', mentions: [{ id: 'cli_bot' }], root_id: 'om_1', parent_id: 'om_1', thread_id: 'omt_1', message_app_link: 'https://applink/x' }, 'ou_bot', 'cli_bot')!
     expect(trigger).toMatchObject({ id: key('feishu', 'om_2'), source: 'feishu', threads: [{ source: 'feishu', id: 'oc_1:om_1' }], actor: { source: 'feishu', id: MEMBER }, human: true, at: '2025-09-09T00:00:00.000Z', url: 'https://applink/x', channel: { source: 'feishu', address: { chatId: 'oc_1', messageId: 'om_2' } }, meta: { chatId: 'oc_1', direct: false, mentioned: true, rootId: 'om_1', parentId: 'om_1', threadId: 'omt_1', messageId: 'om_2' } })
@@ -1716,6 +1727,14 @@ describe('feishu event consumer', () => {
     expect(off.chats).toEqual(['oc_a', 'oc_b'])
     expect(off.cursors.oc_dm).toBe(hour)
   }, 20_000)
+  it('reports a consumer whose bot CLI cannot start', async () => {
+    const { ctx, health, store } = consumerSource(join(dir, 'missing-lark'))
+    running = runFeishu(ctx, controller.signal)
+    await vi.waitFor(() =>{  expect(health.feishu).toMatchObject({ state: 'error',
+      detail: expect.stringContaining('missing-lark') as unknown }) }, until)
+    controller.abort(); await running; store.close()
+  }, 20_000)
+
   it('reports an error when the consumer is not ready within 45 seconds', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
     const { ctx, health, store } = consumerSource(cli('never'))
@@ -2149,6 +2168,9 @@ describe('GitHub pull binding edges', () => {
       ], ended: { at: '2026-09-02T00:00:00Z', by: 'executor', reason: 'merged', outcome: 'merged' } }
     expect(pullEndNotices(ticket, '修一下', 'acme/widgets')[0]!.text).toContain('PR #2')
     expect(pullEndNotices(ticket, '修一下', 'acme/widgets')[0]!.text).toContain('已合并')
+    expect(pullEndNotices(ticket, 'fix it', 'acme/widgets')[0]!.text).toContain('has merged')
+    expect(pullEndNotices({ ...ticket, ended: { ...ticket.ended!, outcome: 'closed' } }, '修一下', 'acme/widgets')[0]!.text)
+      .toContain('已关闭')
     expect(pullEndNotices({ ...ticket, ended: { ...ticket.ended!, outcome: 'closed' } }, 'fix it', 'acme/widgets')[0]!.text)
       .toContain('was closed without merging')
   })

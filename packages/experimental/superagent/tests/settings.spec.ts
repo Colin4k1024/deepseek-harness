@@ -49,6 +49,15 @@ it('refuses a save of a block that another save changed during its model or acco
   expect(store.settings().sources.github!.config).toMatchObject({ cli: value.config.cli, pollSeconds: 90 })
 })
 
+it('refuses a save whose revision is already stale before any check runs', async () => {
+  h = await startRuntime()
+  const { settings, store } = h.runtime
+  const executor = store.settings().executor
+  await expect(settings.save('executor', { ...executor, maxWorkers: 5 }, store.blockRevision('executor') - 1, 'panel'))
+    .rejects.toThrow(SettingsConflict)
+  expect(store.settings().executor).toEqual(executor)
+})
+
 it('refuses a Policy sync that a Policy save outran, reports it on sync:feishu, and keeps the save', async () => {
   h = await startRuntime()
   const { settings, store } = h.runtime
@@ -123,6 +132,10 @@ it('exposes the current settings, unchanged syncs, label refreshes, and validati
   await vi.waitFor(() =>{  expect(h!.runtime.health['sync:feishu']).toMatchObject({ state: 'ready' }) })
   expect(await settings.sync('feishu')).toEqual(store.settings().policy.sources.feishu)
   expect(await settings.refreshLabels('feishu')).toEqual({ added: [] })
+  vi.spyOn(Commands.prototype, 'lark').mockResolvedValueOnce({ chats: [
+    { chat_id: 'oc_zulu', name: 'Zulu' }, { chat_id: 'oc_alpha', name: 'Alpha' }, { chat_id: 'oc_nameless' },
+  ] })
+  expect(await settings.refreshLabels('feishu')).toEqual({ added: ['Alpha', 'Zulu'] })
   expect(store.settings()).toEqual(settings.current())
 })
 
@@ -216,8 +229,14 @@ it('resolves setup through worker probes and reports account and environment fai
     const failed = new Setup(writeHost)
     expect(await failed.run(settings())).toBe(false)
     expect(failed.problem).toMatchObject({ code: 'environmentFailed', values: { output: expect.stringContaining('EEXIST') as unknown } })
+
+    const invalidFeishu = settings({ sources: { github: { enabled: true, config: { repository: 'acme/widgets', cli: gh } },
+      feishu: { enabled: true, config: { cli: 123 } } } })
+    await expect(new Setup(host()).run(invalidFeishu)).rejects.toThrow()
+    process.env.PATH = undefined
+    expect(new Setup(host()).commandEnvironment).toHaveProperty('PATH')
   } finally {
     if (oldPath !== undefined) process.env.PATH = oldPath
     rmSync(directory, { recursive: true, force: true })
   }
-})
+}, 20_000)

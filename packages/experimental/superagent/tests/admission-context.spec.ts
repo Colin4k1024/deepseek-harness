@@ -46,6 +46,20 @@ it('retains pagination limits and exact loaded counts rather than claiming compl
   expect(lark).toHaveBeenCalledTimes(2)
   expect(lark.mock.calls[1]![0]).toEqual(expect.arrayContaining(['--page-size', '2']))
 })
+it('drops a message a later page repeats', async () => {
+  const commands = new Commands(() => testDeployment(), {}, new AbortController().signal)
+  let read = 0
+  const context = {
+    messageId: 'om_0',
+    read: async () => {
+      read += 1
+      return read === 1 ? { messages: [message(0)], next: 'next' } : { messages: [message(0), message(1)], next: undefined }
+    },
+  }
+  const result = await admissionContext(context, commands, 2)
+  expect(result.messages.map(item => item.id)).toEqual(['om_0', 'om_1'])
+})
+
 it('refuses pagination that repeats a cursor', async () => {
   const commands = new Commands(() => testDeployment(), {}, new AbortController().signal)
   const context = { messageId: 'om_0', read: async () => ({ messages: [message(0)], next: 'same' }) }

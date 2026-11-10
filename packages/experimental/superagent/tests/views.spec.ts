@@ -115,6 +115,10 @@ it('states each Source by the first state that holds', () => {
   const states = (setup: Parameters<typeof sourcesStatus>[2], health: Parameters<typeof sourcesStatus>[1] = {}) =>
     Object.fromEntries(sourcesStatus(host, health, setup).map(source => [source.id, source.state]))
   expect(states({})).toEqual({ feishu: 'starting', github: 'starting' })
+  const sourceProblem = { place: 'github', code: 'agentCliUnset', values: {}, detail: '' } as const
+  expect(states({ problem: sourceProblem })).toEqual({ feishu: 'setup', github: 'error' })
+  expect(states({}, { feishu: { state: 'ready', detail: '' }, history: { state: 'ready', detail: '' }, github: { state: 'ready', detail: '' } }))
+    .toEqual({ feishu: 'ready', github: 'ready' })
   expect(states({}, { feishu: { state: 'ready', detail: '' }, history: { state: 'paused', detail: '' }, github: { state: 'error',
     detail: 'x' } }))
     .toEqual({ feishu: 'paused', github: 'error' })
@@ -125,6 +129,9 @@ it('states each Source by the first state that holds', () => {
   const now = new Date().toISOString()
   store.triggers.save(message('filtered-now', { source: 'feishu', id: 'ou_bob' }, true, now))
   store.triggers.saveDisposition('filtered-now', { filtered: { code: 'not_a_member' }, fanout: [], at: now })
+  const older = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString()
+  store.triggers.save(message('filtered-old', { source: 'feishu', id: 'ou_bob' }, true, older))
+  store.triggers.saveDisposition('filtered-old', { filtered: { code: 'not_a_member' }, fanout: [], at: older })
   const rows = sourcesStatus(host, {}, {})
   expect(rows.find(source => source.id === 'feishu')).toMatchObject({
     stats: { received: 1, filtered: 1, lastAt: now },
@@ -240,6 +247,95 @@ it('words each settings save by what it changed from the one before, and nothing
   store.delete(KV.settings.version(revision))
   store.saveSettings({ ...store.settings(), paused: true })
   expect(changes(revision + 1)).toBeNull()
+})
+
+it('words every kind of settings change, including rows without labels and Sources this build does not know', () => {
+  const host = views()
+  const config = {
+    feishu: { cli: 'lark-cli', chats: [], directMessages: true, otherChats: 'none', readPageSize: 20, linkTimeoutMs: 5000 },
+    github: { repository: 'acme/widgets', cli: 'gh', pollSeconds: 60, failuresBeforeError: 3 },
+  }
+  const rule = (id: string, name: string, enabled: boolean, instruction = `${id} instruction`) => ({ id, name, enabled, instruction })
+  const before = SettingsSchema.parse({
+    paused: false,
+    sources: { ...config, feishu: { enabled: true, config: config.feishu }, github: { enabled: true, config: config.github },
+      jira: { enabled: true, config: { site: 'old' } }, old: { enabled: true, config: { site: 'old' } } },
+    policy: {
+      rules: [rule('copy', 'Copy fixes', true), rule('visual', 'Visual fixes', true), rule('docs', 'Docs fixes', false)],
+      sources: {
+        feishu: { allowed: [{ id: 'ou_alice', name: 'Alice' }, { id: 'ou_keep', name: 'Keep' }], syncChat: 'oc_old', bots: [{ id: 'cli_old' }] },
+        github: { allowed: [{ id: 'alice' }, { id: 'keep' }], bots: [{ id: 'old-bot[bot]' }] },
+        jira: { allowed: [{ id: 'jira-old' }], admission: { person: { listedUnaddressed: 'ignore' } } },
+        old: { allowed: [{ id: 'old-user' }], admission: { person: { unlistedAddressed: 'explicit' } } },
+      },
+    },
+    eval: { mode: 'observe', timeoutSeconds: 120, model: null },
+    executor: { model: null, maxWorkers: 3, directory: '', prepare: '', blockedCommands: [] },
+  })
+  const after = SettingsSchema.parse({
+    paused: true,
+    sources: { feishu: { enabled: true, config: { ...config.feishu, directMessages: false, readPageSize: 30 } },
+      github: { enabled: true, config: { ...config.github, pollSeconds: 90, failuresBeforeError: 4, observeIssues: true } },
+      jira: { enabled: false, config: { site: 'new' } }, slack: { enabled: false, config: {} } },
+    policy: {
+      rules: [rule('copy', 'Copy changes', false, 'copy changed instruction'), rule('docs', 'Docs fixes', true), rule('other', 'Other fixes', true)],
+      sources: {
+        feishu: { allowed: [{ id: 'ou_bob' }, { id: 'ou_keep' }], syncChat: 'oc_new', bots: [{ id: 'cli_new' }] },
+        github: { allowed: [{ id: 'bob' }, { id: 'keep' }], bots: [{ id: 'new-bot[bot]' }] },
+        jira: { allowed: [{ id: 'jira-new' }], admission: { person: { listedUnaddressed: 'inferred' } } },
+        slack: { allowed: [{ id: 'slack-user' }], admission: { person: { unlistedAddressed: 'explicit' } } },
+      },
+    },
+    eval: { mode: 'auto', timeoutSeconds: 240, model: { provider: 'provider', model: 'model' } },
+    executor: { model: { provider: 'worker-provider', model: 'worker-model' }, maxWorkers: 5, directory: '/srv/work',
+      prepare: 'npm ci', blockedCommands: ['rm'] },
+  })
+  const record = { source: 'panel' as const, policyVersion: 'v', policyChanged: true, notified: ['missing'] }
+  store.saveSettings(before, record)
+  store.saveSettings(after, record)
+  const revision = store.get(KV.settings.revision)!
+  const history = policyHistory(store, host.sources, 'v')
+  expect(history.items[0]).toMatchObject({ revision, notified: [{ id: 'missing', title: 'missing' }] })
+  expect(history.items[0]!.changes).toEqual(expect.arrayContaining([
+    { code: 'ruleRenamed', from: 'Copy fixes', to: 'Copy changes' },
+    { code: 'ruleInstruction', name: 'Copy changes' },
+    { code: 'ruleDisabled', name: 'Copy changes' },
+    { code: 'ruleEnabled', name: 'Docs fixes' },
+    { code: 'ruleAdded', name: 'Other fixes' },
+    { code: 'ruleRemoved', name: 'Visual fixes' },
+    { code: 'sourceRowsAdded', source: 'feishu', part: true, field: 'allowed', items: ['ou_bob'] },
+    { code: 'sourceRowsRemoved', source: 'feishu', part: true, field: 'allowed', items: ['Alice'] },
+    { code: 'sourceRowsChanged', source: 'feishu', part: true, field: 'allowed', items: ['ou_keep'] },
+    { code: 'sourceField', source: 'feishu', part: true, field: 'syncChat', from: 'oc_old', to: 'oc_new' },
+    { code: 'sourceRowsAdded', source: 'feishu', part: true, field: 'bots', items: ['cli_new'] },
+    { code: 'sourceRowsRemoved', source: 'feishu', part: true, field: 'bots', items: ['cli_old'] },
+    { code: 'sourceRowsAdded', source: 'github', part: true, field: 'allowed', items: ['bob'] },
+    { code: 'sourceRowsRemoved', source: 'github', part: true, field: 'allowed', items: ['alice'] },
+    { code: 'sourceRowsAdded', source: 'github', part: true, field: 'bots', items: ['new-bot[bot]'] },
+    { code: 'sourceRowsRemoved', source: 'github', part: true, field: 'bots', items: ['old-bot[bot]'] },
+    { code: 'sourceAdmission', source: 'jira', part: true },
+    { code: 'sourceAdmission', source: 'old', part: true },
+    { code: 'sourceAdmission', source: 'slack', part: true },
+    { code: 'mode', from: 'observe', to: 'auto' },
+    { code: 'timeout', from: 120, to: 240 },
+    { code: 'evalModel' }, { code: 'executorModel' }, { code: 'maxWorkers', from: 3, to: 5 },
+    { code: 'paused' }, { code: 'executionDirectory', from: '', to: '/srv/work' }, { code: 'prepareCommand' },
+    { code: 'blockedCommands', from: '', to: 'rm' },
+    { code: 'sourceField', source: 'feishu', field: 'directMessages', from: true, to: false },
+    { code: 'sourceField', source: 'feishu', field: 'readPageSize', from: 20, to: 30 },
+    { code: 'sourceField', source: 'github', field: 'pollSeconds', from: 60, to: 90 },
+    { code: 'sourceField', source: 'github', field: 'failuresBeforeError', from: 3, to: 4 },
+    { code: 'sourceField', source: 'github', field: 'observeIssues', from: false, to: true },
+    { code: 'sourceDisabled', source: 'jira' }, { code: 'sourceDisabled', source: 'slack' },
+  ]))
+  const current = store.get(KV.settings.version(revision))!
+  store.set(KV.settings.version(revision + 1), { ...current, revision: revision + 1, previousRevision: revision - 1 })
+  store.set(KV.settings.revision, revision + 1)
+  store.delete(KV.settings.version(revision))
+  store.delete(KV.settings.revision)
+  const gapped = policyHistory(store, host.sources, 'v')
+  expect(gapped.current).toBe(0)
+  expect(gapped.items[0]!.changes).toBeNull()
 })
 
 it('names a listed bot as the Policy lists it, and gives a bot\'s Mandate a basis fact of its own', () => {
@@ -446,10 +542,19 @@ it('finds search terms cached by their message link and shows a filtered Trigger
   store.threads.save({ key: 'feishu:oc_1:om_root', ref: { source: 'feishu', id: 'oc_1:om_root' }, createdAt: at, subscriptions: [], correlated: [], pending: [], meta: {} })
   store.triggers.save({ ...message('f2', { source: 'feishu', id: 'ou_bob' }), text: 'needle', at: '2000-01-01T00:00:00.000Z' })
   store.triggers.saveDisposition('f2', { fanout: [], at })
+  store.triggers.save({ ...message('f3', { source: 'feishu', id: 'ou_bob' }, true, at), text: 'needle' })
+  store.triggers.saveDisposition('f3', { fanout: [], at })
   expect(search(host, 'other', links).items).toEqual([])
   const rows = search(host, 'needle', { entries: () => new Map() }).items
-  expect(rows.map(item => item.id)).toEqual(['f1', 'f2'])
-  expect(rows[0]).toMatchObject({ filtered: { code: 'chat_not_allowed' }, threadTitle: undefined })
+  expect(rows.map(item => item.id)).toEqual(expect.arrayContaining(['f1', 'f2', 'f3']))
+  const third = rows.find(item => item.id === 'f3')!
+  expect(third).not.toHaveProperty('filtered')
+  expect(third).toMatchObject({ threadTitle: 'needle' })
+  store.triggers.save({ ...message('f4', { source: 'feishu', id: 'ou_bob' }, true, at), text: 'needle', threads: [{ source: 'feishu', id: 'gone' }] })
+  store.triggers.saveDisposition('f4', { fanout: [], at })
+  const fallback = search(host, 'needle', { entries: () => new Map() }).items.find(item => item.id === 'f4')!
+  expect(fallback).toMatchObject({ filtered: '', threadTitle: undefined })
+  expect(rows.find(item => item.id === 'f1')).toMatchObject({ filtered: { code: 'chat_not_allowed' }, threadTitle: undefined })
 })
 
 it('projects decisions from current and legacy audit records, including missing related records', () => {

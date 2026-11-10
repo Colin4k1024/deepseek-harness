@@ -1837,6 +1837,7 @@ it('fails a ticket at once on a worker error that is not passing, and relays it'
 it('refuses the main Session a bash command that runs sleep and a long job wait, as reports arrive by themselves, and no worker', async () => {
   const bash = (command: string) => ({ name: 'bash', arguments: { command, description: 'x' } })
   const main = guards.get(runtime.masterId)!
+  expect(main({ name: 'bash', arguments: undefined })).toBeUndefined()
   for (const command of ['sleep 60; echo done', 'cd x && sleep 5', 'gh pr checks 7 || sleep 30', 'echo a\nsleep 90', 'while true; do sleep 30; done',
     '(sleep 5)', '/bin/sleep 240', 'while sleep 30; do gh pr checks 7; done', 'if sleep 5; then gh pr view 7; fi', '{ sleep 60; }', '! sleep 5',
     'nohup sleep 60', 'exec sleep 60', 'time sleep 60', 'until sleep 1; do :; done', 'command sleep 5', 'env sleep 5'])
@@ -2077,6 +2078,10 @@ it('gives a subagent of a worker only the worker\'s work tools, and none once th
   await (runtime as unknown as { ctx: Context }).ctx.parallel('agent/created', { agent: child } as never)
   expect(restricts.get('child-1')).toEqual([{ allow: ['read', 'read_image', 'grep', 'bash', 'job_output', 'job_list', 'job_kill', 'web_search', 'skill'] }])
   expect(guards.get('child-1')!()).toBeUndefined()
+  runtime.ctx.emit('session/event', child.session, {
+    type: 'llm/retry', seq: 1, time: Date.now(), data: { turn: 1, step: 1, retryId: 'child-retry', provider: 'deepseek', retry: 1, failure: { type: 'budget_exceeded' } },
+  } as never)
+  expect(runtime.sessions.modelRetry('child-1')).toEqual({})
   runtime.engine.stopTicket(ticket.id)
   expect(guards.get('child-1')!()).toBe('Ticket ended; new work needs a new authorized ticket')
   // Another Session's subagent is left as it is.
@@ -2205,14 +2210,27 @@ it('injects a notice as complete when the main Session does not exist yet', asyn
 })
 
 it('clears a disposed Session and reports an active model budget retry', async () => {
-  const { sessionId } = await acceptedTicket()
+  const { ticket, sessionId } = await acceptedTicket()
   const agent = agents.get(sessionId)!
+  const base = runtime.store.tickets.get(ticket.id)!
+  for (let index = 1; index <= 6; index += 1) {
+    const cloneId = `${ticket.id}-clone-${index}`
+    runtime.store.tickets.save({ ...base, id: cloneId, title: `Clone ${index}` })
+    await (controller.create as (options: { sessionId: string }) => Promise<void>)({ sessionId: `worker-${cloneId}` })
+    await runtime.ctx.parallel('agent/created', { agent: agents.get(`worker-${cloneId}`) } as never)
+    runtime.ctx.emit('session/event', agents.get(`worker-${cloneId}`)!.session, {
+      type: 'llm/retry', seq: index, time: Date.now(), data: { turn: 1, step: 1, retryId: `retry-${index}`, provider: 'deepseek', retry: 1, failure: { type: 'budget_exceeded' } },
+    } as never)
+  }
   expect(runtime.sessions.modelRetry(undefined)).toEqual({})
+  runtime.ctx.emit('session/event', { id: 'not-loaded' }, {
+    type: 'llm/retry', seq: 1, time: Date.now(), data: { turn: 1, step: 1, retryId: 'not-loaded', provider: 'deepseek', retry: 1, failure: { type: 'budget_exceeded' } },
+  } as never)
   runtime.ctx.emit('session/event', agent.session, {
     type: 'llm/retry', seq: 1, time: Date.now(), data: { turn: 1, step: 1, retryId: 'retry-1', provider: 'deepseek', retry: 1, failure: { type: 'budget_exceeded' } },
   } as never)
   expect(runtime.sessions.modelRetry(sessionId)).toMatchObject({ model_retry: { sessionId, provider: 'deepseek', attempts: 1 } })
-  expect(runtime.health.models).toMatchObject({ state: 'error' })
+  expect(runtime.health.models).toMatchObject({ state: 'error', detail: expect.stringMatching(/\d+ more Sessions/) as unknown })
   runtime.ctx.emit('agent/disposed', { agent } as never)
   expect(tools.get(sessionId)?.size).toBe(0)
   expect(runtime.sessions.modelRetry(sessionId)).toEqual({})
@@ -2224,12 +2242,20 @@ it('renders tool output as JSON, and an output image as a DSH image block', asyn
   const textOnly = tool.output.render({}, { image: 'not an image' }) as { type: string; text: string }[]
   expect(textOnly).toHaveLength(1)
   expect(textOnly[0]).toMatchObject({ type: 'text', text: JSON.stringify({ image: 'not an image' }) })
+  const empty = tool.output.render({}, null) as { type: string; text: string }[]
+  expect(empty).toEqual([{ type: 'text', text: 'null' }])
   const image = tool.output.render({}, { image: {
     attachmentId: 'attachment-1', bytes: 12, width: 3, height: 4, mediaType: 'image/png', name: 'chart.png',
     originalDimensions: { width: 6, height: 8 },
   } }) as { type: string; text: string; attachment: Record<string, unknown> }[]
   expect(image).toHaveLength(2)
   expect(image[1]).toMatchObject({ type: 'image', attachment: { attachmentId: 'attachment-1', name: 'chart.png', originalDimensions: { width: 6, height: 8 } } })
+  const bare = tool.output.render({}, { image: {
+    attachmentId: 'attachment-2', bytes: 12, width: 3, height: 4, mediaType: 'image/png',
+  } }) as { type: string; attachment: Record<string, unknown> }[]
+  expect(bare[1]).toMatchObject({ type: 'image', attachment: { attachmentId: 'attachment-2' } })
+  expect(bare[1]!.attachment).not.toHaveProperty('name')
+  expect(bare[1]!.attachment).not.toHaveProperty('originalDimensions')
 })
 
 it('binds the current prompt revision only once until it changes', () => {
@@ -2252,6 +2278,7 @@ it('releases a Session disposed while its skill scope opens, reporting each fail
   runtime.ctx.emit('agent/created', { agent } as never)
   await vi.waitFor(() => { expect(inject).toHaveBeenCalled() })
   runtime.ctx.emit('agent/disposed', { agent } as never)
+  expect(sections.get(runtime.masterId)!.text({})).toContain('[dsh-superagent prompt revision 0]')
   resolveScope(undefined)
   await vi.waitFor(() => {
     expect(warn.mock.calls.map(call => String(call[1]))).toEqual(expect.arrayContaining(['Error: scope release failed', 'Error: prompt release failed']))
@@ -2311,6 +2338,14 @@ it('builds prompt defaults both while setup is pending and after it is configure
   await unconfigured.ready
   expect(unconfigured.setupProblem).toBeDefined()
   expect(unconfigured.prompts.current()).toMatchObject({ revision: 0, source: 'defaults' })
+  expect(unconfigured.prompts.compose(unconfigured.prompts.current().config, 'worker')).toContain('Execution environment: dsh-superagent is waiting for setup')
+})
+
+it('does not queue a member sync for a Source kind the settings do not configure', async () => {
+  const dispose = runtime.sources.register({ ...feishuKind, kind: 'foreign', health: [] })
+  await Promise.resolve()
+  expect(runtime.health).not.toHaveProperty('sync:foreign')
+  dispose()
 })
 
 it('does not queue a member sync for a Source kind without policy sync', () => {
@@ -2346,6 +2381,8 @@ it('lists only loaded Sessions and authorizes their active or earlier prompt rev
   expect(runtime.sessions.promptVersion(master).revision).toBe(0)
   expect(runtime.sessions.mayRead(master, 0)).toBe(true)
   expect(runtime.sessions.mayRead(master, 1)).toBe(false)
+  expect(runtime.sessions.mayRead('fresh', runtime.prompts.current().revision)).toBe(true)
+  expect(runtime.sessions.mayRead('fresh', 99)).toBe(false)
 })
 
 it('registers bundled and custom skills, including a custom skill with no text', () => {

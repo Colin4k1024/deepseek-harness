@@ -1,5 +1,6 @@
 /** Execution status view (active Tickets and pause control) and Execution settings group (Executor capacity and workspace environment). */
 import { useRef, useState } from 'react'
+import { required } from '../core/required.ts'
 import { TICKET_FILTERS, type TicketFilter } from '../app/api.ts'
 import { LIMITS } from '../limits.ts'
 import { usePoll, type SettingsView, type SourceView, type StateView } from './api.ts'
@@ -52,7 +53,7 @@ export function ExecutionStatus({ filter: current, state, reload }: {
   </>
 }
 
-const firstSentence = (text: string): string => /^[^。；;.]*(?:[。；;]|\.(?=\s|$))?/.exec(text)?.[0] ?? text
+const firstSentence = (text: string): string => required(/^[^。；;.]*(?:[。；;]|\.(?=\s|$))?/.exec(text))[0]
 function EnvironmentVariables({ groups, sources,
   onPick }: { groups: SettingsView['environment']['variables']; sources: SourceView[]; onPick: (key: string) => void }) {
   const { t } = usePanel()

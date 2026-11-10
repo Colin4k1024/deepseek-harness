@@ -69,6 +69,7 @@ it('saves an edit and shows it until its revision is read back, holding edits an
   expect(saveBarText(t, waiting)).toEqual({ status: 'savedRestarting' })
   expect(after([arrived(mine, 2)], waiting)).toEqual({ phase: 'clean', seen: 2 })
   expect(after([edit(mine), edit(saved)])).toEqual({ phase: 'clean', seen: 1 })
+  expect(after([{ type: 'edit', value: mine, meta: undefined, saved, revision: undefined }])).toMatchObject({ draft: { revision: 0 } })
 })
 
 it('merges another saved revision into a draft, tells a merge from a conflict, and keeps only the conflict across an edit', () => {
@@ -84,6 +85,18 @@ it('merges another saved revision into a draft, tells a merge from a conflict, a
   expect(after([arrived({ mode: 'auto', limit: 1 }, 2)], editing)).toEqual({ phase: 'clean', seen: 2 })
 })
 
+it('builds a named list from an undefined base', () => {
+  expect(merged(undefined, [{ id: 'new', name: 'New' }], [{ id: 'remote', name: 'Remote' }]))
+    .toEqual({ value: [{ id: 'new', name: 'New' }, { id: 'remote', name: 'Remote' }], conflicts: [] })
+})
+
+it('treats a function as a whole value and prepends a row mine added before any remote row', () => {
+  const fn = () => {}
+  expect(merged(fn, { mine: true }, { theirs: true })).toEqual({ value: { mine: true }, conflicts: [[]] })
+  expect(merged([{ id: 'remote', name: 'Remote' }], [{ id: 'new', name: 'New' }, { id: 'remote', name: 'Remote' }], [{ id: 'remote', name: 'Remote' }]))
+    .toEqual({ value: [{ id: 'new', name: 'New' }, { id: 'remote', name: 'Remote' }], conflicts: [] })
+})
+
 it('keeps a refused save as a draft with why, and words a restored draft unless its block words its drafts itself', () => {
   const saving = after([edit({ mode: 'auto', limit: 1 }), { type: 'submit' }])
   expect(saveBarText(t, after([{ type: 'refused', notice: { kind: 'rebasing' } }], saving))).toEqual({ status: 'saveRebasing' })
@@ -94,6 +107,9 @@ it('keeps a refused save as a draft with why, and words a restored draft unless 
     draft: { base: saved, value: { mode: 'auto', limit: 1 }, revision: 1 } }
   expect(saveBarText(t, restored)).toEqual({ status: 'draftRestored' })
   expect(saveBarText(t, restored, { editing: 'Version 1 · 1 change' })).toEqual({ status: 'Version 1 · 1 change' })
+  expect(saveBarText(t, { phase: 'editing', notice: { kind: 'merged', revision: 7 } })).toEqual({ status: 'saveMerged' })
+  expect(saveBarText(t, { phase: 'editing', notice: { kind: 'conflict', revision: 7, paths: [['mode']] } }, { conflict: revision => `Custom conflict ${revision}` }))
+    .toEqual({ error: 'Custom conflict 7', status: '' })
   expect(saveBarText(t, after([arrived({ mode: 'off', limit: 3 }, 2)], restored), { merged: revision => `Prompts at ${revision}` }))
     .toEqual({ status: 'Prompts at 2' })
 })
@@ -238,6 +254,8 @@ it('returns focus to the settings block when the save bar disappears, and lets a
   await act(async () => { save.focus() })
   const outside = document.createElement('div'); document.body.append(outside)
   await act(async () => { save.dispatchEvent(new FocusEvent('focusout', { bubbles: true, relatedTarget: outside })) })
+  await act(async () => { save.dispatchEvent(new FocusEvent('focusin', { bubbles: true })) })
+  await act(async () => { save.dispatchEvent(new FocusEvent('focusout', { bubbles: true })) })
   await act(async () => { save.dispatchEvent(new FocusEvent('focusin', { bubbles: true })) })
   shown = false
   await act(async () => { root.render(createElement(PanelProvider, { t }, createElement(Harness))) })

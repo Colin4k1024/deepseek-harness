@@ -1,7 +1,7 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const NUMBERED = /^(\d{3})-[a-z0-9-]+\.md$/
@@ -64,5 +64,27 @@ describe('documentation', () => {
     const tests = listed('Tests')
     expect(files('tests').filter(path => /\.spec\.tsx?$/.test(path) && !tests.includes(path))).toEqual([])
     expect(tests.filter(path => !existsSync(join(ROOT, path)))).toEqual([])
+  })
+})
+
+describe('package paths', () => {
+  it('skips a malformed foreign manifest and refuses when no package root appears', async () => {
+    const manifests = new Map<string, string>()
+    vi.resetModules()
+    vi.doMock('node:url', () => ({ fileURLToPath: () => '/sandbox/a/b/c/d/paths.ts' }))
+    vi.doMock('node:fs', async importOriginal => ({
+      ...await importOriginal(),
+      existsSync: (path: string) => manifests.has(path),
+      readFileSync: (path: string) => manifests.get(path) ?? '',
+    }))
+    try {
+      const paths = await import('../src/infra/paths.ts')
+      expect(paths.packageRoot).toThrow('dsh-superagent package root not found')
+      manifests.set('/sandbox/a/b/c/package.json', '{bad json')
+      manifests.set('/sandbox/a/b/package.json', JSON.stringify({ name: '@deepseek-ai/dsh-experimental-superagent' }))
+      expect(paths.packageRoot()).toBe('/sandbox/a/b')
+    } finally {
+      vi.doUnmock('node:fs'); vi.doUnmock('node:url'); vi.resetModules()
+    }
   })
 })

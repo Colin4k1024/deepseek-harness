@@ -132,7 +132,8 @@ export class Store implements Repositories {
     const columns = (table: string) => new Set(this.db.prepare('SELECT name FROM pragma_table_xinfo(?)').all(table).map(row => String(row.name)))
     for (const [table, definitions] of Object.entries(SETS)) {
       // Drop generated columns whose definition changed or that were removed, along with their index, before adding current ones.
-      const sql = String(this.db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?").get(table)?.sql ?? '')
+      const schema = this.db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?").get(table) as { sql: string } | undefined
+      const sql = required(schema).sql
       const generated = this.db.prepare('SELECT name FROM pragma_table_xinfo(?) WHERE hidden IN (2, 3)').all(table).map(row => String(row.name))
       for (const name of generated) {
         if (definitions[name] && sql.includes(`${name} ${definitions[name]}`)) continue

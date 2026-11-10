@@ -1,12 +1,41 @@
 // @vitest-environment jsdom
 // The Source status and settings.
 import { act } from 'react'
+import { createRoot } from 'react-dom/client'
 import { expect, it, onTestFinished, vi } from 'vitest'
 import { zh } from '../src/client/locales.ts'
 import { usePanel, mount, remount, settle, all, find, tab, click, type, text, field, at } from './fixtures/panel.client.tsx'
 import { server, problemOf, droppedReply } from './fixtures/panel-server.client.ts'
+import { PanelProvider } from '../src/client/provider.tsx'
+import { SourceStatus } from '../src/client/source.tsx'
+import type { SourceStatusRow } from '../src/client/api.ts'
 
 usePanel()
+it('says a filtered Trigger with no readable preview is empty', async () => {
+  const t = ((key: keyof typeof zh) => zh[key]) as never
+  const row: SourceStatusRow = {
+    id: 'github', title: { zh: 'GitHub', en: 'GitHub' }, installed: true, enabled: true, state: 'ready', health: [],
+    stats: { received: 1, filtered: 1, lastAt: '2026-09-23T00:00:00Z' },
+    filtered: [{ id: 'f1', at: '2026-09-23T00:00:00Z', actor: { source: 'github', id: 'someone' }, preview: '', reason: { code: 'source_disabled' } }],
+    dropped: [],
+  }
+  const fetch = vi.spyOn(globalThis, 'fetch')
+  fetch.mockImplementation(async (url: string) => new URL(url, 'http://127.0.0.1').pathname.endsWith('/sources')
+    ? Response.json([row])
+    : Response.json({ load: { running: 0, queued: 0 } }))
+  const container = document.createElement('div'); document.body.append(container)
+  const root = createRoot(container)
+  await act(async () => { root.render(<PanelProvider t={t}><SourceStatus /></PanelProvider>) })
+  for (let index = 0; index < 5; index++) await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)) })
+  await act(async () => { root.render(<PanelProvider t={t}><SourceStatus /></PanelProvider>) })
+  const filtered = [...container.querySelectorAll<HTMLElement>('[data-disclosure-row]')]
+    .find(row => row.textContent === zh.sourceFilteredTitle)!
+  await act(async () => { filtered.click() })
+  expect(container.textContent).toContain(zh.empty)
+  act(() => { root.unmount() }); container.remove()
+  fetch.mockRestore()
+})
+
 it('shows each Source\'s state on the Source status and opens its settings from a setup problem', async () => {
   await mount()
   await click(zh['tab.source'])

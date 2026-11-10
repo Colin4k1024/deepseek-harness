@@ -34,7 +34,7 @@ async function receive(ctx: SourceContext, trigger: Trigger): Promise<void> {
   const chat = trigger.meta.direct === true ? { value: { zh: '私聊', en: 'Direct message' } } : { value: name }
   for (const ref of trigger.threads) ctx.threads.describe(threadKey(ref), { url: chatLink(ctx, chatId), facts: { chat } })
 }
-const chatLink = (ctx: SourceContext, chatId: string): string => feishuChatLink(ctx.deployment.feishu?.brand ?? 'feishu', chatId)
+const chatLink = (ctx: SourceContext, chatId: string): string => feishuChatLink(required(ctx.deployment.feishu).brand, chatId)
 function available(ctx: SourceContext): boolean {
   if (ctx.configured() && ctx.deployment.feishu) return true
   const waiting = health('paused', ctx.configured() ? 'feishuCliUnset' : 'setupPending')

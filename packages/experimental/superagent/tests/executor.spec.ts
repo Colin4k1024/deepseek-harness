@@ -4,9 +4,9 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Context } from '@deepseek-ai/cordis'
-import { liveTicket, type Assignment, type Ticket, type TicketInput, type Trigger } from '../src/core/index.ts'
+import { liveTicket, type Assignment, type Execution, type Ticket, type TicketInput, type Trigger } from '../src/core/index.ts'
 import { SettingsSchema } from '../src/policy.ts'
-import { DshExecutor, batchLine, batchOf, inputMessage, inputResource, type ExecutorHost } from '../src/executor/dsh.ts'
+import { DshExecutor, batchLine, batchOf, inputMessage, inputResource, ticketExecution, type ExecutorHost } from '../src/executor/dsh.ts'
 import { deferred } from './fixtures/async.ts'
 
 let directory: string
@@ -113,10 +113,15 @@ function executorHost(seed: { ticket?: Ticket; triggers?: Trigger[] } = {}) {
   }
   const sourceLink = vi.fn(async () => ({}))
   const state = { closing: false, paused: false }
+  type SessionEventHandler = (session: { id: string }, event: {
+    type: string
+    data: { source: { kind: string }; id: string }
+  }) => void
+  const on = vi.fn<(event: string, handler: SessionEventHandler) => void>()
   const context = {
     get: (name: string) => services.get(name),
     agents,
-    on: vi.fn(),
+    on,
   } as unknown as Context
   const host: ExecutorHost = {
     context,
@@ -136,7 +141,7 @@ function executorHost(seed: { ticket?: Ticket; triggers?: Trigger[] } = {}) {
   const executor = new DshExecutor(host)
   return {
     executor, host, tickets, triggers, agents, services, store, effects, sessions, engine,
-    health, healthState, state, context, sourceLink,
+    health, healthState, state, context, sourceLink, on,
   }
 }
 
@@ -151,6 +156,9 @@ type ExecutorInternals = {
   background(work: Promise<void>): Promise<void>
   handOff(ticketId: string, agent: FakeAgent): void
   left: Map<string, { jobs: Set<string>; collect: AbortController }>
+  track(ticketId: string, stop: Promise<void>): void
+  stopping: Map<string, Promise<void>>
+  slots: { reserve(ticketId: string, by: 'launch' | 'wake' | 'person'): void; free(ticketId: string): void }
 }
 
 describe('DshExecutor', () => {
@@ -166,11 +174,36 @@ describe('DshExecutor', () => {
     expect(delivery.limit()).toBe(4)
   })
 
+  it('refuses an accepted outcome that carries no worktree name', () => {
+    const item = ticket('ticket-0123456789abcdef')
+    expect(() => ticketExecution(item, { kind: 'accept', title: 'Fix', scope: 'small', reason: 'requested' }, SettingsSchema.parse({}), '/state'))
+      .toThrow('Use 1–4 short English words in lowercase kebab-case')
+  })
+
   it('delivers nothing for an unknown ticket or a running ticket with nothing undelivered', async () => {
     const item = ticket()
     item.assignments[0]!.state = 'running'
     const h = executorHost({ ticket: item })
     await (h.executor as unknown as ExecutorInternals).deliverQueued('missing')
+    await (h.executor as unknown as ExecutorInternals).deliverQueued('t1')
+    expect(h.sessions.prompt).not.toHaveBeenCalled()
+    expect(h.engine.inputsDelivered).not.toHaveBeenCalled()
+  })
+
+  it('marks an undelivered id delivered when its Input record is missing', async () => {
+    const item = ticket('t1', [], ['missing'])
+    item.assignments[0]!.state = 'running'
+    const h = executorHost({ ticket: item })
+    await (h.executor as unknown as ExecutorInternals).deliverQueued('t1')
+    expect(h.sessions.prompt).not.toHaveBeenCalled()
+    expect(h.engine.inputsDelivered).toHaveBeenCalledWith('t1', 'a1', ['missing'])
+  })
+
+  it('returns without delivering an ended ticket that still lists undelivered Inputs', async () => {
+    const item = ticket('t1', [{ id: 'i1', kind: 'text', text: 'hi', at: '' }], ['i1'])
+    item.assignments[0]!.state = 'running'
+    item.ended = { at: '2026-11-02T00:00:00.000Z', by: 'human', outcome: 'stopped' }
+    const h = executorHost({ ticket: item })
     await (h.executor as unknown as ExecutorInternals).deliverQueued('t1')
     expect(h.sessions.prompt).not.toHaveBeenCalled()
     expect(h.engine.inputsDelivered).not.toHaveBeenCalled()
@@ -313,6 +346,12 @@ describe('DshExecutor', () => {
     } finally { vi.useRealTimers() }
   })
 
+  it('rejects a launch of a legacy ticket with no execution directory', async () => {
+    const item = ticket()
+    const h = executorHost({ ticket: item })
+    await expect((h.executor as unknown as ExecutorInternals).launch(item, item.assignments[0]!)).rejects.toThrow()
+  })
+
   it('returns from a launch once the ticket ends while its worker session is being created', async () => {
     const item = ticket()
     item.execution = { name: 'fix', directory: join(directory, 'fix'), assignment: 'Fix it.' }
@@ -377,6 +416,34 @@ describe('DshExecutor', () => {
     expect(h.engine.assignmentStarted).not.toHaveBeenCalled()
   })
 
+  it('replaces an older stop of a ticket with the newer one', async () => {
+    const h = executorHost()
+    const internal = h.executor as unknown as ExecutorInternals
+    const first = deferred<undefined>(), second = deferred<undefined>()
+    internal.track('t1', first.promise)
+    const firstEntry = internal.stopping.get('t1')!
+    internal.track('t1', second.promise)
+    first.resolve(undefined)
+    second.resolve(undefined)
+    await Promise.all([firstEntry, internal.stopping.get('t1')!])
+    expect(internal.stopping.has('t1')).toBe(false)
+  })
+
+  it('reports worker Session events for tickets whose Inputs have disappeared', async () => {
+    const item = ticket()
+    const input = { id: 'i1', kind: 'trigger', triggerId: 'tr1', at: '' } as TicketInput
+    item.inputs = [input]
+    const h = executorHost({ ticket: item })
+    h.executor.install()
+    const handler = h.on.mock.calls.find(([kind]) => kind === 'session/event')![1]
+    handler({ id: 'worker-missing' }, { type: 'user/message', data: { source: { kind: 'dsh-superagent' }, id: 'prompt-gone' } })
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(h.engine.inputsRead).not.toHaveBeenCalled()
+    handler({ id: 'worker-t1' }, { type: 'user/message', data: { source: { kind: 'dsh-superagent' }, id: 'prompt-i1' } })
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(h.engine.inputsRead).toHaveBeenCalledWith('t1', ['i1'])
+  })
+
   it('marks no stale ticket failed when a launch failure arrives after the ticket ended', () => {
     const item = ticket()
     item.assignments[0]!.state = 'pending'
@@ -406,6 +473,20 @@ describe('DshExecutor', () => {
       item.ended = { at: '2026-11-02T00:00:00.000Z', by: 'human', outcome: 'stopped' }
       await vi.advanceTimersByTimeAsync(15_000)
       expect(h.sessions.prompt).not.toHaveBeenCalled()
+    } finally { vi.useRealTimers() }
+  })
+
+  it('surfaces a slot reservation failure that is not a normal wait', async () => {
+    vi.useFakeTimers()
+    try {
+      const item = ticket()
+      item.assignments[0]!.state = 'running'
+      const h = executorHost({ ticket: item })
+      const internal = h.executor as unknown as ExecutorInternals
+      internal.retries('a1', new Error('fetch failed'))
+      vi.spyOn(internal.slots, 'reserve').mockImplementation(() => { throw new Error('slot bookkeeping failed') })
+      internal.resumeAfter('t1', 'a1', new Error('fetch failed'))
+      await expect(vi.advanceTimersByTimeAsync(15_000)).rejects.toThrow('slot bookkeeping failed')
     } finally { vi.useRealTimers() }
   })
 
@@ -462,6 +543,26 @@ describe('DshExecutor', () => {
     expect(h.sessions.prompt).not.toHaveBeenCalled()
   })
 
+  it('wraps a non-Error failure from the workspace prepare command', async () => {
+    const failure = async (): Promise<never> => {
+      throw 'cli crashed'
+    }
+    const item = ticket()
+    item.execution = { name: 'fix', directory: join(directory, 'broken-fix'), assignment: 'Fix it.' }
+    const h = executorHost({ ticket: item })
+    h.store.settings().executor.prepare = 'false'
+    const subprocess = {
+      spawn: vi.fn(() => ({
+        done: failure(),
+        collected: { stdout: { readFrom: () => ({ text: '' }) }, stderr: { readFrom: () => ({ text: '' }) } },
+      })),
+    }
+    h.services.set('subprocess', subprocess)
+    ;(h.context as { subprocess?: unknown }).subprocess = subprocess
+    await (h.executor as unknown as ExecutorInternals).launchQueued({ ticketId: 't1', assignmentId: 'a1' })
+    expect(item.assignments[0]!.report).toMatchObject({ state: 'failed', summary: 'Error: The prepare command failed: cli crashed' })
+  })
+
   it('prepares a new workspace and continues the launch once it verifies', async () => {
     const item = ticket()
     item.execution = { name: 'fix', directory: join(directory, 'new-fix'), assignment: 'Fix it.' }
@@ -513,6 +614,26 @@ describe('DshExecutor', () => {
     h.store.tickets.get = vi.fn(() => reads++ === 0 ? item : ended)
     await (h.executor as unknown as ExecutorInternals).launch(item, item.assignments[0]!)
     expect(h.sessions.ensure).not.toHaveBeenCalled()
+  })
+
+  it('launches a legacy execution whose assignment text is missing', async () => {
+    const item = ticket()
+    item.execution = { name: 'fix', directory: join(directory, 'fix') } as Execution
+    mkdirSync(item.execution.directory, { recursive: true })
+    const h = executorHost({ ticket: item })
+    await (h.executor as unknown as ExecutorInternals).launchQueued({ ticketId: 't1', assignmentId: 'a1' })
+    expect(JSON.parse(h.sessions.prompt.mock.calls[0]![2])).not.toHaveProperty('assignment')
+  })
+
+  it('moves a long assignment to its resource path instead of delivering it inline', async () => {
+    const item = ticket()
+    item.execution = { name: 'fix', directory: join(directory, 'fix'), assignment: 'x'.repeat(5000) }
+    mkdirSync(item.execution.directory, { recursive: true })
+    const h = executorHost({ ticket: item })
+    await (h.executor as unknown as ExecutorInternals).launchQueued({ ticketId: 't1', assignmentId: 'a1' })
+    expect(JSON.parse(h.sessions.prompt.mock.calls[0]![2])).toMatchObject({
+      assignment_chars: 5000, assignment_read: 'ticket/t1/assignment',
+    })
   })
 
   it('tells a retried Assignment to continue from the current state', async () => {

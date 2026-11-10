@@ -12,7 +12,7 @@ function policyOf(sources: SourceRegistry, id: string, health: HealthMap) {
   const policy = sources.kind(id)?.policy
   if (!policy) return {}
   const part = required(sources.policyPart(id))
-  const config = sources.instance(id)?.config ?? {}
+  const config = required(sources.instance(id)).config
   const sync = policy.sync && { label: policy.sync.label, ready: policy.sync.ready(part), health: health[`sync:${id}`] }
   return { policy: { fields: policy.fields, explicit: policy.explicit, ...policy.rows ? { rows: policy.rows(config) } : {}, ...sync
     ? { sync } : {} } }

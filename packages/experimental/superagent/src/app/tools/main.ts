@@ -50,9 +50,9 @@ const RouteItemSchema = z.object({
   trigger_id: z.string().describe('The candidate card\'s trigger_id; deciding it decides its batch.'),
   ticket_id: z.string().nullish().describe('attach and stop: the ticket.'),
   title: z.string().nullish().describe('accept: a short label of at most 200 characters describing the original request; no added requirements or implementation advice.'),
-  worktree_name: z.string().nullish().describe(`accept: ${WorktreeNameSchema.description ?? ''}`),
+  worktree_name: z.string().nullish().describe(`accept: ${required(WorktreeNameSchema.description)}`),
   acknowledgement: z.string().nullish().describe(`accept: one brief sentence of at most ${IM_WORDS} words naming the concrete change and intended result in the source language. It is posted as a reply to the original source on acceptance, so do not quote the source; quote an earlier proposal briefly only when the trigger merely confirms it and the sentence does not already state it. No generic I will handle it.`),
-  note: z.string().nullish().describe(`accept and attach: ${RoutingNoteSchema.description ?? ''}`),
+  note: z.string().nullish().describe(`accept and attach: ${required(RoutingNoteSchema.description)}`),
   reason: z.string().nullish().describe('ignore and stop: why, at most 500 characters; an ignore needs it.'),
 }).strict()
 type RouteItem = z.infer<typeof RouteItemSchema>
@@ -77,7 +77,7 @@ function invalid(item: RouteItem): string | undefined {
       continue
     }
     const checked = check.safeParse(value)
-    if (!checked.success) return `${field}: ${checked.error.issues[0]?.message ?? 'invalid'}`
+    if (!checked.success) return `${field}: ${required(checked.error.issues[0]).message}`
   }
   return undefined
 }

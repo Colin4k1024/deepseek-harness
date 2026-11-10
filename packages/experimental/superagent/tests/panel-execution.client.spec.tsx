@@ -2,9 +2,11 @@
 // The Execution status, a Ticket, and the Execution settings.
 import { act } from 'react'
 import { createRoot } from 'react-dom/client'
-import { expect, it, onTestFinished } from 'vitest'
+import { expect, it, onTestFinished, vi } from 'vitest'
 import { en, zh } from '../src/client/locales.ts'
 import { PanelProvider } from '../src/client/provider.tsx'
+import { ExecutionSettings } from '../src/client/execution.tsx'
+import { SettingsProvider } from '../src/client/settings-kit.tsx'
 import { TicketPage } from '../src/client/ticket.tsx'
 import { translator, usePanel, mount, remount, settle, all, find, tab, click, type, text, field, at } from './fixtures/panel.client.tsx'
 import { MEMBER, actor, problemOf, server, ticketSummary, threadSummary } from './fixtures/panel-server.client.ts'
@@ -317,4 +319,38 @@ it('opens an undelivered Trigger Input from its Ticket', async () => {
   await click(find('Alice：顺便改标题', '.dt-open'))
   expect(tab(zh['tab.trigger']).getAttribute('aria-selected')).toBe('true')
   expect(server.requests.some(request => request.path.includes('threads/feishu:oc_1:om_root') && request.path.includes('around=e2'))).toBe(true)
+})
+
+it('reports a Ticket list read failure after the panel state has loaded', async () => {
+  const original = vi.mocked(globalThis.fetch).getMockImplementation()!
+  vi.mocked(globalThis.fetch).mockImplementation(async (url: string | URL, init?: RequestInit) => String(url).includes('/tickets?')
+    ? new Response(JSON.stringify({ error: 'ticket store unavailable' }), { status: 500, headers: { 'content-type': 'application/json' } })
+    : original(url, init))
+  at({ page: 'execution' })
+  await mount()
+  expect(text()).toContain('ticket store unavailable')
+  vi.mocked(globalThis.fetch).mockImplementation(original)
+})
+
+it('names an environment variable owner that is no longer listed as a Source', async () => {
+  const original = vi.mocked(globalThis.fetch).getMockImplementation()!
+  vi.mocked(globalThis.fetch).mockImplementation(async (url: string | URL, init?: RequestInit) => {
+    if (!String(url).endsWith('/settings')) return original(url, init)
+    const state = await original(String(url), init)
+    const settings = await state.json() as Record<string, unknown>
+    return Response.json({ ...settings, environment: { root: '/srv/work', variables: [{ owner: 'removed', enabled: true,
+      variables: [{ key: 'DSH_REMOVED', description: { zh: '已移除来源的变量', en: 'Variable from a removed source' } }] }] } })
+  })
+  const container = document.createElement('div'); document.body.append(container)
+  const root = createRoot(container)
+  onTestFinished(() => { act(() => { root.unmount() }); container.remove() })
+  await act(async () => {
+    root.render(<PanelProvider t={translator(zh)} navigate={() => {}}>
+      <SettingsProvider><ExecutionSettings /></SettingsProvider>
+    </PanelProvider>)
+  })
+  for (let i = 0; i < 5; i++) await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)) })
+  const variables = [...container.querySelectorAll<HTMLElement>('[data-disclosure-row]')].find(row => row.textContent?.includes(zh.environmentVariables))!
+  await act(async () => { variables.click() })
+  expect(text()).toContain('removed')
 })

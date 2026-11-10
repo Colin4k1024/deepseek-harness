@@ -212,6 +212,7 @@ it('serves every management view and action through the loopback routes', async 
   expect(await call('GET', 'state')).toMatchObject({ status: 200, body: { masterId: 'main', paused: false } })
   expect(await call('GET', 'overview')).toMatchObject({ status: 200 })
   expect(await call('GET', 'search?q=issue')).toMatchObject({ status: 200 })
+  expect(await call('GET', 'search')).toMatchObject({ status: 200 })
   expect(await call('GET', 'sources')).toMatchObject({ status: 200 })
   expect(await call('POST', 'sources/github/labels')).toMatchObject({ status: 200, body: { refreshed: true } })
   expect(await call('GET', 'threads?filter=all&offset=x&limit=500')).toMatchObject({ status: 200 })

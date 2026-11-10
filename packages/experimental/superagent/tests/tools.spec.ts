@@ -24,6 +24,8 @@ it('reads the lists, a ticket, a decision, the settings, the prompts and the mod
   expect(await read('tickets', { offset: 1 })).toMatchObject({ items: [expect.objectContaining({ ticket_id: ticket.id })], next_offset: null })
   const triggers = await read('triggers') as { items: { trigger_id: string }[] }
   expect(triggers.items.map(item => item.trigger_id)).toEqual([expect.any(String), trigger.id])
+  const thread = h.runtime.store.threads.list().find(item => item.subscriptions.includes(ticket.id)) ?? h.runtime.store.threads.list()[0]!
+  h.runtime.store.threads.save({ ...thread, lastAt: undefined })
   expect(await read('threads')).toMatchObject({ items: expect.arrayContaining([expect.objectContaining({ tickets: [ticket.id] })]) as unknown })
   const decisions = await read('decisions') as { items: { decision_id: string; read: string }[] }
   const accepted: unknown = expect.objectContaining({ kind: 'accept', ticket_id: ticket.id, trigger_ids: [trigger.id], read: expect.stringMatching(/^decision\//) as unknown })
@@ -47,6 +49,14 @@ it('reads the lists, a ticket, a decision, the settings, the prompts and the mod
   await expect(read('settings/source:retired')).rejects.toThrow('Unknown settings block')
   const skills = { built_in: ['dsh-superagent-feishu', 'dsh-superagent-github'], team: [] }
   expect(await read('prompts')).toMatchObject({ revision: 0, read: 'prompts/0', skills, items: [expect.objectContaining({ revision: 0 })], next_offset: null })
+  h.runtime.store.set(KV.sessions.prompts(h.runtime.masterId), [0])
+  h.runtime.store.set(KV.sessions.prompts(`worker-${ticket.id}`), [0])
+  const promptRevision = h.runtime.prompts.current().revision
+  h.runtime.prompts.save({ ...defaultPrompts(), skills: { custom: 'Use the team procedure.' } }, promptRevision, 'panel')
+  expect(await read('prompts')).toMatchObject({
+    revision: promptRevision + 1, read: `prompts/${promptRevision + 1}`, skills: { built_in: skills.built_in, team: ['dsh-superagent-custom'] },
+    sessions: expect.arrayContaining([{ session_id: h.runtime.masterId, revision: 0 }, { session_id: `worker-${ticket.id}`, revision: 0 }]) as unknown,
+  })
   const models = [{ id: 'm1', name: 'One' }, { id: 'm2', name: 'Two' }]
   const catalog = { default: { provider: 'p', model: 'm1' }, groups: [{ id: 'p', name: 'Provider', models }], failures: [] }
   Object.assign(h.controller, { modelCatalog: vi.fn(async () => catalog) })
@@ -55,7 +65,9 @@ it('reads the lists, a ticket, a decision, the settings, the prompts and the mod
   await expect(read('ticket')).rejects.toThrow('Unknown context resource')
   // A list page holds at most 50 items, the prompt history too.
   const config = h.runtime.prompts.current().config
-  for (let revision = 0; revision < 51; revision++) h.runtime.prompts.save({ ...config, scope: `Scope ${revision}.` }, revision, 'panel')
+  const firstRevision = h.runtime.prompts.current().revision
+  for (let revision = firstRevision; revision < firstRevision + 51; revision += 1)
+    h.runtime.prompts.save({ ...config, scope: `Scope ${revision}.` }, revision, 'panel')
   expect(await read('prompts', { limit: 8000 })).toMatchObject({ items: expect.objectContaining({ length: 50 }) as unknown, next_offset: 50 })
 })
 
@@ -564,6 +576,45 @@ it('reads GitHub and Feishu originals from offset zero, then later offsets from 
   await expect(read(resource, { offset: 1 })).rejects.toThrow('Read this Feishu resource from offset 0 first')
   expect(await read(resource)).toMatchObject({ resource })
   expect(await read(resource, { offset: 1 })).toMatchObject({ offset: 1 })
+})
+
+it('reads resource edges: no signal, non-Feishu Feishu reads, malformed triggers, and bare ticket sections', async () => {
+  const { ticket, trigger, sessionId } = await h.acceptedTicket(feishu('11', '@bot 修边缘'))
+  const readTool = h.tools.get(h.runtime.masterId)!.get('orchestrator_read')!
+  await readTool.execute({ resource: 'tickets' }, { signal: undefined as never })
+
+  const githubTrigger = { ...feishu('12', 'GitHub work'), source: 'github', threads: [{ source: 'github', id: '12' }],
+    actor: { source: 'github', id: 'bob' } }
+  h.runtime.store.triggers.save(githubTrigger)
+  const followed = { ...githubTrigger, id: 'github-99', threads: [{ source: 'github', id: '99' }] }
+  h.runtime.store.triggers.save(followed)
+  const storedTicket = h.runtime.store.tickets.get(ticket.id)!
+  h.runtime.store.tickets.save({ ...storedTicket, follows: [...(storedTicket.follows ?? []), { thread: 'github:99', own: false }] })
+  await expect(h.runTool(sessionId, 'orchestrator_read', { resource: `trigger/${followed.id}` })).resolves.toMatchObject({ trigger_id: followed.id })
+  await expect(read(`feishu/${githubTrigger.id}/root`)).rejects.toThrow('A Feishu source trigger is required')
+  await expect(read('trigger/')).rejects.toThrow('Unknown context resource')
+  await expect(read('trigger/two/parts')).rejects.toThrow('Unknown context resource')
+
+  await h.runTool(sessionId, 'orchestrator_report', { state: 'progress', summary: 'Needs a decision.', human_action: 'Which page?' })
+  await h.runTool(h.runtime.masterId, 'orchestrator_ticket_note', { ticket_id: ticket.id, text: 'Another ticket found the failing test.' })
+  const followup = feishu('13', '@bot 再修一下', { root_id: 'om_11' })
+  h.runtime.receive(followup); await h.runtime.idle()
+  await expect(h.runTool(h.runtime.masterId, 'orchestrator_trigger_requeue', { trigger_id: followup.id }))
+    .rejects.toThrow('its worker decides')
+  await expect(h.runTool(h.runtime.masterId, 'orchestrator_reply', {
+    ticket_id: ticket.id, trigger_id: trigger.id, purpose: 'attention', human_action: 'Which page?', text: '请确认页面。',
+  })).resolves.toEqual({ status: expect.any(String) as unknown })
+
+  const stored = h.runtime.store.tickets.get(ticket.id)!
+  h.runtime.store.tickets.save({ ...stored, execution: undefined,
+    assignments: stored.assignments.map(({ report: _report, ...assignment }) => assignment) })
+  await expect(read(`ticket/${ticket.id}/assignment`)).resolves.toMatchObject({ text: '' })
+  await expect(read(`ticket/${ticket.id}/result`)).resolves.toMatchObject({ text: '' })
+  vi.mocked(h.controller.inspect).mockResolvedValue({ events: [{ type: 'assistant/message', data: { message: {
+    role: 'assistant', content: [{ type: 'image', image: 'attachment-1' }],
+  } } }] } as never)
+  const transcript = JSON.parse((await read(`ticket/${ticket.id}/transcript`) as { text: string }).text) as { preview: string }
+  expect(transcript).toMatchObject({ preview: '[image]' })
 })
 
 it('reads prompt revisions and previews, and keeps workers to revisions their Session may read', async () => {

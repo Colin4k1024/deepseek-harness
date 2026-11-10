@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, useState, type ComponentType } from 'react'
+import { act, useEffect, useState, type ComponentType } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, expect, it, vi } from 'vitest'
 import { ApiError, caller, usePoll, type DecisionRow } from '../src/client/api.ts'
@@ -312,6 +312,37 @@ it('renders the shared widgets, confirms actions, opens Sessions, and rechecks s
   expect(requests).toContain('/orchestrator/api/setup/check')
   expect(backedUp).toBe(true); expect(loadedMore).toBe(true); expect(routes[0]).toMatchObject({ page: 'settings' })
   act(() => { root.unmount() }); container.remove()
+})
+
+it('uses the panel provider defaults and localizes setup failures without diagnostic output', async () => {
+  serve()
+  function Defaults() {
+    const panel = usePanel()
+    useEffect(() => {
+      void panel.openSession('worker')
+      panel.navigate({ page: 'overview' })
+      panel.back()
+    }, [panel])
+    return null
+  }
+  const defaults = document.createElement('div'); document.body.append(defaults)
+  const defaultsRoot = createRoot(defaults)
+  await act(async () => { defaultsRoot.render(<PanelProvider t={t}><Defaults /></PanelProvider>) })
+  act(() => { defaultsRoot.unmount() }); defaults.remove()
+
+  vi.stubGlobal('fetch', vi.fn(async () => Response.json({ setup: problemOf('repositoryUnset'), load: { running: 0, queued: 0 } }, { status: 503 })))
+  function SetupFailure() {
+    const { call } = usePanel()
+    const [message, setMessage] = useState('')
+    useEffect(() => { void call('GET state').catch((error: unknown) => { setMessage(error instanceof Error ? error.message : String(error)) }) }, [call])
+    return <div>{message}</div>
+  }
+  const failure = document.createElement('div'); document.body.append(failure)
+  const failureRoot = createRoot(failure)
+  await act(async () => { failureRoot.render(<PanelProvider t={t}><SetupFailure /></PanelProvider>) })
+  for (let index = 0; index < 5; index++) await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)) })
+  expect(failure.textContent).toBe(zh['setup.repositoryUnset'])
+  act(() => { failureRoot.unmount() }); failure.remove()
 })
 
 it('refuses panel hooks outside the panel provider', async () => {

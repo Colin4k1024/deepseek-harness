@@ -163,6 +163,41 @@ it('runs what waits for a commit once the outermost transaction commits, and nev
   store.close()
 })
 
+it('reports an after-commit failure through the default reporter and keeps the commit', () => {
+  const store = new Store(join(directory, 'orchestrator.sqlite'))
+  const value = store.atomic(() => {
+    store.set(KV.runtime.masterId, 'main')
+    store.afterCommit(() => { throw new Error('report failed') })
+    return 'saved'
+  })
+  expect(value).toBe('saved')
+  expect(store.get(KV.runtime.masterId)).toBe('main')
+  store.close()
+})
+
+it('leaves describe and patchMeta as no-ops for a Thread the Store does not have', () => {
+  const store = new Store(join(directory, 'orchestrator.sqlite'))
+  store.threads.describe('missing', { label: 'Missing', url: 'https://example.com', facts: { title: null } })
+  store.threads.patchMeta('missing', { label: 'Missing' })
+  expect(store.threads.get('missing')).toBeUndefined()
+  store.close()
+})
+
+it('wraps a non-Error failure while upgrading a schema 10 database', () => {
+  const path = join(directory, 'schema-10.sqlite')
+  const db = new DatabaseSync(path)
+  db.exec('CREATE TABLE kv (key TEXT PRIMARY KEY, value TEXT NOT NULL)')
+  db.prepare('INSERT INTO kv VALUES (?, ?)').run('schema', '10')
+  db.close()
+  const prototype = Store.prototype as unknown as { addColumns: () => void }
+  const addColumns = vi.spyOn(prototype, 'addColumns').mockImplementationOnce(() => { throw 'database busy' })
+  try {
+    expect(() => new Store(path)).toThrow(
+      'The orchestrator database is unchanged at schema 10: its migration to schema 11 failed: database busy',
+    )
+  } finally { addColumns.mockRestore() }
+})
+
 it('reports an action that fails after a commit, runs the others, and keeps what committed', () => {
   const reported: unknown[] = []
   const store = new Store(join(directory, 'orchestrator.sqlite'), (error) => { reported.push(error) })

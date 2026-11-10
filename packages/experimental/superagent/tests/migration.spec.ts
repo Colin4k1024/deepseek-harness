@@ -584,10 +584,12 @@ it('reads the reasons a Trigger\'s filter and an Assignment\'s end stored in wor
     { id: 'a3', ticketId: 't1', ref: '', state: 'running', createdAt: '2' }] })] })
   const db = new DatabaseSync(path)
   db.prepare('INSERT INTO disposition VALUES (?, ?)').run('trig-1', JSON.stringify({ filtered: 'Sender is not an authorized human member', fanout: [], at: '' }))
+  db.prepare('INSERT INTO disposition VALUES (?, ?)').run('trig-2', JSON.stringify({ filtered: 'A reason this build never stored', fanout: [], at: '' }))
   db.close()
   const store = new Store(path)
   expect(store.tickets.get('t1')!.assignments.map(item => item.endedReason)).toEqual(['retried', 'hostRestarted', undefined])
   expect(store.triggers.disposition('trig-1')).toMatchObject({ filtered: { code: 'senderNotMember' } })
+  expect(store.triggers.disposition('trig-2')).toMatchObject({ filtered: { code: 'A reason this build never stored' } })
   store.close()
   // The Assignment an end stopped does not repeat the end's reason, which the end keeps.
   const ended = withoutCopies({ ...ticket10('t2'), state: 'ended', ended: { at: '5', by: 'human', reason: 'Not needed', outcome: 'stopped' },
@@ -612,9 +614,13 @@ it('delivers the candidate of an Eval in progress at the upgrade again, so its d
   const path = join(directory, 'db.sqlite')
   const evaluating = { id: 'e9', threadKey: 'github:9', triggerIds: ['issue-9'], strength: 'explicit', actor, policyVersion: 'v1', startedAt: '1',
     deadline: '2', basis: { via: 'listed' } }
+  const empty = { ...evaluating, id: 'e-empty', threadKey: 'github:10', triggerIds: [] }
   schema10(path, {}, {
     trigger: [{ id: 'issue-9', source: 'github', threads: [{ source: 'github', id: '9' }], actor, human: true, at: '2026-09-01T00:00:00Z', text: 'Fix it', meta: {} }],
-    thread: [{ key: 'github:9', ref: { source: 'github', id: '9' }, createdAt: '', subscriptions: [], correlated: [], pending: [], evaluating, meta: {} }],
+    thread: [
+      { key: 'github:9', ref: { source: 'github', id: '9' }, createdAt: '', subscriptions: [], correlated: [], pending: [], evaluating, meta: {} },
+      { key: 'github:10', ref: { source: 'github', id: '10' }, createdAt: '', subscriptions: [], correlated: [], pending: [], evaluating: empty, meta: {} },
+    ],
   })
   const store = new Store(path)
   const effects: Array<[string, unknown]> = (store.db.prepare("SELECT key, value FROM effect WHERE kind = 'assessment'").all() as Array<{ key: string; value: string }>).map(row => [row.key, JSON.parse(row.value)])
@@ -701,9 +707,13 @@ it('fills every optional field of flat settings only when the older build record
   expect(empty.eval).toEqual({ model: null })
   expect(empty.executor).toEqual({ model: null })
   expect(migrateSettings({
-    allowedChats: [], admission: { mode: 'on', timeoutSeconds: 30, rules: [] }, models: { orchestrator: 'eval-model', worker: 'worker-model' },
-    maxWorkers: 5, paused: true,
-  })).toMatchObject({ eval: { mode: 'on', timeoutSeconds: 30, model: 'eval-model' }, executor: { model: 'worker-model', maxWorkers: 5 }, paused: true })
+    allowedChats: ['oc_mentions'], admission: { mode: 'on', chats: ['oc_all'], timeoutSeconds: 30, rules: [] },
+    models: { orchestrator: 'eval-model', worker: 'worker-model' }, pollSeconds: 90, maxWorkers: 5, paused: true,
+  })).toMatchObject({
+    sources: { feishu: { config: { chats: [{ chatId: 'oc_mentions', listen: 'mentions' }, { chatId: 'oc_all', listen: 'all' }] } },
+      github: { config: { pollSeconds: 90 } } },
+    eval: { mode: 'on', timeoutSeconds: 30, model: 'eval-model' }, executor: { model: 'worker-model', maxWorkers: 5 }, paused: true,
+  })
   expect(migrateSettings({ members: [] })).toMatchObject({ policy: { sources: { feishu: { allowed: [] }, github: { allowed: [] } } } })
   expect(migrateSettings({ policy: { members: [], memberChat: 'oc_sync' } })).toMatchObject({ policy: { sources: { feishu: { syncChat: 'oc_sync' } } } })
   expect(migrateSettings({ sources: { github: { enabled: true } } })).toEqual({ sources: { github: { enabled: true } } })

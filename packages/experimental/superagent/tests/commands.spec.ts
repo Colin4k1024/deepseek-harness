@@ -69,6 +69,17 @@ describe('account-isolated operations', () => {
     await expect(sendGithub({ commands }, { ...replyBase(), channel: { ...githubChannel(8), address: {} } })).rejects.toThrow('Missing GitHub reply target')
   })
 
+  it('posts again when the stored review comment has no body', async () => {
+    const commands = new Commands(() => deployment, {}, new AbortController().signal)
+    const review = `https://github.com/${REPOSITORY}/pull/8#discussion_r7`
+    const reply = { ...replyBase(), channel: githubChannel(8, review) }
+    const pages = vi.spyOn(commands, 'pages').mockResolvedValue([{ id: 3, in_reply_to_id: 3, user: { login: 'agent-bot' } }] as never)
+    const api = vi.spyOn(commands, 'api').mockResolvedValueOnce({ id: 7, in_reply_to_id: 3 }).mockResolvedValueOnce({})
+    await expect(sendGithub({ commands }, reply)).resolves.toBe('sent')
+    expect(pages.mock.calls[0]![1]).toBe('pulls/8/comments')
+    expect(api.mock.calls[1]![1]).toBe('pulls/8/comments/3/replies')
+  })
+
   it('routes review-comment replies to the root review comment', async () => {
     const commands = new Commands(() => deployment, {}, new AbortController().signal); vi.spyOn(commands,'pages').mockResolvedValue([])
     const gh = vi.spyOn(commands,'gh').mockResolvedValueOnce({ id: 7, in_reply_to_id: 3 }).mockResolvedValueOnce({})
@@ -86,6 +97,7 @@ it('reports Feishu failures with their code and without command arguments', () =
   const membership = commandError({ stderr:'[page 1] fetching...\n'+JSON.stringify({ error:{ code:232011,message:'operator is not in the chat' } }) })
   expect(membership).toMatchObject({ message: 'operator is not in the chat (232011)', code: 232011 })
   expect(commandError({ stderr:JSON.stringify({ error:{ code:999,message:'scope missing' } }) }).message).toBe('scope missing (999)')
+  expect(commandError({ stderr:JSON.stringify({ error:{ message:'scope missing' } }) }).message).toBe('scope missing')
 })
 describe('Channels', () => {
   const commands = () => new Commands(() => deployment, {}, new AbortController().signal)
@@ -143,6 +155,7 @@ describe('Channels', () => {
     expect(githubKind.channel!.link(githubChannel(8, review).address, links))
       .toEqual({ url: review, label: { zh: 'GitHub #8 的 review 讨论', en: 'Review discussion on GitHub #8' } })
     expect(githubKind.channel!.link(githubChannel(8).address, {}).url).toBe('')
+    expect(githubKind.channel!.link({ source: 'github', thread: 'github:', address: {} }, links).url).toBe(`https://github.com/${REPOSITORY}/issues/0`)
     const message = feishuChannel('oc_1', 'om_1').address
     expect(feishuKind.channel!.link(message, links)).toEqual({ url: 'https://applink.feishu.cn/client/chat/open?openChatId=oc_1',
       label: { zh: '飞书消息', en: 'Feishu message' }, triggerId: key('feishu', 'om_1') })
@@ -341,4 +354,6 @@ it('builds candidate cards with batches, handbacks, delivery, references, and bo
   expect(card.next_action).toContain('orchestrator_route')
   candidate.strength = 'inferred'
   expect((await candidateCard(host, candidate)).next_action).toContain('orchestrator_eval')
+  const undisposed: Candidate = { ...candidate, triggers: [earlier], tickets: [] }
+  expect(await candidateCard(host, undisposed)).not.toHaveProperty('delivered_to')
 })

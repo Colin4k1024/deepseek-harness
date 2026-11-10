@@ -5,6 +5,7 @@
 import { afterEach, expect, it, vi } from 'vitest'
 import { CHAT, feishu, startRuntime, type Host } from './fixtures/host.ts'
 import { repliedTo } from '../src/app/links.ts'
+import { followupNotice } from '../src/app/notices.ts'
 import { inputMessage } from '../src/executor/dsh.ts'
 
 let h: Host | undefined
@@ -33,6 +34,25 @@ it('delivers a follow-up to the worker and tells the main Session with a card, w
   expect(h.runtime.store.threads.get(THREAD)).not.toHaveProperty('evaluating')
   expect(h.runtime.store.decisions.byThread(THREAD)).toHaveLength(1)
   expect(h.runtime.store.triggers.disposition(message.id)).toEqual({ fanout: [ticket.id], at: expect.any(String) as unknown })
+})
+
+it('marks a follow-up that reached a ticket only as context in the main Session notice', async () => {
+  h = await startRuntime()
+  const { ticket } = await h.acceptedTicket(feishu('1', '@bot 修一下回归'))
+  const context = await h.acceptedTicket(feishu('3', '@bot 另一件事', { root_id: 'om_2' }))
+  const message = followup('2', '顺便看看关联 Issue')
+  h.runtime.receive(message)
+  await h.runtime.idle()
+  const disposition = h.runtime.store.triggers.disposition(message.id)!
+  h.runtime.store.triggers.saveDisposition(message.id, {
+    ...disposition, fanout: [ticket.id, context.ticket.id], context: [context.ticket.id],
+  })
+  const notice = followupNotice(h.runtime.store, h.runtime.sources, message.id)
+  const payload = JSON.parse(notice?.text ?? '{}') as { delivered_to: Record<string, unknown>[] }
+  expect(payload.delivered_to).toEqual([
+    expect.objectContaining({ ticket_id: ticket.id }),
+    expect.objectContaining({ ticket_id: context.ticket.id, context: true }),
+  ])
 })
 
 it('sends a person\'s message that reaches no ticket, such as only one a person stopped, to Eval as before', async () => {

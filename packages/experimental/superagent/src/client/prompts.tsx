@@ -49,7 +49,7 @@ function PromptsEditor({ view, reload }: { view: PromptsView; reload: () => Prom
   const open = (name: string) => { select(name); setTab('edit') }
   const words: DraftWords = { merged: revision => t('promptConflict', { revision }),
     conflict: (revision, paths) => t('promptConflictParts', { revision, parts: paths.map(([name, item]) => sectionLabel(t, view,
-      item === undefined ? required(name) : name === 'skills' ? `skill/${item}` : name === 'overrides' ? `part/${item}` : required(name))).join(t('listSeparator')) }),
+      item === undefined ? required(name) : name === 'skills' ? `skill/${item}` : `part/${item}`)).join(t('listSeparator')) }),
     editing: [t('promptsDraftVersion', { revision: draft.revision }), t('promptChanges', { count: changed.length }),
       originText(t, view, draft.meta?.from)].filter(Boolean).join(' · ') }
   const tabs = [{ value: 'edit' as const, label: t('promptViewEdit') }, { value: 'full' as const, label: t('promptViewFull') },
@@ -129,7 +129,7 @@ function TeamEditor({ config, view, selected, onSelect, onEdit }: {
   onEdit: (next: PromptConfig, note?: PromptNote) => void
 }) {
   const { t } = usePanel()
-  const text = sectionText(config, selected) ?? ''
+  const text = required(sectionText(config, selected))
   const fallback = sectionText(view.defaults, selected)
   return <div className="dt-prompt-main">
     <div className="dt-subhead"><h3 className="dt-section-title">{sectionLabel(t, view, selected)}</h3>
@@ -137,7 +137,7 @@ function TeamEditor({ config, view, selected, onSelect, onEdit }: {
         ? <Button variant="outline" size="sm" icon={<Icon name="trash" />} onClick={() => { onEdit(withoutSkill(config, selected),
           { selection: 'communication' }); onSelect('communication') }}>{t('remove')}</Button>
         : <Button variant="outline" size="sm" icon={<Icon name="refresh" />} disabled={fallback === text}
-          onClick={() => { onEdit(withSection(config, selected, fallback ?? ''), { from: { reset: selected } }) }}>
+          onClick={() => { onEdit(withSection(config, selected, required(fallback)), { from: { reset: selected } }) }}>
           {t('promptResetSection')}
         </Button>}
       </span></div>
@@ -205,7 +205,7 @@ function FullPrompt({ config, view, dirty, revision, onEdit }: {
   useEffect(() => {
     let active = true
     call('POST prompts/preview', { body: config }).then((value) => { if (active) { setPreview({ config, value }); setError(undefined) } },
-      (failure: unknown) => { if (active) setError(failure instanceof Error ? failure : new Error(String(failure))) })
+      (failure: unknown) => { if (active) setError(new Error(String(failure))) })
     return () => { active = false }
   }, [call, config])
   if (!preview || error) return <LoadState loading error={error} />

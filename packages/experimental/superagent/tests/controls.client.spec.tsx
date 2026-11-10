@@ -54,18 +54,20 @@ it('describes the management API in a module the panel can bundle, which imports
 it('closes the dialog on Escape and returns focus to the opener', async () => {
   function Harness() {
     const [open, setOpen] = useState(false)
-    return <><button type="button" onClick={() =>{  setOpen(true) }}>open</button><Modal open={open} onClose={() =>{  setOpen(false) }} title="Title" closeLabel="Close">body</Modal></>
+    return <><svg tabIndex={0} aria-label="svg opener" /><button type="button" onClick={() =>{  setOpen(true) }}>open</button><Modal open={open} onClose={() =>{  setOpen(false) }} title="Title" closeLabel="Close">body</Modal></>
   }
   const container = document.createElement('div'); document.body.append(container)
   const root = createRoot(container)
   await act(async () => { root.render(<Harness />) })
-  const opener = container.querySelector('button')!
+  const opener = container.querySelector<SVGElement>('svg')!
+  const open = container.querySelector<HTMLButtonElement>('button')!
   opener.focus()
-  await act(async () => { opener.click() })
+  await act(async () => { open.click() })
   expect(document.activeElement?.getAttribute('role')).toBe('dialog')
+  await act(async () => { document.dispatchEvent(new KeyboardEvent('keydown', { key: 'a' })) })
   await act(async () => { document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })) })
   expect(document.querySelector('[role="dialog"]')).toBeNull()
-  expect(document.activeElement).toBe(opener)
+  expect(document.activeElement).toBe(document.body)
   act(() => { root.unmount() })
 })
 
@@ -86,6 +88,8 @@ it('keeps the focus inside the dialog when its parent re-renders, and Tab and Sh
   expect(document.activeElement).toBe(field)
   const [close, , last] = [...document.querySelectorAll<HTMLElement>('[role="dialog"] button, [role="dialog"] input')]
   const tab = (shiftKey = false) => act(async () => { document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', shiftKey, cancelable: true })) })
+  field.focus(); await tab()
+  expect((document.querySelector('[role="dialog"]') ? document.activeElement : undefined)).toBe(field)
   last!.focus(); await tab()
   expect(document.activeElement).toBe(close)
   await tab(true)
@@ -103,6 +107,8 @@ it('moves the tab selection with arrow keys and wraps at the ends', async () => 
   const root = createRoot(container)
   await act(async () => { root.render(<Harness />) })
   const list = container.querySelector('[role="tablist"]')!
+  await act(async () => { list.dispatchEvent(new KeyboardEvent('keydown', { key: 'Home', bubbles: true })) })
+  await act(async () => { list.dispatchEvent(new KeyboardEvent('keydown', { key: 'x', bubbles: true })) })
   await act(async () => { list.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true })) })
   await act(async () => { list.dispatchEvent(new KeyboardEvent('keydown', { key: 'Home', bubbles: true })) })
   await act(async () => { await new Promise(resolve => requestAnimationFrame(resolve)) })
@@ -143,6 +149,19 @@ it('marks the scrollable edges of a tab bar and measures again when its size cha
   vi.unstubAllGlobals()
 })
 
+it('measures a tab bar even where ResizeObserver is unavailable', async () => {
+  vi.stubGlobal('ResizeObserver', undefined)
+  function Harness() {
+    return <SegmentedTabs label="pages" value="a" onChange={() => {}} items={[{ value: 'a', label: 'A', id: 'a', panelId: 'p' }]} />
+  }
+  const container = document.createElement('div'); document.body.append(container)
+  const root = createRoot(container)
+  await act(async () => { root.render(<Harness />) })
+  expect(container.querySelector('[role="tab"]')?.textContent).toBe('A')
+  act(() => { root.unmount() }); container.remove()
+  vi.unstubAllGlobals()
+})
+
 it('keeps a disabled segmented control inert for keyboard users', async () => {
   const seen: string[] = []
   function Harness() {
@@ -155,6 +174,24 @@ it('keeps a disabled segmented control inert for keyboard users', async () => {
   await act(async () => { container.querySelector('[role="tablist"]')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true })) })
   expect(seen).toEqual([])
   act(() => { root.unmount() })
+})
+
+it('moves an enabled segmented control by keyboard and ignores a click on its active option', async () => {
+  const seen: string[] = []
+  function Harness() {
+    const [value, setValue] = useState<'a' | 'b'>('a')
+    return <SegmentedControl label="mode" value={value} onChange={(next) => { seen.push(next); setValue(next) }}
+      options={[{ value: 'a', label: 'A' }, { value: 'b', label: 'B' }]} />
+  }
+  const container = document.createElement('div'); document.body.append(container)
+  const root = createRoot(container)
+  await act(async () => { root.render(<Harness />) })
+  await act(async () => { container.querySelector('[role="tablist"]')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true })) })
+  expect(seen).toEqual(['b'])
+  const active = container.querySelectorAll<HTMLButtonElement>('[role="tab"]')[1]!
+  await act(async () => { active.click() })
+  expect(seen).toEqual(['b'])
+  act(() => { root.unmount() }); container.remove()
 })
 
 it('toggles a disclosure row with Enter and Space, and ignores other keys', async () => {
@@ -194,6 +231,8 @@ it('opens a tooltip above its anchor, supports touch and keyboard dismissal, and
   const trigger = container.querySelector('button')!
   await act(async () => { trigger.dispatchEvent(new FocusEvent('focusin', { bubbles: true })) })
   expect(document.querySelector('[role="tooltip"]')).not.toBeNull()
+  await act(async () => { trigger.dispatchEvent(new FocusEvent('focusout', { bubbles: true })) })
+  await act(async () => { trigger.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })) })
   const pointer = (type: string) => {
     const event = new MouseEvent('pointerup', { bubbles: true, cancelable: true })
     Object.defineProperty(event, 'pointerType', { value: type })

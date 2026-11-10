@@ -249,3 +249,46 @@ it('says an unsubscribe receipt is still pending', async () => {
   await click(zh.confirm)
   expect([...document.querySelectorAll('.dt-toast')].map(item => item.textContent)).toContain(zh.unsubscribePending)
 })
+
+it('marks a Trigger being evaluated and reads its preview when it has no text', async () => {
+  server.threadPages = () => ({ ...threadSummary(), tickets: [], correlated: [], decisions: [], context: [], earlier: null,
+    timeline: [trigger('evaluating', '2026-09-23T00:00:00Z', { text: undefined, disposition: { evaluating: true } })] })
+  at({ page: 'trigger', id: threadSummary().key })
+  await mount()
+  expect(all('.dt-tag').map(tag => tag.textContent)).toEqual([zh.dispositionEvaluating])
+  expect(document.querySelector('.dt-event-text')?.textContent).toBe('message evaluating')
+})
+
+it('reports a failed read of a deep-linked Trigger', async () => {
+  const original = vi.mocked(globalThis.fetch).getMockImplementation()!
+  vi.mocked(globalThis.fetch).mockImplementation(async (url: string | URL, init?: RequestInit) => String(url).includes('around=old')
+    ? new Response(JSON.stringify({ error: 'deep link unavailable' }), { status: 500, headers: { 'content-type': 'application/json' } })
+    : original(url, init))
+  at({ page: 'trigger', id: threadSummary().key, query: { trigger: 'old' } })
+  await mount()
+  expect(text()).toContain('deep link unavailable')
+  vi.mocked(globalThis.fetch).mockImplementation(original)
+})
+
+it('reports a failed read of the Triggers missing from a gap', async () => {
+  busyThread(120)
+  const original = vi.mocked(globalThis.fetch).getMockImplementation()!
+  vi.mocked(globalThis.fetch).mockImplementation(async (url: string | URL, init?: RequestInit) => String(url).includes('before=')
+    ? new Response(JSON.stringify({ error: 'gap unavailable' }), { status: 500, headers: { 'content-type': 'application/json' } })
+    : original(url, init))
+  at({ page: 'trigger', id: threadSummary().key, query: { trigger: 'm10' } })
+  await mount()
+  expect(text()).toContain('gap unavailable')
+  vi.mocked(globalThis.fetch).mockImplementation(original)
+})
+
+it('keeps the Thread page and reports a later polling failure', async () => {
+  vi.useFakeTimers({ shouldAdvanceTime: true })
+  onTestFinished(() => { vi.useRealTimers() })
+  at({ page: 'trigger', id: threadSummary().key })
+  await mount()
+  server.down = true
+  await act(async () => { await vi.advanceTimersByTimeAsync(5000) }); await settle()
+  expect(text()).toContain(zh.hostNotRunning)
+  expect(document.querySelector('.dt-page-title h2')?.textContent).toBe('这个文案好奇怪')
+})

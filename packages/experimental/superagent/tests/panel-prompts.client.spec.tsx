@@ -4,7 +4,7 @@ import { act } from 'react'
 import { builtInBase, builtInParts, defaultPrompts } from '../src/app/prompts.ts'
 import { expect, it, vi } from 'vitest'
 import { zh } from '../src/client/locales.ts'
-import { usePanel, mount, settle, all, tab, click, type, text, field, at } from './fixtures/panel.client.tsx'
+import { usePanel, mount, remount, settle, all, tab, click, type, text, field, at } from './fixtures/panel.client.tsx'
 import { server, promptVersion } from './fixtures/panel-server.client.ts'
 
 usePanel()
@@ -324,4 +324,118 @@ it('loads older prompt history and lists the Sessions still using saved versions
   expect(request instanceof URL ? request.href : (request ?? '')).toContain('prompts?offset=0')
   expect(all('.dt-row-title').map(title => title.textContent)).toHaveLength(2)
   expect(text()).toContain(zh.promptSessionItem.replace('{session}', 'session-1').replace('{revision}', '0'))
+})
+
+it('restores a stored draft whose selected section no longer exists', async () => {
+  sessionStorage.setItem('dsh-superagent/prompts/master', JSON.stringify({ base: defaultPrompts(), value: defaultPrompts(), revision: 0,
+    meta: { selection: 'removed-section' } }))
+  at({ page: 'settings', query: { group: 'prompts' } })
+  await mount()
+  expect(field<HTMLTextAreaElement>(zh.promptBody).value).toBe(defaultPrompts().communication)
+  expect(text()).toContain('未保存 · 基于版本 0 · 0 处修改')
+})
+
+it('says a built-in skill is read by the skill itself', async () => {
+  at({ page: 'settings', query: { group: 'prompts' } })
+  await mount()
+  await click(builtInItem(zh['promptPart.skill/github']))
+  expect(text()).toContain(zh['promptReadBy.skill'])
+})
+
+it('previews a team skill as an editable team section', async () => {
+  at({ page: 'settings', query: { group: 'prompts' } })
+  await mount()
+  await type(field<HTMLInputElement>(zh.promptAddSkill), 'temporary')
+  await click(zh.promptAddSkillAction)
+  await type(field<HTMLTextAreaElement>(zh.promptBody), 'Temporary skill text')
+  await click(tab(zh.promptViewFull))
+  await act(async () => { const select = field<HTMLSelectElement>(zh.promptPreviewTarget); select.value = 'skill/temporary'; select.dispatchEvent(new Event('change', { bubbles: true })) }); await settle()
+  const section = all('.dt-preview-part').find(part => part.querySelector('b')?.textContent === 'dsh-superagent-temporary')!
+  expect(section.getAttribute('data-editable')).toBe('true')
+  expect(section.querySelector('pre')?.textContent).toContain('Temporary skill text')
+})
+
+it('names a conflicting team skill by its skill path', async () => {
+  server.prompts.current = promptVersion(0, { ...defaultPrompts(), skills: { testing: 'Base skill text' } })
+  at({ page: 'settings', query: { group: 'prompts' } })
+  await mount()
+  await click(all('.dt-nav-item').find(item => item.textContent?.includes('dsh-superagent-testing'))!)
+  await type(field<HTMLTextAreaElement>(zh.promptBody), 'Mine')
+  server.prompts.revision = 1
+  server.prompts.current = promptVersion(1, { ...defaultPrompts(), skills: { testing: 'Theirs' } })
+  await click(zh.save)
+  const bar = document.querySelector('.dt-savebar')?.textContent ?? ''
+  expect(bar).toContain('你也改过')
+  expect(bar).toContain('dsh-superagent-testing')
+})
+
+it('drops stale preview responses that finish after the page remounts', async () => {
+  const original = vi.mocked(globalThis.fetch).getMockImplementation()!
+  let first = true
+  let release!: (value: Response | Promise<Response>) => void
+  vi.mocked(globalThis.fetch).mockImplementation(async (url: string | URL, init?: RequestInit) => {
+    if (!String(url).includes('/prompts/preview')) return original(url, init)
+    if (!first) return original(url, init)
+    first = false
+    return new Promise((resolve) => {
+      release = () => { resolve(original(url, init)) }
+    })
+  })
+  at({ page: 'settings', query: { group: 'prompts' } })
+  await mount()
+  await click(tab(zh.promptViewFull))
+  await remount()
+  release()
+  await settle()
+  expect(text()).not.toContain(zh.hostNotRunning)
+  vi.mocked(globalThis.fetch).mockImplementation(original)
+})
+
+it('drops stale preview failures that finish after the page remounts', async () => {
+  const original = vi.mocked(globalThis.fetch).getMockImplementation()!
+  let first = true
+  let rejectPreview!: (failure?: unknown) => void
+  vi.mocked(globalThis.fetch).mockImplementation(async (url: string | URL, init?: RequestInit) => {
+    if (!String(url).includes('/prompts/preview')) return original(url, init)
+    if (!first) return original(url, init)
+    first = false
+    return new Promise((_resolve, reject) => { rejectPreview = reject })
+  })
+  at({ page: 'settings', query: { group: 'prompts' } })
+  await mount()
+  await click(tab(zh.promptViewFull))
+  await remount()
+  rejectPreview(new Error('stale preview failed'))
+  await settle()
+  expect(text()).not.toContain('stale preview failed')
+  vi.mocked(globalThis.fetch).mockImplementation(original)
+})
+
+it('renders a missing skill preview as empty and a generated part without a built-in entry as read-only', async () => {
+  const original = vi.mocked(globalThis.fetch).getMockImplementation()!
+  vi.mocked(globalThis.fetch).mockImplementation(async (url: string | URL, init?: RequestInit) => {
+    if (!String(url).includes('/prompts/preview')) return original(url, init)
+    const response = await original(url, init)
+    const value = JSON.parse(await response.text()) as { parts: { orchestrator: unknown[] }; skills: Record<string, string> }
+    const { temporary: _temporary, ...skills } = value.skills
+    return Response.json({ ...value, skills, parts: { ...value.parts, orchestrator: [...value.parts.orchestrator,
+      { name: 'runtime/extra', kind: 'generated', text: 'Generated without a built-in part' }] } })
+  })
+  at({ page: 'settings', query: { group: 'prompts' } })
+  await mount()
+  await type(field<HTMLInputElement>(zh.promptAddSkill), 'temporary')
+  await click(zh.promptAddSkillAction)
+  await type(field<HTMLTextAreaElement>(zh.promptBody), 'Temporary skill text')
+  await click(tab(zh.promptViewFull))
+  const generated = all('.dt-preview-part').find(part => part.querySelector('b')?.textContent === 'runtime/extra')!
+  expect(generated.getAttribute('data-editable')).toBeNull()
+  expect(generated.textContent).toContain(zh.promptBuiltInFolded)
+  await act(async () => {
+    const select = field<HTMLSelectElement>(zh.promptPreviewTarget)
+    const option = document.createElement('option'); option.value = 'skill/temporary'; option.textContent = 'dsh-superagent-temporary'; select.append(option)
+    select.value = 'skill/temporary'; select.dispatchEvent(new Event('change', { bubbles: true }))
+  }); await settle()
+  const skill = all('.dt-preview-part').find(part => part.querySelector('b')?.textContent === 'dsh-superagent-temporary')!
+  expect(skill.querySelector('pre')?.textContent ?? '').toBe('')
+  vi.mocked(globalThis.fetch).mockImplementation(original)
 })

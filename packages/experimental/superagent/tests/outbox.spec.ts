@@ -14,6 +14,15 @@ async function at(ms: number) {
   try { await h.runtime.pump(); await h.runtime.sendReplies() } finally { vi.useRealTimers() }
 }
 
+it('skips delivery of a receipt another caller settled before its effect ran', async () => {
+  const lark = vi.spyOn(Commands.prototype, 'lark')
+  lark.mockClear()
+  h.runtime.outbox.send({ id: 'settled', channel: feishu('1', 'x').channel!, text: '已合并。', kind: 'notice' })
+  h.runtime.store.receipts.settle(h.runtime.store.receipts.get('settled')!, 'sent')
+  await h.runtime.sendReplies()
+  expect([h.runtime.outbox.status('settled'), lark.mock.calls.length]).toEqual(['sent', 0])
+})
+
 it('holds every message while processing is paused, and sends it once processing resumes', async () => {
   const lark = vi.spyOn(Commands.prototype, 'lark')
   await h.runtime.settings.pause(true, 'panel')

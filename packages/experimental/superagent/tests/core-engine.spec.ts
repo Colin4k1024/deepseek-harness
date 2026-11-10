@@ -162,6 +162,16 @@ describe('intake', () => {
     expect(h.repo.triggers.disposition('2')?.filtered).toEqual({ code: 'chat not allowed' })
     expect(h.repo.threads.get('chat:t1')?.pending).toEqual(['1'])
   })
+  it('asks for an Eval whose stored Trigger record has disappeared', () => {
+    const h = harness()
+    h.engine.receive(trigger('1')); h.pump()
+    const original = h.repo.triggers.get.bind(h.repo.triggers)
+    let reads = 0
+    vi.spyOn(h.repo.triggers, 'get').mockImplementation((id: string) => (reads++ === 0 ? original(id) : undefined))
+    expect(h.engine.candidate('1')).toMatchObject({ triggers: [] })
+    expect(reads).toBe(2)
+  })
+
   it('refuses a trigger that names no Thread', () => {
     const h = harness()
     expect(() => h.engine.receive(trigger('1', { threads: [] }))).toThrow('A trigger must belong to at least one thread')
@@ -1814,6 +1824,25 @@ describe('what a worker read', () => {
     h.tick(1); h.engine.report(ticketId, { state: 'dropped', summary: 'Nothing to do' })
     expect(pending()).toEqual([])
   })
+  it('ignores a read that names an Input that is not a Trigger', () => {
+    const { h, ticketId, note } = resumed()
+    h.engine.inputsRead(ticketId, [note])
+    expect(h.repo.tickets.get(ticketId)!.inputs.find(input => input.id === note)).not.toHaveProperty('readAt')
+  })
+
+  it('lets an ended ticket go of a Trigger Input whose record has disappeared', () => {
+    const { h, ticketId, message } = resumed()
+    const ticket = h.repo.tickets.get(ticketId)!
+    const input = ticket.inputs.find(item => item.id === message)
+    if (input?.kind !== 'trigger') throw new Error('expected trigger input')
+    input.readAt = undefined
+    input.deliveredAt = '2026-09-23T00:00:01.000Z'
+    input.triggerId = 'gone'
+    h.repo.tickets.save(ticket)
+    h.engine.stopTicket(ticketId)
+    expect(h.repo.threads.get('chat:t1')?.pending).toEqual([])
+  })
+
   it('sends to Eval at a merge a message that reached the worker after its last step, which no step took before its turn ended', () => {
     const h = harness()
     const ticketId = accepted(h).ticketId!

@@ -22,6 +22,18 @@ it('waits for a pass that is already running when idle is called', async () => {
   expect(h.engine.evaluateDue).toHaveBeenCalledOnce()
 })
 
+it('waits for a pass requested while effects settle', async () => {
+  const h = passes()
+  const state = h.passes as unknown as { pumpAgain?: Promise<void> }
+  h.effects.idle.mockImplementationOnce(async () => {
+    state.pumpAgain = new Promise<void>((resolve) => {
+      setTimeout(() => { delete state.pumpAgain; resolve() }, 0)
+    })
+  })
+  await h.passes.idle()
+  expect(h.engine.evaluateDue).not.toHaveBeenCalled()
+})
+
 it('is idle immediately when no pass is running', async () => {
   const h = passes()
   await h.passes.idle()

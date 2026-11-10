@@ -2,11 +2,11 @@
 // The Settings groups, drafts, save bars and history.
 import { Component, act, useState, type ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
-import { Fields, ModelField, SourceField, numberOf, useSettings } from '../src/client/settings-kit.tsx'
-import { expect, it, onTestFinished } from 'vitest'
+import { Fields, ModelField, SettingsProvider, SourceField, numberOf, useBlockDraft, useSettings } from '../src/client/settings-kit.tsx'
+import { expect, it, onTestFinished, vi } from 'vitest'
 import { zh } from '../src/client/locales.ts'
 import { PanelProvider } from '../src/client/provider.tsx'
-import { translator, usePanel, mount, remount, settle, all, find, tab, click, type, text, field } from './fixtures/panel.client.tsx'
+import { translator, usePanel, mount, remount, settle, all, find, tab, click, type, text, field, at } from './fixtures/panel.client.tsx'
 import { server } from './fixtures/panel-server.client.ts'
 
 usePanel()
@@ -62,10 +62,16 @@ it('saves the Eval block on the Policy settings and the Executor with its execut
 })
 
 it('loads configuration history on demand with localized changes, Source field labels and notified Tickets', async () => {
-  server.history = { current: 3, policyVersion: 'abcdef1234567890', items: [{ revision: 3, savedAt: '2026-09-22T00:00:00Z',
-    source: 'sync', policyVersion: 'abcdef1234567890', policyChanged: true, notified: [{ id: 't1', title: '修复回归' }], block: 'policy',
-    changes: [{ code: 'mode', from: 'off', to: 'observe' }, { code: 'sourceRowsAdded', source: 'feishu', field: 'allowed', items: ['Bob'],
-      part: true }, { code: 'sourceField', source: 'feishu', field: 'syncChat', from: '', to: 'oc_team', part: true }] }] }
+  server.history = { current: 3, policyVersion: 'abcdef1234567890', items: [
+    { revision: 3, savedAt: '2026-09-22T00:00:00Z', source: 'sync', policyVersion: 'abcdef1234567890', policyChanged: true,
+      notified: [{ id: 't1', title: '修复回归' }], block: 'policy',
+      changes: [{ code: 'mode', from: 'off', to: 'observe' }, { code: 'sourceRowsAdded', source: 'feishu', field: 'allowed', items: ['Bob'],
+        part: true }, { code: 'sourceField', source: 'feishu', field: 'syncChat', from: '', to: 'oc_team', part: true }] },
+    { revision: 2, savedAt: '2026-09-21T00:00:00Z', source: 'panel', policyVersion: 'abcdef1234567890', policyChanged: false,
+      notified: [], block: undefined, changes: null },
+    { revision: 1, savedAt: '2026-09-20T00:00:00Z', source: 'sync', policyVersion: 'abcdef1234567890', policyChanged: false,
+      notified: [], block: 'eval', changes: [] },
+  ] }
   await mount()
   await click(zh['tab.eval'])
   await click(find(zh['tab.settings'], '.dt-status-head button'))
@@ -256,8 +262,16 @@ it('reports a failed model catalog read and clears a model by clearing every par
   expect(text()).toContain(zh.modelCatalogError.replace('{error}', zh.hostNotRunning))
 
   server.down = false
+  const original = vi.mocked(globalThis.fetch).getMockImplementation()!
+  vi.mocked(globalThis.fetch).mockImplementation(async (url: string | URL, init?: RequestInit) => {
+    if (!String(url).endsWith('/models')) return original(url, init)
+    const response = await original(url, init)
+    const value = JSON.parse(await response.text()) as { default: { reasoningEffort?: string } }
+    return Response.json({ ...value, default: { ...value.default, reasoningEffort: 'low' } })
+  })
   await act(async () => { root.render(<ModelHarness key="catalog" />) }); await settle()
-  expect(text()).toContain(zh.defaultModel.replace('{model}', 'host / default'))
+  expect(text()).toContain(zh.defaultModel.replace('{model}', 'host / default · low'))
+  vi.mocked(globalThis.fetch).mockImplementation(original)
   expect([...document.querySelectorAll<HTMLOptionElement>('#test-model-providers option')].map(option => option.value)).toEqual(['worker-provider'])
   const [provider, model, effort] = all<HTMLInputElement>('.dt-model input')
   await type(provider, ''); await type(model, ''); await type(effort, '')
@@ -277,4 +291,106 @@ it('refuses a settings hook outside its provider', () => {
   function Outside() { useSettings(); return null }
   act(() => { root.render(<Boundary><Outside /></Boundary>) })
   expect(container.textContent).toBe('A settings block rendered outside the settings')
+})
+
+it('lists Source history under a Source block prefix', async () => {
+  server.history = { current: 2, policyVersion: 'abcdef1234567890', items: [{ revision: 2, savedAt: '2026-09-22T00:00:00Z',
+    source: 'panel', policyVersion: 'abcdef1234567890', policyChanged: false, notified: [], block: 'source:feishu', changes: [] }] }
+  at({ page: 'settings', query: { group: 'source' } })
+  await mount()
+  await click(zh.configHistory)
+  expect(all('.dt-row-title').map(item => item.textContent)).toContain('第 2 次保存 · 管理页')
+})
+
+it('highlights the save that made a focused Policy version and reports an unrecorded one', async () => {
+  server.history = { current: 1, policyVersion: 'abcdef1234567890', items: [{ revision: 1, savedAt: '2026-09-22T00:00:00Z',
+    source: 'sync', policyVersion: 'abcdef1234567890', policyChanged: true, notified: [], block: 'policy', changes: [] }] }
+  at({ page: 'settings', query: { group: 'eval', version: 'abcdef1234567890' } })
+  await mount()
+  expect(document.querySelector('.dt-highlight')).not.toBeNull()
+  at({ page: 'settings', query: { group: 'eval', version: 'ffffffffffffffff' } })
+  await remount()
+  expect(text()).toContain(zh.policyVersionUnrecorded.replace('{version}', 'ffffffff'))
+})
+
+it('reports a configuration history read failure', async () => {
+  at({ page: 'settings', query: { group: 'eval' } })
+  await mount()
+  server.down = true
+  await click(zh.configHistory)
+  expect(text()).toContain(zh.hostNotRunning)
+})
+
+it('summarizes empty and sparse rows, and an empty fact with its hint', async () => {
+  const container = document.createElement('div'); document.body.append(container)
+  const root = createRoot(container)
+  onTestFinished(() => { act(() => { root.unmount() }); container.remove() })
+  const rowsField = (value: unknown, columns: { key: string; label: { zh: string; en: string }; type: 'text'; optional?: boolean }[], key: string) => ({
+    field: { type: 'rows' as const, key, label: { zh: `行 ${key}`, en: `Rows ${key}` }, columns }, value, saved: [], fact: undefined, labels: {}, onChange: () => {},
+  })
+  function Harness() {
+    return <PanelProvider t={translator(zh)} navigate={() => {}}>
+      <SourceField {...rowsField([], [
+        { key: 'id', label: { zh: '空标识', en: 'Empty id' }, type: 'text' },
+        { key: 'name', label: { zh: '空名称', en: 'Empty name' }, type: 'text', optional: true },
+      ], 'empty')} />
+      <SourceField {...rowsField([{}], [
+        { key: 'id', label: { zh: '稀疏标识', en: 'Sparse id' }, type: 'text' },
+        { key: 'name', label: { zh: '稀疏名称', en: 'Sparse name' }, type: 'text', optional: true },
+      ], 'sparse')} />
+      <SourceField {...rowsField(Array.from({ length: 7 }, () => ({})), [
+        { key: 'id', label: { zh: '空白标识', en: 'Blank id' }, type: 'text' },
+        { key: 'name', label: { zh: '空白名称', en: 'Blank name' }, type: 'text', optional: true },
+      ], 'blank')} />
+      <SourceField field={{ type: 'fact', key: 'fact', label: { zh: '空事实', en: 'Empty fact' }, hint: { zh: '事实提示', en: 'Fact hint' },
+        settings: 'deployment' }} value={undefined} saved={undefined} fact={undefined} labels={{}} onChange={() => {}} />
+    </PanelProvider>
+  }
+  await act(async () => { root.render(<Harness />) }); await settle()
+  expect(all('.dt-count').map(item => item.textContent)).toEqual(['', '1', '7'])
+  expect(all('.dt-rows-summary').at(-1)?.textContent).toContain(zh.listSeparator)
+  expect(all('.dt-rows-item input')[1]?.value).toBe('')
+  expect(text()).toContain(zh.empty)
+  expect(all('.dt-info').at(-1)?.getAttribute('aria-label')).toBe('事实提示')
+})
+
+it('keeps settings available while a reload fails and keys a draft without a master session', async () => {
+  const original = vi.mocked(globalThis.fetch).getMockImplementation()!
+  let settingsReads = 0
+  vi.mocked(globalThis.fetch).mockImplementation(async (url: string | URL, init?: RequestInit) => {
+    const address = String(url)
+    if (address.endsWith('/state')) {
+      const response = await original(url, init)
+      const value = JSON.parse(await response.text()) as Record<string, unknown>
+      return Response.json({ ...value, masterId: undefined })
+    }
+    if (address.endsWith('/settings')) {
+      settingsReads++
+      if (settingsReads > 1) return new Response(JSON.stringify({ error: 'settings unavailable' }), { status: 500, headers: { 'content-type': 'application/json' } })
+      const response = await original(url, init)
+      return Response.json(JSON.parse(await response.text()))
+    }
+    return original(url, init)
+  })
+  const container = document.createElement('div'); document.body.append(container)
+  const root = createRoot(container)
+  onTestFinished(() => { act(() => { root.unmount() }); container.remove() })
+  function Harness() {
+    const settings = useSettings()
+    const draft = useBlockDraft('executor', { maxWorkers: 1 }, 0)
+    return <>
+      <span>{settings.settings.environment.root}</span>
+      <button type="button" onClick={() => { draft.edit({ maxWorkers: 2 }) }}>edit draft</button>
+      <button type="button" onClick={() => { void settings.reload() }}>reload settings</button>
+    </>
+  }
+  await act(async () => {
+    root.render(<PanelProvider t={translator(zh)}><SettingsProvider><Harness /></SettingsProvider></PanelProvider>)
+  }); await settle()
+  await click('edit draft')
+  expect(sessionStorage.getItem('dsh-superagent/draft//executor')).toContain('"maxWorkers":2')
+  await click('reload settings')
+  expect(text()).toContain('settings unavailable')
+  expect(text()).toContain('/srv/dsh-superagent/work')
+  vi.mocked(globalThis.fetch).mockImplementation(original)
 })

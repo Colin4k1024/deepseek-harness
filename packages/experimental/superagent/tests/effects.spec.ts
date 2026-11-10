@@ -193,6 +193,23 @@ it('queues an effect after a restart behind the ones that waited, for a kind tha
   expect(run.mock.calls.map(([, key]) => key)).toEqual(['first', 'second', 'third'])
 })
 
+it('reports a failed attempt bookkeeping under its kind when the queue itself cannot be updated', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'effects-bookkeeping-'))
+  const localStore = new Store(join(directory, 'db.sqlite'))
+  const localBoard = new HealthBoard()
+  const localHealth = localBoard.all
+  const localEffects = new Effects(localStore, localBoard, () => clock)
+  localEffects.start()
+  try {
+    localEffects.handle('relay', async () => { localStore.close() })
+    localEffects.enqueue('relay', 'closed', relay('a'))
+    await localEffects.idle()
+    expect(localHealth.relay).toMatchObject({ state: 'error', detail: expect.stringContaining('The effect queue failed') as unknown })
+  } finally {
+    rmSync(directory, { recursive: true, force: true })
+  }
+})
+
 it('reports a failure of the queue itself under its kind, until a dispatch of that kind succeeds again', async () => {
   let broken = true
   effects.handle('relay', async () => {}, { limit: () => { if (broken) throw new Error('database is locked'); return 1 } })

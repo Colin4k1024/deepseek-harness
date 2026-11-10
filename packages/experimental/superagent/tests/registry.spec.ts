@@ -69,7 +69,7 @@ describe('Source registry', () => {
         read.push([trigger.id, part, cursor, config.interval])
         return { messages: [{ id: 'm1', from: 'u', at: '1', text: '' }],
           body: { page: cursor ?? 'first' } }
-      } } })
+      }, image: async (_agent, _commands, _trigger, _message, key) => `image:${key}` } })
     const commands = {} as Commands
     const message = (source: string): OutboundMessage => ({ id: 'r1', channel: { source, thread: 'probe:1', address: { room: 'r' } },
       text: 'hi', kind: 'reply' })
@@ -87,7 +87,12 @@ describe('Source registry', () => {
     expect(read).toEqual([['t1', 'thread', '2', 7]])
     expect(context.images('img_x')).toEqual([])
     await expect(context.image({} as Agent, commands, { id: 'm1', text: '' }, 'img_x', '',
-      new AbortController().signal)).rejects.toThrow('no images')
+      new AbortController().signal)).resolves.toBe('image:img_x')
+    sources.register({ ...probe, kind: 'imageless', threadContext: { messageId: item => String(item.meta.id),
+      read: async () => ({ messages: [] }) } })
+    const imageless = sources.threadContext({ ...trigger, source: 'imageless' })!
+    await expect(imageless.image({} as Agent, commands, { id: 'm1', text: '' }, 'img_x', '',
+      new AbortController().signal)).rejects.toThrow('has no images')
     // A kind without a channel or a context has neither.
     sources.register({ ...probe, kind: 'quiet' })
     expect(await sources.send(message('quiet'), commands)).toBe('gone')

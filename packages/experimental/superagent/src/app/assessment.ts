@@ -125,14 +125,11 @@ export class MasterAssessor implements Assessor {
     return { candidate, trigger }
   }
   /**
-   * Returns or initializes the read cache for `evalId`, seeded with the trigger's own message and image references; throws if `evalId` has
-   * finished.
+   * Returns or initializes the read cache for `evalId`, seeded with the trigger's own message and image references.
    */
   private reads(evalId: string, trigger: Trigger): EvalReads {
     let reads = this.evals.get(evalId)
     if (!reads) {
-      // Reject reads after the evaluation ends so completed evaluations do not retain cached state.
-      if (!this.live(evalId, trigger)) throw new Error(FINISHED)
       const context = this.host.threadContext(trigger)
       const messages = new Map([[context?.messageId ?? '', trigger.text]])
       reads = { cache: { snapshots: new Map(), images: new Map(), messages, cursors: new Set() } }
@@ -196,7 +193,7 @@ export class MasterAssessor implements Assessor {
   async context(triggerId: string, signal?: AbortSignal) {
     const { candidate, trigger } = this.evalFor(triggerId)
     await this.seed(candidate.evalId, trigger, signal)
-    const { context, error } = this.evals.get(candidate.evalId) ?? {}
+    const { context, error } = required(this.evals.get(candidate.evalId))
     const source = this.host.threadContext(trigger)
     const images = (text: string) => source?.images(text) ?? []
     const imageIds = (id: string, text: string) => { const keys = images(text); return keys.length
@@ -216,7 +213,7 @@ export class MasterAssessor implements Assessor {
       })
       return { complete: context.complete, loaded_messages: context.messages.length, source_found: context.window.source_found,
         ...context.next ? { next_cursor: context.next } : {}, messages }
-    })() : { error: error ?? 'Call orchestrator_eval to load initial context', complete: false }
+    })() : { error: required(error), complete: false }
     const settings = this.host.settings()
     const others = candidate.triggers.filter(item => item.id !== trigger.id)
     return { trigger_id: trigger.id, strength: candidate.strength, mode: settings.eval.mode,
