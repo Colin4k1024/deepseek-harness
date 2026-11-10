@@ -12,7 +12,7 @@ import { SettingsSchema } from '../src/policy.ts'
 import { MEMBER, problemOf, threadSummary, ticketSummary } from './fixtures/panel-server.client.ts'
 
 declare global {
-  var IS_REACT_ACT_ENVIRONMENT: boolean
+  var IS_REACT_ACT_ENVIRONMENT: boolean | undefined
 }
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
 
@@ -261,7 +261,7 @@ it('renders the shared widgets, confirms actions, opens Sessions, and rechecks s
   serve()
   const base = fetch
   const requests: string[] = []
-  vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+  vi.stubGlobal('fetch', vi.fn(async (input: string | URL, init?: RequestInit) => {
     const path = new URL(input instanceof URL ? input.href : input, 'http://127.0.0.1').pathname
     requests.push(path)
     if (path.endsWith('setup/check')) return Response.json({})
@@ -293,7 +293,7 @@ it('renders the shared widgets, confirms actions, opens Sessions, and rechecks s
       <StageMark state="ongoing" icon="clock" label="running" />
       <StageMark state="done" icon="clock" label="done" />
       <LoadState loading />
-      <LoadState error={new Error('load failed')} />
+      <LoadState loading={false} error={new Error('load failed')} />
       <LoadMore onMore={() => { loadedMore = true }} />
       <StatusHead hint="Status" settings="source" />
       <PageHead title="Page">page action</PageHead>
@@ -389,10 +389,10 @@ it('renders ticket, thread, decision, and earlier rows with their navigation and
   const routes: unknown[] = []
   const person = ticketSummary({
     note: { text: '[image] answer needed', error: true },
-    reply: { url: 'https://github.com/acme/widgets/issues/1', label: { zh: 'GitHub', en: 'GitHub' } },
+    reply: { source: 'github', url: 'https://github.com/acme/widgets/issues/1', label: { zh: 'GitHub', en: 'GitHub' } },
     actions: { retry: true, stop: true }, sessionId: 'worker-t1', undelivered: 2,
   }, { stage: 'person', action: 'answer' })
-  const plain = ticketSummary({ note: undefined, reply: undefined, actions: { retry: false, stop: false }, sessionId: '' })
+  const plain = ticketSummary({ actions: { retry: false, stop: false }, sessionId: '' })
   const subscribed = threadSummary({
     tickets: [{ id: 't1', title: 'First', state: 'open' }, { id: 't2', title: 'Second', state: 'open' }],
     latest: { actor: { source: 'feishu', id: MEMBER, name: { zh: 'Alice', en: 'Alice' } }, human: true,
@@ -402,7 +402,7 @@ it('renders ticket, thread, decision, and earlier rows with their navigation and
   const decision = (fields: Partial<DecisionRow>): DecisionRow => ({
     id: 'd1', kind: 'accept', outcome: 'accept', reason: [{ code: 'said', values: { text: 'needed' } }],
     at: '2026-11-09T12:00:00Z', strength: 'explicit', ticketId: 't1', triggerIds: ['d1'], thread: 'feishu:oc_1:om_root',
-    rules: [{ name: 'rule', matched: true, reason: 'matched' }], threadTitle: 'Thread title', preview: 'decision preview',
+    rules: [{ id: 'rule', name: 'rule', matched: true, reason: 'matched' }], threadTitle: 'Thread title', preview: 'decision preview',
     ticketTitle: 'Decision ticket', ...fields,
   })
   function Suite() {
@@ -456,7 +456,7 @@ it('shows empty previews, extra fanout targets, and a Decision without a Trigger
   })
   const bare = {
     id: 'd2', kind: 'accept', outcome: 'accept', reason: [], at: '2026-11-09T12:00:00Z', strength: 'explicit',
-    ticketId: undefined, triggerIds: [], thread: 'feishu:oc_1:om_root', rules: [], threadTitle: undefined,
+    ticketId: undefined, triggerIds: [], thread: 'feishu:oc_1:om_root', rules: [],
     preview: '', ticketTitle: undefined,
   } satisfies DecisionRow
   const container = document.createElement('div'); document.body.append(container)
@@ -478,7 +478,7 @@ it('refreshes a Ticket row after its retry and stop actions complete', async () 
   const paths: string[] = []
   serve()
   const base = fetch
-  vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+  vi.stubGlobal('fetch', vi.fn(async (input: string | URL, init?: RequestInit) => {
     const path = new URL(input instanceof URL ? input.href : input, 'http://127.0.0.1').pathname
     paths.push(path)
     return path.includes('/tickets/t1/') ? Response.json({}) : base(input, init)

@@ -6,6 +6,7 @@ import { DatabaseSync } from 'node:sqlite'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, expectTypeOf, it, vi, type Mock } from 'vitest'
 import type { UserMessage } from '@deepseek-ai/dsh-llm'
+import type { Session } from '@deepseek-ai/dsh-session'
 import { renderPrompt } from '@deepseek-ai/dsh-system-prompt'
 import { Runtime } from '../src/app/runtime.ts'
 import { jobRegistry } from './fixtures/host.ts'
@@ -38,6 +39,7 @@ import { decisionList, search, threadDetail, threadList } from '../src/app/views
 import { executorLoad, ticketDetail, ticketList } from '../src/app/views/tickets.ts'
 
 let runtime: Runtime
+const contextOf = (target: Runtime): Context => Reflect.get(target, 'ctx') as Context
 const viewsOf = (value: Runtime) => ({ store: value.store, sources: value.sources, links: value.links() })
 const overviewOf = (value: Runtime) =>
   overview(
@@ -92,6 +94,7 @@ let agents: Map<
     inbox: { nextTurn: UserMessage[]; nextStep: UserMessage[] }
     cancel: ReturnType<typeof vi.fn>
     inject: ReturnType<typeof vi.fn>
+    session?: Session
   }
 >
 const runTool = async (sessionId: string, name: string, args: unknown) => {
@@ -2078,7 +2081,7 @@ it('gives a subagent of a worker only the worker\'s work tools, and none once th
   await (runtime as unknown as { ctx: Context }).ctx.parallel('agent/created', { agent: child } as never)
   expect(restricts.get('child-1')).toEqual([{ allow: ['read', 'read_image', 'grep', 'bash', 'job_output', 'job_list', 'job_kill', 'web_search', 'skill'] }])
   expect(guards.get('child-1')!()).toBeUndefined()
-  runtime.ctx.emit('session/event', child.session, {
+  contextOf(runtime).emit('session/event', child.session as never, {
     type: 'llm/retry', seq: 1, time: Date.now(), data: { turn: 1, step: 1, retryId: 'child-retry', provider: 'deepseek', retry: 1, failure: { type: 'budget_exceeded' } },
   } as never)
   expect(runtime.sessions.modelRetry('child-1')).toEqual({})
@@ -2159,7 +2162,7 @@ it('keeps the Policy the main Session judges by in its prompt, after admission a
 })
 
 it('reports an after-commit failure without failing the committed transaction', () => {
-  const warn = vi.spyOn(runtime.ctx.logger, 'warn')
+  const warn = vi.spyOn(contextOf(runtime).logger, 'warn')
   runtime.store.atomic(() => {
     runtime.store.afterCommit(() => { throw new Error('after-commit callback failed') })
   })
@@ -2217,21 +2220,21 @@ it('clears a disposed Session and reports an active model budget retry', async (
     const cloneId = `${ticket.id}-clone-${index}`
     runtime.store.tickets.save({ ...base, id: cloneId, title: `Clone ${index}` })
     await (controller.create as (options: { sessionId: string }) => Promise<void>)({ sessionId: `worker-${cloneId}` })
-    await runtime.ctx.parallel('agent/created', { agent: agents.get(`worker-${cloneId}`) } as never)
-    runtime.ctx.emit('session/event', agents.get(`worker-${cloneId}`)!.session, {
+    await contextOf(runtime).parallel('agent/created', { agent: agents.get(`worker-${cloneId}`) } as never)
+    contextOf(runtime).emit('session/event', agents.get(`worker-${cloneId}`)!.session!, {
       type: 'llm/retry', seq: index, time: Date.now(), data: { turn: 1, step: 1, retryId: `retry-${index}`, provider: 'deepseek', retry: 1, failure: { type: 'budget_exceeded' } },
     } as never)
   }
   expect(runtime.sessions.modelRetry(undefined)).toEqual({})
-  runtime.ctx.emit('session/event', { id: 'not-loaded' }, {
+  contextOf(runtime).emit('session/event', { id: 'not-loaded' } as never, {
     type: 'llm/retry', seq: 1, time: Date.now(), data: { turn: 1, step: 1, retryId: 'not-loaded', provider: 'deepseek', retry: 1, failure: { type: 'budget_exceeded' } },
   } as never)
-  runtime.ctx.emit('session/event', agent.session, {
+  contextOf(runtime).emit('session/event', agent.session!, {
     type: 'llm/retry', seq: 1, time: Date.now(), data: { turn: 1, step: 1, retryId: 'retry-1', provider: 'deepseek', retry: 1, failure: { type: 'budget_exceeded' } },
   } as never)
   expect(runtime.sessions.modelRetry(sessionId)).toMatchObject({ model_retry: { sessionId, provider: 'deepseek', attempts: 1 } })
   expect(runtime.health.models).toMatchObject({ state: 'error', detail: expect.stringMatching(/\d+ more Sessions/) as unknown })
-  runtime.ctx.emit('agent/disposed', { agent } as never)
+  contextOf(runtime).emit('agent/disposed', { agent } as never)
   expect(tools.get(sessionId)?.size).toBe(0)
   expect(runtime.sessions.modelRetry(sessionId)).toEqual({})
 })
@@ -2266,8 +2269,8 @@ it('binds the current prompt revision only once until it changes', () => {
 })
 
 it('releases a Session disposed while its skill scope opens, reporting each failed release', async () => {
-  const warn = vi.spyOn(runtime.ctx.logger, 'warn')
-  let resolveScope!: (scope: unknown) => void
+  const warn = vi.spyOn(contextOf(runtime).logger, 'warn')
+  let resolveScope!: () => void
   const skillScope = new Promise<void>((resolve) => { resolveScope = resolve }) as Promise<void> & { dispose: () => Promise<void> }
   skillScope.dispose = () => Promise.reject(new Error('scope release failed'))
   const inject = vi.fn(() => skillScope)
@@ -2275,15 +2278,15 @@ it('releases a Session disposed while its skill scope opens, reporting each fail
     id: runtime.masterId, status: 'running', session: { snapshotEvents: () => [], header: {} },
     ctx: { inject, systemPrompt: { section: () => () => { throw new Error('prompt release failed') } } },
   } as never
-  runtime.ctx.emit('agent/created', { agent } as never)
+  contextOf(runtime).emit('agent/created', { agent } as never)
   await vi.waitFor(() => { expect(inject).toHaveBeenCalled() })
-  runtime.ctx.emit('agent/disposed', { agent } as never)
+  contextOf(runtime).emit('agent/disposed', { agent } as never)
   expect(sections.get(runtime.masterId)!.text({})).toContain('[dsh-superagent prompt revision 0]')
-  resolveScope(undefined)
+  resolveScope()
   await vi.waitFor(() => {
     expect(warn.mock.calls.map(call => String(call[1]))).toEqual(expect.arrayContaining(['Error: scope release failed', 'Error: prompt release failed']))
   })
-  runtime.ctx.emit('agent/disposed', { agent: { id: 'never-bound' } } as never)
+  contextOf(runtime).emit('agent/disposed', { agent: { id: 'never-bound' } } as never)
 })
 
 it('marks the Runtime unhealthy and aborts its lifetime when the state directory lock is compromised', async () => {
@@ -2317,8 +2320,8 @@ it('keeps the Runtime ready when a Source member sync fails after startup', asyn
 
 it('does not start background loops when stop completes while initialization is still creating the main Session', async () => {
   await runtime.stop()
-  let releaseEnsure!: (agent: undefined) => void
-  const ensure = vi.spyOn(Sessions.prototype, 'ensure').mockImplementation(() => new Promise<void>((resolve) => {
+  let releaseEnsure!: (agent: never) => void
+  const ensure = vi.spyOn(Sessions.prototype, 'ensure').mockImplementation(() => new Promise<never>((resolve) => {
     releaseEnsure = resolve
   }))
   const ctx = new Context()
@@ -2326,7 +2329,7 @@ it('does not start background loops when stop completes while initialization is 
   const next = new Runtime(ctx, testMachine({ stateDir: directory }), restarts)
   await vi.waitFor(() => { expect(ensure).toHaveBeenCalled() })
   await next.stop()
-  releaseEnsure(undefined)
+  releaseEnsure(undefined as never)
   await next.ready
   expect(next.health.runtime).toMatchObject({ state: 'starting' })
   runtime = next
@@ -2398,8 +2401,8 @@ it('registers bundled and custom skills, including a custom skill with no text',
 
 it('does not start background loops when stop completes while initialization is syncing Source members', async () => {
   await runtime.stop()
-  let releaseSync!: () => void
-  const sync = vi.spyOn(Settings.prototype, 'sync').mockImplementation(() => new Promise<void>((resolve) => {
+  let releaseSync!: (value: never) => void
+  const sync = vi.spyOn(Settings.prototype, 'sync').mockImplementation(() => new Promise<never>((resolve) => {
     releaseSync = resolve
   }))
   const ctx = new Context()
@@ -2409,7 +2412,7 @@ it('does not start background loops when stop completes while initialization is 
   next.sources.register(githubKind)
   await vi.waitFor(() => { expect(sync).toHaveBeenCalled() })
   await next.stop()
-  releaseSync()
+  releaseSync(undefined as never)
   await next.ready
   expect(next.health.runtime).toMatchObject({ state: 'starting' })
   runtime = next

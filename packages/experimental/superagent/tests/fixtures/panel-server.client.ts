@@ -247,7 +247,7 @@ const overviewView = (): ApiResponse<'GET overview'> => {
             source: {
               id: 'feishu',
               title: { zh: '飞书', en: 'Feishu' },
-              health: server.sourceHealth ?? { name: 'feishu', state: 'error' as const, detail: 'socket closed' },
+              health: server.sourceHealth ? { name: 'feishu', ...server.sourceHealth } : { name: 'feishu', state: 'error' as const, detail: 'socket closed' },
             },
           },
         ]),

@@ -25,7 +25,7 @@ it('reads the lists, a ticket, a decision, the settings, the prompts and the mod
   const triggers = await read('triggers') as { items: { trigger_id: string }[] }
   expect(triggers.items.map(item => item.trigger_id)).toEqual([expect.any(String), trigger.id])
   const thread = h.runtime.store.threads.list().find(item => item.subscriptions.includes(ticket.id)) ?? h.runtime.store.threads.list()[0]!
-  h.runtime.store.threads.save({ ...thread, lastAt: undefined })
+  const { lastAt: _lastAt, ...threadWithoutLastAt } = thread; h.runtime.store.threads.save(threadWithoutLastAt)
   expect(await read('threads')).toMatchObject({ items: expect.arrayContaining([expect.objectContaining({ tickets: [ticket.id] })]) as unknown })
   const decisions = await read('decisions') as { items: { decision_id: string; read: string }[] }
   const accepted: unknown = expect.objectContaining({ kind: 'accept', ticket_id: ticket.id, trigger_ids: [trigger.id], read: expect.stringMatching(/^decision\//) as unknown })
@@ -642,7 +642,8 @@ it('reads resource edges: no signal, non-Feishu Feishu reads, malformed triggers
   })).resolves.toEqual({ status: expect.any(String) as unknown })
 
   const stored = h.runtime.store.tickets.get(ticket.id)!
-  h.runtime.store.tickets.save({ ...stored, execution: undefined,
+  const { execution: _execution, ...storedWithoutExecution } = stored
+  h.runtime.store.tickets.save({ ...storedWithoutExecution,
     assignments: stored.assignments.map(({ report: _report, ...assignment }) => assignment) })
   await expect(read(`ticket/${ticket.id}/assignment`)).resolves.toMatchObject({ text: '' })
   await expect(read(`ticket/${ticket.id}/result`)).resolves.toMatchObject({ text: '' })

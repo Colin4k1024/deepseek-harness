@@ -208,7 +208,8 @@ it('omits empty optional card fields and orders ended tickets after open ones', 
   const assignment = { ...ticket.assignments[0]!, endedReason: 'hostRestarted' as const }
   expect(assignmentLine(reopened, assignment)).toMatchObject({ ended_reason: 'dsh-superagent restarted' })
   expect(threadCard({ ...threadFixture, meta: { url: 'https://example.com' } }, 'Title')).toMatchObject({ url: 'https://example.com' })
-  expect(decisionCard({ ...decisionFixture, ticketId: undefined })).not.toHaveProperty('ticket_id')
+  const { ticketId: _ticketId, ...decisionWithoutTicket } = decisionFixture
+  expect(decisionCard(decisionWithoutTicket)).not.toHaveProperty('ticket_id')
   const ended: Ticket = { ...ticket, ended: { at: '2', by: 'executor', outcome: 'dropped' } }
   expect(relatedTickets([ended, ticket, { ...ticket, id: 'ticket-2', createdAt: '2026-09-10T00:00:00Z' }]).related_tickets.map(item => item.ticket_id))
     .toEqual(['ticket-2', 'ticket-1', 'ticket-1'])

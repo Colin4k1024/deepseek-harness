@@ -2,6 +2,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
+import { z } from 'zod'
 import { afterEach, beforeEach, expect, it } from 'vitest'
 import { SCHEMA_VERSION, Store } from '../src/app/store.ts'
 import { KV } from '../src/kv.ts'
@@ -319,9 +320,12 @@ const legacyPrompts = (revision: number, guides: Record<string, string> = {}) =>
         feishu: 'Legacy Feishu skill.', identities: 'Alice is @alice.', ...guides } } },
   'prompt-revision': revision, 'prompt-settings-text': 1,
 })
-const opened = (records: Record<string, unknown>) => {
+const opened = (
+  records: Record<string, unknown>,
+  rows: Parameters<typeof schema10>[2] = {},
+) => {
   const path = join(directory, `db-${Math.random()}.sqlite`)
-  schema10(path, records)
+  schema10(path, records, rows)
   return new Store(path)
 }
 
@@ -760,7 +764,11 @@ it('reads bases without an object, a Scope, or an admission mode as their safe d
 })
 
 it('fills every optional field of flat settings only when the older build recorded it', () => {
-  const empty = migrateSettings({ admission: {} }) as { eval: Record<string, unknown>; executor: Record<string, unknown> }
+  const empty = z.object({
+    policy: z.record(z.string(), z.unknown()),
+    eval: z.object({ model: z.string().nullable() }),
+    executor: z.object({ model: z.string().nullable() }),
+  }).parse(migrateSettings({ admission: {} }))
   expect(empty.policy).toEqual({})
   expect(empty.eval).toEqual({ model: null })
   expect(empty.executor).toEqual({ model: null })

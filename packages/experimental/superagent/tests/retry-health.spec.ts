@@ -158,7 +158,7 @@ it('ignores malformed event envelopes and budget failures without a message', ()
 
 it('projects only user, tool, and assistant messages into transcript entries', () => {
   const session = Session.create(SessionId('transcript'))
-  const user = createUserMessage({ content: [{ type: 'text', text: 'please fix' }] })
+  const user = createUserMessage({ content: [{ type: 'text', text: 'please fix' }], source: { kind: 'user' } })
   const assistant = createAssistantMessage({ content: [{ type: 'text', text: 'done' }], source: { provider: 'provider', model: 'model' } })
   const userEvent = session.append('user/message', user, { surfaceOp: 'append' })
   const assistantEvent = session.append('assistant/message', { turn: 1, step: 1, stream: [], message: assistant }, { surfaceOp: 'append' })

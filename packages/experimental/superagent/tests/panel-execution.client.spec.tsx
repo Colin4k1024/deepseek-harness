@@ -12,6 +12,7 @@ import { translator, usePanel, mount, remount, settle, all, find, tab, click, ty
 import { MEMBER, actor, problemOf, server, ticketSummary, threadSummary } from './fixtures/panel-server.client.ts'
 
 usePanel()
+const requestUrl = (input: RequestInfo | URL): string => input instanceof URL ? input.href : input instanceof Request ? input.url : input
 it('lists Tickets under Execution by who they wait on, with the Executor state and its pause as an action', async () => {
   server.tickets.open = [ticketSummary(), ticketSummary({ id: 't2', title: '执行中的工单', threads: [{ key: 'github:7',
     source: 'github', title: '#7 x', facts: { number: { value: '#7' }, autoMerge: { label: { zh: '自动合并', en: 'Auto-merge' },
@@ -187,9 +188,9 @@ it('says when the Execution list has no Tickets', async () => {
 it('keeps the Execution status while the Ticket list itself fails to load', async () => {
   await mount()
   const original = vi.mocked(globalThis.fetch).getMockImplementation()!
-  vi.mocked(globalThis.fetch).mockImplementation(async (url: string | URL, init?: RequestInit) => String(url).includes('/tickets?')
+  vi.mocked(globalThis.fetch).mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => requestUrl(input).includes('/tickets?')
     ? new Response(null, { status: 500 })
-    : original(url, init))
+    : original(input, init))
   await click(zh['tab.execution'])
   expect(text()).toContain(zh.serverError.replace('{status}', '500'))
   expect(text()).toContain(zh.executorRunning)
@@ -252,7 +253,7 @@ it('shows a resumed Ticket\'s assignments, every Mandate fact, and its paused In
   const base = server.ticketDetails.t1!
   server.ticketDetails.t5 = {
     ...base,
-    id: 't5', title: '丰富工单', actions: { retry: true, stop: false }, sessionId: undefined, directory: undefined,
+    id: 't5', title: '丰富工单', actions: { retry: true, stop: false }, sessionId: '', directory: '',
     stage: 'person', action: 'failed', summary: 'LlmError: no adapter registered', paused: true,
     threads: [{ ...threadSummary(), url: 'https://example.test/thread' }],
     assignments: [
@@ -305,11 +306,13 @@ it('shows a resumed Ticket\'s assignments, every Mandate fact, and its paused In
   await click(zh.retry); await click(zh.confirm)
   expect(server.requests.some(request => request.path === 'tickets/t5/retry' && request.method === 'POST')).toBe(true)
 
+  const current = server.ticketDetails.t5
+  if (current === undefined) throw new Error('expected the current ticket fixture')
   server.ticketDetails.t5 = {
-    ...server.ticketDetails.t5!,
-    mandate: { ...server.ticketDetails.t5!.mandate, scope: 'legacy scope' },
+    ...current,
+    mandate: { ...current.mandate, scope: 'legacy scope' },
     basis: { facts: [{ name: 'legacyAuthority', value: 'old authority' }], legacy: true },
-    decision: { ...server.ticketDetails.t5!.decision!, direction: { implementation_requested: false, target_basis: 'rule',
+    decision: { ...current.decision!, direction: { implementation_requested: false, target_basis: 'rule',
       requires_design_decision: false, evidence: 'the rule says so' } },
   }
   await act(async () => { root.render(<Harness id="t5" name="legacy" />) }); await settle()
@@ -341,9 +344,9 @@ it('opens an undelivered Trigger Input from its Ticket', async () => {
 
 it('reports a Ticket list read failure after the panel state has loaded', async () => {
   const original = vi.mocked(globalThis.fetch).getMockImplementation()!
-  vi.mocked(globalThis.fetch).mockImplementation(async (url: string | URL, init?: RequestInit) => String(url).includes('/tickets?')
+  vi.mocked(globalThis.fetch).mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => requestUrl(input).includes('/tickets?')
     ? new Response(JSON.stringify({ error: 'ticket store unavailable' }), { status: 500, headers: { 'content-type': 'application/json' } })
-    : original(url, init))
+    : original(input, init))
   at({ page: 'execution' })
   await mount()
   expect(text()).toContain('ticket store unavailable')
@@ -352,9 +355,9 @@ it('reports a Ticket list read failure after the panel state has loaded', async 
 
 it('names an environment variable owner that is no longer listed as a Source', async () => {
   const original = vi.mocked(globalThis.fetch).getMockImplementation()!
-  vi.mocked(globalThis.fetch).mockImplementation(async (url: string | URL, init?: RequestInit) => {
-    if (!String(url).endsWith('/settings')) return original(url, init)
-    const state = await original(String(url), init)
+  vi.mocked(globalThis.fetch).mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+    if (!requestUrl(input).endsWith('/settings')) return original(input, init)
+    const state = await original(input, init)
     const settings = await state.json() as Record<string, unknown>
     return Response.json({ ...settings, environment: { root: '/srv/work', variables: [{ owner: 'removed', enabled: true,
       variables: [{ key: 'DSH_REMOVED', description: { zh: '已移除来源的变量', en: 'Variable from a removed source' } }] }] } })
@@ -386,7 +389,7 @@ it('shows a Ticket without a Decision, an empty scope, mixed Inputs, and a plain
         report: { state: 'progress', summary: 'working', at: '2026-09-22T00:02:00Z' } },
     ],
     inputs: [
-      { id: 'i4', kind: 'text', at: '2026-09-22T00:06:00Z', delivered: true },
+      { id: 'i4', kind: 'text', text: '', at: '2026-09-22T00:06:00Z', delivered: true },
       { id: 'i3', kind: 'policy-changed', at: '2026-09-22T00:05:00Z', delivered: true,
         from: 'aaaaaaaaaaaaaaaa', to: 'bbbbbbbbbbbbbbbb' },
       { id: 'i2', kind: 'trigger', triggerId: 'missing', at: '2026-09-22T00:04:00Z', delivered: false },
@@ -428,10 +431,10 @@ it('keeps showing a Ticket after a later poll fails', async () => {
   at({ page: 'execution', id: 't1' })
   await mount()
   const original = vi.mocked(globalThis.fetch).getMockImplementation()!
-  vi.mocked(globalThis.fetch).mockImplementation(async (url: string | URL, init?: RequestInit) =>
-    String(url).includes('/tickets/t1')
+  vi.mocked(globalThis.fetch).mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) =>
+    requestUrl(input).includes('/tickets/t1')
       ? new Response(JSON.stringify({ error: 'ticket read failed' }), { status: 500, headers: { 'content-type': 'application/json' } })
-      : original(url, init))
+      : original(input, init))
   await act(async () => { await vi.advanceTimersByTimeAsync(5000) }); await settle()
   expect(text()).toContain('修复回归')
   expect(text()).toContain('ticket read failed')

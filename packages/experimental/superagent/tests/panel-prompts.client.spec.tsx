@@ -372,13 +372,14 @@ it('names a conflicting team skill by its skill path', async () => {
 it('drops stale preview responses that finish after the page remounts', async () => {
   const original = vi.mocked(globalThis.fetch).getMockImplementation()!
   let first = true
-  let release!: (value: Response | Promise<Response>) => void
-  vi.mocked(globalThis.fetch).mockImplementation(async (url: string | URL, init?: RequestInit) => {
-    if (!String(url).includes('/prompts/preview')) return original(url, init)
-    if (!first) return original(url, init)
+  let release!: () => void
+  vi.mocked(globalThis.fetch).mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = input instanceof Request ? input.url : input instanceof URL ? input.href : input
+    if (!url.includes('/prompts/preview')) return original(input, init)
+    if (!first) return original(input, init)
     first = false
     return new Promise((resolve) => {
-      release = () => { resolve(original(url, init)) }
+      release = () => { resolve(original(input, init)) }
     })
   })
   at({ page: 'settings', query: { group: 'prompts' } })
@@ -395,9 +396,10 @@ it('drops stale preview failures that finish after the page remounts', async () 
   const original = vi.mocked(globalThis.fetch).getMockImplementation()!
   let first = true
   let rejectPreview!: (failure?: unknown) => void
-  vi.mocked(globalThis.fetch).mockImplementation(async (url: string | URL, init?: RequestInit) => {
-    if (!String(url).includes('/prompts/preview')) return original(url, init)
-    if (!first) return original(url, init)
+  vi.mocked(globalThis.fetch).mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = input instanceof Request ? input.url : input instanceof URL ? input.href : input
+    if (!url.includes('/prompts/preview')) return original(input, init)
+    if (!first) return original(input, init)
     first = false
     return new Promise((_resolve, reject) => { rejectPreview = reject })
   })
@@ -413,9 +415,10 @@ it('drops stale preview failures that finish after the page remounts', async () 
 
 it('renders a missing skill preview as empty and a generated part without a built-in entry as read-only', async () => {
   const original = vi.mocked(globalThis.fetch).getMockImplementation()!
-  vi.mocked(globalThis.fetch).mockImplementation(async (url: string | URL, init?: RequestInit) => {
-    if (!String(url).includes('/prompts/preview')) return original(url, init)
-    const response = await original(url, init)
+  vi.mocked(globalThis.fetch).mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = input instanceof Request ? input.url : input instanceof URL ? input.href : input
+    if (!url.includes('/prompts/preview')) return original(input, init)
+    const response = await original(input, init)
     const value = JSON.parse(await response.text()) as { parts: { orchestrator: unknown[] }; skills: Record<string, string> }
     const { temporary: _temporary, ...skills } = value.skills
     return Response.json({ ...value, skills, parts: { ...value.parts, orchestrator: [...value.parts.orchestrator,

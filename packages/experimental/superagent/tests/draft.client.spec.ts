@@ -158,7 +158,8 @@ const serve = () => vi.stubGlobal('fetch', vi.fn(async () => Response.json({
 afterEach(() => { vi.unstubAllGlobals(); sessionStorage.clear() })
 
 type Controls = ReturnType<typeof useDraft<Value>>
-const mount = async (options: Partial<Parameters<typeof useDraft<Value>>[0]>, controls: { current?: Controls }) => {
+type ControlsRef = { current: Controls | undefined }
+const mount = async (options: Partial<Parameters<typeof useDraft<Value>>[0]>, controls: ControlsRef) => {
   serve()
   function Harness() {
     const draft = useDraft<Value>({ key: 'draft', saved, revision: 1, save: async () => ({ revision: 2 }), reload: async () => {}, ...options })
@@ -168,7 +169,7 @@ const mount = async (options: Partial<Parameters<typeof useDraft<Value>>[0]>, co
   }
   const block = document.createElement('div'); document.body.append(block)
   const root = createRoot(block)
-  await act(async () => { root.render(createElement(PanelProvider, { t }, createElement(Harness))) })
+  await act(async () => { root.render(createElement(PanelProvider, { t, children: createElement(Harness) })) })
   for (let i = 0; i < 5; i++) await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)) })
   return { block, root }
 }
@@ -255,7 +256,7 @@ it('returns focus to the settings block when the save bar disappears, and lets a
   }
   const block = document.createElement('div'); document.body.append(block)
   const root = createRoot(block)
-  await act(async () => { root.render(createElement(PanelProvider, { t }, createElement(Harness))) })
+  await act(async () => { root.render(createElement(PanelProvider, { t, children: createElement(Harness) })) })
   const save = [...block.querySelectorAll('button')].find(button => button.textContent === 'save')!
   expect(block.textContent).toContain('Custom status')
   await act(async () => { save.focus() })
@@ -265,7 +266,7 @@ it('returns focus to the settings block when the save bar disappears, and lets a
   await act(async () => { save.dispatchEvent(new FocusEvent('focusout', { bubbles: true })) })
   await act(async () => { save.dispatchEvent(new FocusEvent('focusin', { bubbles: true })) })
   shown = false
-  await act(async () => { root.render(createElement(PanelProvider, { t }, createElement(Harness))) })
+  await act(async () => { root.render(createElement(PanelProvider, { t, children: createElement(Harness) })) })
   expect(document.activeElement).toBe(focusBlock)
   expect(discarded).toEqual([])
   outside.remove(); act(() => { root.unmount() }); block.remove()

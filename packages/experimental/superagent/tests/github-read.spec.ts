@@ -1,4 +1,4 @@
-import { afterEach, expect, it, vi } from 'vitest'
+import { afterEach, expect, it, vi, type Mock } from 'vitest'
 import { Commands } from '../src/infra/commands.ts'
 import { testDeployment } from './fixtures/deployment.ts'
 import { ciFailures, ciSummary, githubThreadContext, pullChecks, readGithub, readRepositoryPath } from '../src/sources/github-read.ts'
@@ -77,7 +77,7 @@ it('abbreviates a CI summary after five names', () => {
 })
 
 it('reads repository files and directory listings, hiding dot files and node_modules', async () => {
-  const api = vi.spyOn(commands, 'api')
+  const api = vi.spyOn(commands, 'api') as Mock<(path: string, ...flags: string[]) => Promise<unknown>>
   api.mockResolvedValueOnce('file text')
   await expect(readRepositoryPath(commands, 'src/example.ts', 'file')).resolves.toBe('file text')
   expect(api.mock.calls[0]).toEqual(['contents/src/example.ts', '-H', 'Accept: application/vnd.github.raw'])
@@ -103,7 +103,7 @@ it('reads commit checks directly and rejects incomplete thread requests', async 
 })
 
 it('reads issue and PR descriptions with optional branches, labels, and bot authors', async () => {
-  const api = vi.spyOn(commands, 'api')
+  const api = vi.spyOn(commands, 'api') as Mock<(path: string, ...flags: string[]) => Promise<unknown>>
   const issue = { id: 1, number: 9, title: 'Fix', state: 'closed', body: null, user: { login: 'policy-bot', type: 'Bot' },
     created_at: '2026-09-09T00:00:00Z', html_url: 'https://github.com/acme/widgets/issues/9', labels: [] }
   api.mockResolvedValueOnce(issue)
@@ -118,7 +118,7 @@ it('reads issue and PR descriptions with optional branches, labels, and bot auth
 })
 
 it('reads reviews and comment pages, including absent optional fields and unreadable records', async () => {
-  const api = vi.spyOn(commands, 'api')
+  const api = vi.spyOn(commands, 'api') as Mock<(path: string, ...flags: string[]) => Promise<unknown>>
   api.mockResolvedValueOnce([{ id: 2, user: { login: 'review-bot[bot]', type: 'Bot' }, state: 'CHANGES_REQUESTED', submitted_at: '2026-09-09T00:00:02Z' }])
   await expect(readGithub(commands, 'github/pulls/9/reviews')).resolves.toEqual({ messages: [{
     id: '2', from: 'review-bot[bot]', at: '2026-09-09T00:00:02Z', text: 'CHANGES_REQUESTED', bot: true }] })
@@ -137,7 +137,7 @@ it('reads reviews and comment pages, including absent optional fields and unread
 })
 
 it('reads a Trigger conversation by page, putting the description first and using ids without URLs', async () => {
-  const api = vi.spyOn(commands, 'api')
+  const api = vi.spyOn(commands, 'api') as Mock<(path: string, ...flags: string[]) => Promise<unknown>>
   const issue = { id: 1, number: 9, title: 'Fix', state: 'open', body: null, user: { login: 'carol' },
     created_at: '2026-09-09T00:00:00Z', html_url: 'https://github.com/acme/widgets/issues/9' }
   const comment = { id: 4, body: null, user: { login: 'carol' }, created_at: '2026-09-09T00:00:01Z' }
@@ -145,7 +145,7 @@ it('reads a Trigger conversation by page, putting the description first and usin
     id: index + 10, body: 'ok', user: { login: 'carol' }, html_url: `https://github.com/x#${index}` })), comment, {}])
   const trigger: Trigger = { id: 'trigger', source: 'github', threads: [{ source: 'github', id: '9' }],
     actor: { source: 'github', id: 'carol' }, human: true, at: '2026-09-09T00:00:00Z', text: 'Fix', meta: { number: 9 } }
-  const first = await githubThreadContext.read(commands, trigger, 'thread')
+  const first = await githubThreadContext.read(commands, trigger, 'thread', undefined, undefined)
   expect(first.messages).toHaveLength(100)
   expect([first.messages[0], first.messages.at(-1)].map(message => [message?.id, message?.text])).toEqual([
     ['https://github.com/acme/widgets/issues/9', 'Fix\n\n'], ['4', ''],
@@ -153,7 +153,7 @@ it('reads a Trigger conversation by page, putting the description first and usin
   expect(first.next).toBe('2')
 
   api.mockResolvedValueOnce([{ id: 5, body: 'reply', user: { login: 'carol' }, created_at: '2026-09-09T00:00:02Z' }])
-  const second = await githubThreadContext.read(commands, trigger, 'thread', '2')
+  const second = await githubThreadContext.read(commands, trigger, 'thread', '2', undefined)
   expect(second.messages).toEqual([{ id: '5', from: 'carol', at: '2026-09-09T00:00:02Z', text: 'reply' }])
   expect(second.next).toBeUndefined()
 })
@@ -162,7 +162,7 @@ it('reads default-branch CI as its own context when its Trigger has no URL', asy
   const trigger: Trigger = { id: 'ci-trigger', source: 'github', threads: [{ source: 'github', id: 'ci:main' }],
     actor: { source: 'github', id: '' }, human: false, at: '2026-09-09T00:00:00Z', text: 'CI failed', meta: { branch: 'main' } }
   expect(githubThreadContext.messageId(trigger)).toBe('')
-  await expect(githubThreadContext.read(commands, trigger, 'thread')).resolves.toEqual({
+  await expect(githubThreadContext.read(commands, trigger, 'thread', undefined, undefined)).resolves.toEqual({
     messages: [{ id: 'ci-trigger', from: 'CI', at: '2026-09-09T00:00:00Z', text: 'CI failed', bot: true }],
     body: { status: 'branch_ci', messages: [{ id: 'ci-trigger', from: 'CI', at: '2026-09-09T00:00:00Z', text: 'CI failed', bot: true }] },
     status: 'branch_ci' })
@@ -170,7 +170,7 @@ it('reads default-branch CI as its own context when its Trigger has no URL', asy
 
 
 it('reads a review with only a comment state and one whose time is its creation time', async () => {
-  const api = vi.spyOn(commands, 'api')
+  const api = vi.spyOn(commands, 'api') as Mock<(path: string, ...flags: string[]) => Promise<unknown>>
   api.mockResolvedValueOnce([
     { id: 1, user: { login: 'carol' }, state: 'COMMENTED', body: 'looks good', submitted_at: '2026-09-09T00:00:01Z' },
     { id: 2, user: { login: 'carol' }, state: 'CHANGES_REQUESTED', body: null, created_at: '2026-09-09T00:00:02Z' },
@@ -194,7 +194,7 @@ it('reads review threads whose comments have no line, body, or creation time', a
 })
 
 it('reads a conversation for an inline Trigger whose comment id is not numeric', async () => {
-  const api = vi.spyOn(commands, 'api')
+  const api = vi.spyOn(commands, 'api') as Mock<(path: string, ...flags: string[]) => Promise<unknown>>
   const issue = { id: 1, number: 9, title: 'Fix', state: 'open', body: 'Details', user: { login: 'carol' },
     created_at: '2026-09-09T00:00:00Z', html_url: 'https://github.com/acme/widgets/issues/9' }
   const listed = [{ id: 4, body: 'reply', user: { login: 'carol' }, created_at: '2026-09-09T00:00:01Z' }, {}]
@@ -202,16 +202,14 @@ it('reads a conversation for an inline Trigger whose comment id is not numeric',
   const trigger: Trigger = { id: 'trigger', source: 'github', threads: [{ source: 'github', id: '9' }],
     actor: { source: 'github', id: 'carol' }, human: true, at: '2026-09-09T00:00:00Z', text: 'Fix',
     meta: { number: 9, kind: 'inline', commentId: '4' } }
-  await expect(githubThreadContext.read(commands, trigger, 'thread')).resolves.toMatchObject({
+  await expect(githubThreadContext.read(commands, trigger, 'thread', undefined, undefined)).resolves.toMatchObject({
     messages: [{ id: 'https://github.com/acme/widgets/issues/9', text: 'Fix\n\nDetails' }, { id: '4', text: 'reply' }],
     body: { skipped: 1 }, next: undefined })
 })
 
 it('orders a review thread when GitHub omits comment timestamps', async () => {
   const missingTime = (id: number, reply?: number) => {
-    const item = reviewComment(id, reply)
-    delete item.created_at
-    delete item.updated_at
+    const { created_at: _createdAt, updated_at: _updatedAt, ...item } = reviewComment(id, reply)
     return item
   }
   vi.spyOn(commands, 'pages').mockResolvedValue([missingTime(2, 1), missingTime(1)])
@@ -225,7 +223,7 @@ it('uses a review comment id when GitHub omits its URL', async () => {
   const trigger: Trigger = { id: 'inline', source: 'github', threads: [{ source: 'github', id: '9' }],
     actor: { source: 'github', id: 'carol' }, human: true, at: '2026-09-09T00:00:00Z', text: 'comment',
     meta: { kind: 'inline', commentId: 1, number: 9 } }
-  await expect(githubThreadContext.read(commands, trigger, 'thread')).resolves.toMatchObject({
+  await expect(githubThreadContext.read(commands, trigger, 'thread', undefined, undefined)).resolves.toMatchObject({
     messages: [{ id: '1' }],
   })
 })

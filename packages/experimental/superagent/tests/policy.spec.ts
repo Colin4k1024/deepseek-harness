@@ -142,7 +142,8 @@ describe('gate', () => {
   })
   it('records a Source without a row and refuses one that does not listen', () => {
     const noRow = settingsPolicy(base, { scope: () => ({ listened: true as const, observed: true }) })
-    const system = feishu({ human: false, actor: { source: 'feishu', id: '' }, addressed: undefined, meta: {} })
+    const system = feishu({ human: false, actor: { source: 'feishu', id: '' }, meta: {} })
+    delete system.addressed
     expect(noRow.gate(system, thread(), [])).toEqual({ admissible: false, reason: 'admission_ignored' })
     const off = settingsPolicy(base, { scope: () => ({ listened: false, reason: 'source_disabled' }) })
     expect(off.gate(unaddressed(), thread(), [])).toEqual({ admissible: false, reason: 'no_mention' })

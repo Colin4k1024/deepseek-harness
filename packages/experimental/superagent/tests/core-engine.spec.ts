@@ -257,7 +257,11 @@ describe('eval', () => {
   })
   it('uses the last Trigger as the origin when an older Eval records no primary, and keeps one Channel for equal Channels', () => {
     const h = harness()
-    h.engine.receive(trigger('1')); h.engine.receive(trigger('2', { channel: trigger('1').channel })); h.pump()
+    h.engine.receive(trigger('1'))
+    const first = trigger('1')
+    const channel = first.channel
+    if (channel === undefined) throw new Error('expected a Channel on the first Trigger')
+    h.engine.receive(trigger('2', { channel })); h.pump()
     delete h.repo.threads.get('chat:t1')!.evaluating!.primary
     const decision = h.decide(h.requests[0]!, { kind: 'accept', title: 'Fix', scope: 'small', reason: 'requested' })
     h.settle()
@@ -1230,7 +1234,7 @@ describe('replies', () => {
     expect(h.engine.reply({ purpose: 'answer', triggerId: '2', text: 'Yes' })).toMatchObject({ reused: false })
     expect(h.engine.reply({ purpose: 'answer', triggerId: '2', text: 'Yes' })).toMatchObject({ reused: true })
     expect(h.outbox.filter(message => message.text === 'Yes')).toHaveLength(1)
-    h.engine.receive(trigger('3', { threads: [{ source: 'chat', id: 't3' }], channel: undefined })); h.pump()
+    const { channel: _quietChannel, ...quietTrigger } = trigger('3', { threads: [{ source: 'chat', id: 't3' }] }); h.engine.receive(quietTrigger); h.pump()
     const quiet = h.decide(h.requests.at(-1)!, { kind: 'accept', title: 'Quiet', scope: 'small', reason: 'requested' })
     h.settle()
     h.engine.report(quiet.ticketId!, { state: 'ready', summary: 'done' })
@@ -1241,10 +1245,13 @@ describe('replies', () => {
     const ticketId = accepted(h).ticketId!
     expect(() => h.engine.reply({ purpose: 'acknowledgement', ticketId, triggerId: 'missing', text: 'x' }))
       .toThrow(new UserError('unknownTrigger'))
-    h.engine.receive(trigger('2', { channel: undefined })); h.pump()
+    const { channel: _missingChannel, ...channelless } = trigger('2'); h.engine.receive(channelless); h.pump()
     expect(() => h.engine.reply({ purpose: 'acknowledgement', ticketId, triggerId: '2', text: 'x' })).toThrow(new UserError('ackNoChannel'))
     h.engine.receive(trigger('3', { human: false })); h.pump()
-    h.outbox.push({ id: key('ack', '3'), channel: trigger('3').channel, text: 'automatic', kind: 'acknowledgement', ticketId })
+    const automatic = trigger('3')
+    const automaticChannel = automatic.channel
+    if (automaticChannel === undefined) throw new Error('expected a Channel on the automatic Trigger')
+    h.outbox.push({ id: key('ack', '3'), channel: automaticChannel, text: 'automatic', kind: 'acknowledgement', ticketId })
     expect(h.engine.reply({ purpose: 'acknowledgement', ticketId, triggerId: '3', text: 'again' })).toMatchObject({ reused: true })
   })
   it('sends an answer for a message that reached no ticket', () => {
@@ -1854,7 +1861,7 @@ describe('what a worker read', () => {
     const ticket = h.repo.tickets.get(ticketId)!
     const input = ticket.inputs.find(item => item.id === message)
     if (input?.kind !== 'trigger') throw new Error('expected trigger input')
-    input.readAt = undefined
+    delete input.readAt
     input.deliveredAt = new Date(Date.parse(input.at) + 1000).toISOString()
     input.triggerId = 'gone'
     h.repo.tickets.save(ticket)
@@ -2011,7 +2018,7 @@ describe('ticket lifecycle edges', () => {
     const ticketId = accepted(h).ticketId!
     const other = accepted(h, '9', 't9').ticketId!
     h.repo.triggers.save(trigger('2', { threads: [{ source: 'chat', id: 'side' }] }))
-    h.repo.triggers.saveDisposition('2', { fanout: [], context: [other] })
+    h.repo.triggers.saveDisposition('2', { fanout: [], context: [other], at: '' })
     h.engine.attach(ticketId, '2')
     expect(h.repo.triggers.disposition('2')?.context).toEqual([other])
     h.repo.triggers.save(trigger('3', { human: false, threads: [{ source: 'chat', id: 'bot' }] }))

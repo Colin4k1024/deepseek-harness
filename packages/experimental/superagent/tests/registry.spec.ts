@@ -89,7 +89,7 @@ describe('Source registry', () => {
     await expect(context.image({} as Agent, commands, { id: 'm1', text: '' }, 'img_x', '',
       new AbortController().signal)).resolves.toBe('image:img_x')
     sources.register({ ...probe, kind: 'imageless', threadContext: { messageId: item => String(item.meta.id),
-      read: async () => ({ messages: [] }) } })
+      read: async () => ({ messages: [], body: {} }) } })
     const imageless = sources.threadContext({ ...trigger, source: 'imageless' })!
     await expect(imageless.image({} as Agent, commands, { id: 'm1', text: '' }, 'img_x', '',
       new AbortController().signal)).rejects.toThrow('has no images')

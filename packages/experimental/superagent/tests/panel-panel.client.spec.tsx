@@ -115,7 +115,9 @@ it("caps a large search and shows an ended Ticket, an empty Trigger, and a Trigg
 
 it('ignores a failed search response once a newer search has answered', async () => {
   let failOld = () => {}
-  server.searching = query => query === 'old' ? new Promise<void>((_, reject) => { failOld = () => { reject(new Error('old search failed')) } }) : undefined
+  server.searching = query => query === 'old'
+    ? new Promise<void>((_, reject) => { failOld = () => { reject(new Error('old search failed')) } })
+    : Promise.resolve()
   await mount()
   const search = field<HTMLInputElement>(zh.searchLabel)
   await type(search, 'old')

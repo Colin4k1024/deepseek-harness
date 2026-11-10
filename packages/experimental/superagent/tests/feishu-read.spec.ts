@@ -167,13 +167,16 @@ it('delegates image keys and image reads to the Feishu admission reader', async 
 
 it('keeps unreadable or mismatched Feishu responses out of the model context', async () => {
   const thread = (result: unknown) => vi.spyOn(commands, 'lark').mockResolvedValueOnce({ items: [source] }).mockResolvedValueOnce(result)
-  await expect(readFeishu(commands, event, 'feishu/source/thread', 20, thread({ thread_id: 'omt_other', has_more: false, messages: [] })))
+  thread({ thread_id: 'omt_other', has_more: false, messages: [] })
+  await expect(readFeishu(commands, event, 'feishu/source/thread', 20))
     .rejects.toThrow('outside the source thread')
-  await expect(readFeishu(commands, event, 'feishu/source/thread', 20, thread({ thread_id: 'omt_thread', has_more: false,
-    messages: [{ ...message, message_id: 'om_elsewhere', chat_id: 'oc_elsewhere', thread_id: 'omt_thread' }] })))
+  thread({ thread_id: 'omt_thread', has_more: false,
+    messages: [{ ...message, message_id: 'om_elsewhere', chat_id: 'oc_elsewhere', thread_id: 'omt_thread' }] })
+  await expect(readFeishu(commands, event, 'feishu/source/thread', 20))
     .rejects.toThrow('outside the source thread')
-  await expect(readFeishu(commands, event, 'feishu/source/thread', 20, thread({ thread_id: 'omt_thread', has_more: true,
-    page_token: 'next', messages: [{ ...message, message_id: 'om_reply', thread_id: 'omt_other' }] })))
+  thread({ thread_id: 'omt_thread', has_more: true,
+    page_token: 'next', messages: [{ ...message, message_id: 'om_reply', thread_id: 'omt_other' }] })
+  await expect(readFeishu(commands, event, 'feishu/source/thread', 20))
     .rejects.toThrow('outside the source thread')
   vi.spyOn(commands, 'lark').mockResolvedValueOnce({ items: [source] }).mockResolvedValueOnce({ messages: [] })
   await expect(readFeishu(commands, event, 'feishu/source/message', 20)).rejects.toThrow('requested Feishu message is unavailable')

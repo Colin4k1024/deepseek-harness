@@ -1,4 +1,7 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { z } from 'zod'
 import { CliError, Commands, commandError } from '../src/infra/commands.ts'
 import { feishuKind } from '../src/sources/feishu.ts'
@@ -6,10 +9,11 @@ import { feishuChannel } from '../src/sources/feishu-trigger.ts'
 import { githubKind } from '../src/sources/github.ts'
 import { githubChannel } from '../src/sources/github-trigger.ts'
 import { sendGithub } from '../src/sources/github-channel.ts'
-import { candidateCard, repliedTo, sourceLink } from '../src/app/links.ts'
+import { candidateCard, repliedTo, sourceLink, type LinkHost } from '../src/app/links.ts'
 import { TextCache } from '../src/app/cache.ts'
 import { SourceRegistry } from '../src/sources/registry.ts'
-import { SettingsSchema } from '../src/policy.ts'
+import { Store } from '../src/app/store.ts'
+import { SettingsSchema, type Settings } from '../src/policy.ts'
 import type { Candidate, Ticket, Trigger } from '../src/core/index.ts'
 import { key, type OutboundMessage } from '../src/core/index.ts'
 import { testDeployment } from './fixtures/deployment.ts'
@@ -58,10 +62,10 @@ describe('account-isolated operations', () => {
     const reply = { ...replyBase(), channel: githubChannel(8, review) }
     vi.spyOn(commands, 'pages').mockResolvedValue([])
     const api = vi.spyOn(commands, 'api')
-    api.mockResolvedValueOnce({ id: 7 }).mockResolvedValueOnce({})
+    api.mockResolvedValueOnce({ id: 7 } as never).mockResolvedValueOnce({} as never)
     await expect(sendGithub({ commands }, reply)).resolves.toBe('sent')
     expect(api.mock.calls[1]![1]).toBe('pulls/8/comments/7/replies')
-    api.mockRejectedValueOnce(new CliError('deleted', 410)).mockResolvedValueOnce({})
+    api.mockRejectedValueOnce(new CliError('deleted', 410)).mockResolvedValueOnce({} as never)
     await expect(sendGithub({ commands }, reply)).resolves.toBe('sent')
     expect(api.mock.calls[3]![1]).toBe('issues/8/comments')
     api.mockRejectedValueOnce(new Error('network down'))
@@ -74,7 +78,7 @@ describe('account-isolated operations', () => {
     const review = `https://github.com/${REPOSITORY}/pull/8#discussion_r7`
     const reply = { ...replyBase(), channel: githubChannel(8, review) }
     const pages = vi.spyOn(commands, 'pages').mockResolvedValue([{ id: 3, in_reply_to_id: 3, user: { login: 'agent-bot' } }] as never)
-    const api = vi.spyOn(commands, 'api').mockResolvedValueOnce({ id: 7, in_reply_to_id: 3 }).mockResolvedValueOnce({})
+    const api = vi.spyOn(commands, 'api').mockResolvedValueOnce({ id: 7, in_reply_to_id: 3 } as never).mockResolvedValueOnce({} as never)
     await expect(sendGithub({ commands }, reply)).resolves.toBe('sent')
     expect(pages.mock.calls[0]![1]).toBe('pulls/8/comments')
     expect(api.mock.calls[1]![1]).toBe('pulls/8/comments/3/replies')
@@ -155,7 +159,7 @@ describe('Channels', () => {
     expect(githubKind.channel!.link(githubChannel(8, review).address, links))
       .toEqual({ url: review, label: { zh: 'GitHub #8 的 review 讨论', en: 'Review discussion on GitHub #8' } })
     expect(githubKind.channel!.link(githubChannel(8).address, {}).url).toBe('')
-    expect(githubKind.channel!.link({ source: 'github', thread: 'github:', address: {} }, links).url).toBe(`https://github.com/${REPOSITORY}/issues/0`)
+    expect(githubKind.channel!.link({ source: 'github', thread: 'github:', address: {} }.address, links).url).toBe(`https://github.com/${REPOSITORY}/issues/0`)
     const message = feishuChannel('oc_1', 'om_1').address
     expect(feishuKind.channel!.link(message, links)).toEqual({ url: 'https://applink.feishu.cn/client/chat/open?openChatId=oc_1',
       label: { zh: '飞书消息', en: 'Feishu message' }, triggerId: key('feishu', 'om_1') })
@@ -273,21 +277,37 @@ const ticket = (id: string): Ticket => ({
   origin: { triggerId: 'primary', triggerIds: ['primary'] },
 })
 const commands = () => new Commands(() => testDeployment(), {}, new AbortController().signal)
-const linkSources = (find: (query: string) => { threads: string[]; terms: string[] } = () => ({ threads: [], terms: [] })) =>
-  ({ instance: () => ({ id: 'feishu', kind: 'feishu', enabled: true, config: { linkTimeoutMs: 10 } }), find, repliesTo: () => 'parent' }) as unknown as SourceRegistry
-const linkHost = (overrides: Record<string, unknown> = {}) => ({
-  store: {
-    settings: () => SettingsSchema.parse({}),
-    triggers: { get: (id: string) => id === 'parent' ? trigger('parent', { text: 'parent message' }) : undefined, disposition: undefined },
-    threads: { get: undefined },
-    tickets: { get: undefined },
-  },
-  links: new TextCache(100),
-  commands: commands(),
-  sources: linkSources(),
-  lifetime: new AbortController().signal,
-  ...overrides,
-}) as Parameters<typeof sourceLink>[0]
+type LinkFind = (query: string) => { threads: string[]; terms: string[] }
+const linkSources = (find: LinkFind = () => ({ threads: [], terms: [] })): SourceRegistry => {
+  const sources = new SourceRegistry(() => SettingsSchema.parse({
+    sources: { feishu: { enabled: true, config: { linkTimeoutMs: 10 } } },
+  }))
+  sources.register({ ...feishuKind, find, repliesTo: () => 'parent' })
+  return sources
+}
+const linkStores: Store[] = []
+const linkDirectories: string[] = []
+const linkHost = (overrides: Partial<LinkHost> = {}, settings: Settings = SettingsSchema.parse({})): LinkHost => {
+  const directory = mkdtempSync(join(tmpdir(), 'dsh-superagent-links-'))
+  const store = new Store(join(directory, 'orchestrator.sqlite'))
+  store.saveSettings(settings)
+  linkStores.push(store)
+  linkDirectories.push(directory)
+  return {
+    store,
+    links: new TextCache(100),
+    commands: commands(),
+    sources: linkSources(),
+    lifetime: new AbortController().signal,
+    ...overrides,
+  }
+}
+afterEach(() => {
+  for (const store of linkStores) store.close()
+  for (const directory of linkDirectories) rmSync(directory, { recursive: true, force: true })
+  linkStores.length = 0
+  linkDirectories.length = 0
+})
 
 it('resolves trigger URLs, cache entries, Feishu links, and readable fallbacks', async () => {
   const lark = vi.spyOn(Commands.prototype, 'lark')
@@ -316,41 +336,45 @@ it('resolves trigger URLs, cache entries, Feishu links, and readable fallbacks',
 it("finds a Trigger's parent only when its Source names one the Store still has", () => {
   const reply = trigger('reply', { meta: { parentId: 'parent' } })
   const parent = trigger('parent', { text: 'parent message' })
-  expect(repliedTo({ store: { triggers: { get: () => parent } }, sources: { repliesTo: () => 'parent' } }, reply)).toEqual(parent)
-  expect(repliedTo({ store: { triggers: { get: () => parent } }, sources: { repliesTo: () => undefined } }, reply)).toBeUndefined()
-  expect(repliedTo({ store: { triggers: { get: () => undefined } }, sources: { repliesTo: () => 'missing' } }, reply)).toBeUndefined()
+  const named = linkHost()
+  vi.spyOn(named.sources, 'repliesTo').mockReturnValue('parent')
+  named.store.triggers.save(parent)
+  expect(repliedTo(named, reply)).toEqual(parent)
+  const unnamed = linkHost()
+  vi.spyOn(unnamed.sources, 'repliesTo').mockReturnValue(undefined)
+  expect(repliedTo(unnamed, reply)).toBeUndefined()
+  const missing = linkHost()
+  vi.spyOn(missing.sources, 'repliesTo').mockReturnValue('missing')
+  expect(repliedTo(missing, reply)).toBeUndefined()
 })
 
 it('builds candidate cards with batches, handbacks, delivery, references, and both routing actions', async () => {
   const primary = trigger('primary', { text: 'See #12 and #13 please' })
   const earlier = trigger('earlier', { text: 'earlier message' })
   const known = ticket('known'), referenced = ticket('referenced')
-  const host = linkHost({
-    store: {
-      settings: () => SettingsSchema.parse({ eval: { mode: 'auto' } }),
-      triggers: {
-        get: (id: string) => id === 'parent' ? trigger('parent', { text: 'parent message' }) : undefined,
-        disposition: (id: string) => id === 'primary'
-          ? { fanout: ['worker'], handbacks: [{ ticketId: 'worker', reason: 'outside scope', at: '' }], at: '' }
-          : undefined,
-      },
-      threads: { get: (key: string) => key === 'github:12' ? { subscriptions: ['known', 'referenced', 'missing'] } : undefined },
-      tickets: { get: (id: string) => id === 'known' ? known : id === 'referenced' ? referenced : undefined },
-    },
-    sources: linkSources(query => ({ threads: query === '#12' ? ['github:12'] : ['github:13'], terms: [] })),
-  })
+  const host = linkHost(
+    { sources: linkSources(query => ({ threads: query === '#12' ? ['github:12'] : ['github:13'], terms: [] })) },
+    SettingsSchema.parse({ eval: { mode: 'auto' } }),
+  )
+  host.store.triggers.save(trigger('parent', { text: 'parent message' }))
+  host.store.triggers.save(earlier)
+  host.store.triggers.save(primary)
+  host.store.triggers.saveDisposition('primary', { fanout: ['worker'], handbacks: [{ ticketId: 'worker', reason: 'outside scope', at: '' }], at: '' })
+  host.store.threads.save({ key: 'github:12', ref: { source: 'github', id: '12' }, createdAt: '', subscriptions: ['known', 'referenced', 'missing'], correlated: [], pending: [], meta: {} })
+  host.store.tickets.save(known)
+  host.store.tickets.save(referenced)
   const candidate: Candidate = {
     evalId: 'eval', thread: { key: 'github:12', ref: { source: 'github', id: '12' }, createdAt: '', subscriptions: [], correlated: [], pending: [], meta: {} },
     triggers: [earlier, primary], strength: 'explicit', policyVersion: 'v', tickets: [known],
   }
   const card = await candidateCard(host, candidate)
   expect(card).toMatchObject({ trigger_id: 'primary', mode: 'auto', strength: 'explicit' })
-  expect(card.batch).toHaveLength(1)
-  expect(card.batch[0]).toMatchObject({ trigger_id: 'earlier', actor: 'alice', at: '2026-11-10T00:00:00Z', preview: 'earlier message' })
+  expect(card.batch?.length).toBe(1)
+  expect(card.batch?.[0]).toMatchObject({ trigger_id: 'earlier', actor: 'alice', at: '2026-11-10T00:00:00Z', preview: 'earlier message' })
   expect(card.handed_back).toEqual([{ trigger_id: 'primary', ticket_id: 'worker', reason: 'outside scope' }])
   expect(card.related_tickets.map(item => item.ticket_id)).toEqual(['known'])
   expect(card.delivered_to).toEqual(['worker'])
-  expect(card.referenced_tickets.map(item => item.ticket_id)).toEqual(['referenced'])
+  expect(card.referenced_tickets?.map(item => item.ticket_id)).toEqual(['referenced'])
   expect(card.next_action).toContain('orchestrator_route')
   candidate.strength = 'inferred'
   expect((await candidateCard(host, candidate)).next_action).toContain('orchestrator_eval')

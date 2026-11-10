@@ -10,6 +10,7 @@ import { translator, usePanel, mount, remount, settle, all, find, click, text, a
 import { server, trigger, threadSummary, ticketSummary, acceptDecision } from './fixtures/panel-server.client.ts'
 
 usePanel()
+const requestUrl = (input: RequestInfo | URL): string => input instanceof URL ? input.href : input instanceof Request ? input.url : input
 it('walks a Thread timeline newest first with dispositions as tags and its Decisions, requeues a filtered Trigger, pages backwards and returns', async () => {
   await mount()
   await click(zh['tab.trigger'])
@@ -208,7 +209,7 @@ it('marks a queued Trigger and fanout to Tickets it does not list', async () => 
 
 it('shows an empty Thread without an original link, and its live evaluation and polling problems', async () => {
   server.threadPages = () => ({
-    ...threadSummary({ evaluating: { triggers: 2, strength: 'explicit', deadline: '2026-09-23T00:10:00Z' }, pollError: 'socket closed' }),
+    ...threadSummary({ evaluating: { id: 'evaluating', startedAt: '2026-09-23T00:00:00Z', triggers: 2, strength: 'explicit', deadline: '2026-09-23T00:10:00Z' }, pollError: 'socket closed' }),
     tickets: [], correlated: [], decisions: [], context: [], earlier: null, url: undefined, timeline: [],
   })
   at({ page: 'trigger', id: threadSummary().key })
@@ -233,9 +234,9 @@ it('reads a deep-linked Trigger into the newest page', async () => {
 
 it('reports a Trigger already queued for Eval', async () => {
   const original = vi.mocked(globalThis.fetch).getMockImplementation()!
-  vi.mocked(globalThis.fetch).mockImplementation(async (url: string | URL, init?: RequestInit) => String(url).includes('/triggers/')
+  vi.mocked(globalThis.fetch).mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => requestUrl(input).includes('/triggers/')
     ? new Response(JSON.stringify({ queued: false }), { status: 200, headers: { 'content-type': 'application/json' } })
-    : original(url, init))
+    : original(input, init))
   at({ page: 'trigger', id: threadSummary().key })
   await mount()
   await click(zh.requeue)
@@ -254,8 +255,9 @@ it('says an unsubscribe receipt is still pending', async () => {
 })
 
 it('marks a Trigger being evaluated and reads its preview when it has no text', async () => {
+  const evaluating = trigger('evaluating', '2026-09-23T00:00:00Z', { text: '', disposition: { evaluating: true } })
   server.threadPages = () => ({ ...threadSummary(), tickets: [], correlated: [], decisions: [], context: [], earlier: null,
-    timeline: [trigger('evaluating', '2026-09-23T00:00:00Z', { text: undefined, disposition: { evaluating: true } })] })
+    timeline: [evaluating] })
   at({ page: 'trigger', id: threadSummary().key })
   await mount()
   expect(all('.dt-tag').map(tag => tag.textContent)).toEqual([zh.dispositionEvaluating])
@@ -264,9 +266,9 @@ it('marks a Trigger being evaluated and reads its preview when it has no text', 
 
 it('reports a failed read of a deep-linked Trigger', async () => {
   const original = vi.mocked(globalThis.fetch).getMockImplementation()!
-  vi.mocked(globalThis.fetch).mockImplementation(async (url: string | URL, init?: RequestInit) => String(url).includes('around=old')
+  vi.mocked(globalThis.fetch).mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => requestUrl(input).includes('around=old')
     ? new Response(JSON.stringify({ error: 'deep link unavailable' }), { status: 500, headers: { 'content-type': 'application/json' } })
-    : original(url, init))
+    : original(input, init))
   at({ page: 'trigger', id: threadSummary().key, query: { trigger: 'old' } })
   await mount()
   expect(text()).toContain('deep link unavailable')
@@ -276,9 +278,9 @@ it('reports a failed read of a deep-linked Trigger', async () => {
 it('reports a failed read of the Triggers missing from a gap', async () => {
   busyThread(120)
   const original = vi.mocked(globalThis.fetch).getMockImplementation()!
-  vi.mocked(globalThis.fetch).mockImplementation(async (url: string | URL, init?: RequestInit) => String(url).includes('before=')
+  vi.mocked(globalThis.fetch).mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => requestUrl(input).includes('before=')
     ? new Response(JSON.stringify({ error: 'gap unavailable' }), { status: 500, headers: { 'content-type': 'application/json' } })
-    : original(url, init))
+    : original(input, init))
   at({ page: 'trigger', id: threadSummary().key, query: { trigger: 'm10' } })
   await mount()
   expect(text()).toContain('gap unavailable')
@@ -322,8 +324,8 @@ async function renderInactiveThread(fail: boolean, gap: boolean) {
       ? () => { reject(new Error('late thread read')) }
       : () => { resolve(Response.json(gap ? { ...oldPage, timeline: [] } : oldPage)) }
   })
-  vi.mocked(globalThis.fetch).mockImplementation(async (input: string | URL, init?: RequestInit) => {
-    const url = String(input)
+  vi.mocked(globalThis.fetch).mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = requestUrl(input)
     if (url.includes('before=') && gap) {
       gapStarted = true
       return late

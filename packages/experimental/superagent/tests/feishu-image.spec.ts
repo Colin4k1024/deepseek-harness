@@ -46,14 +46,14 @@ it('retains the source-message pairing, commits an image reference and removes t
 it('uses the agent route when present, its options otherwise, and refuses an unresolved or unmounted route', async () => {
   await expect(readAdmissionImage(agent, commands, source, text, 'img_source', directory, signal())).resolves.toMatchObject({ image: ref })
   agent.session.requestHeader = () => undefined
-  agent.options = { provider: 'agent-provider', model: 'agent-model' }
-  await expect(readAdmissionImage(agent, commands, source, text, 'img_source', directory, signal())).resolves.toMatchObject({ image: ref })
+  const fromOptions: Agent = { ...agent, options: { provider: 'agent-provider', model: 'agent-model' } }
+  await expect(readAdmissionImage(fromOptions, commands, source, text, 'img_source', directory, signal())).resolves.toMatchObject({ image: ref })
   expect(resolveModelInfo).toHaveBeenLastCalledWith('agent-provider', 'agent-model', expect.any(AbortSignal))
-  agent.options = {}
-  await expect(readAdmissionImage(agent, commands, source, text, 'img_source', directory, signal())).rejects.toThrow('model route is unresolved')
+  const withoutOptions: Agent = { ...agent, options: {} }
+  await expect(readAdmissionImage(withoutOptions, commands, source, text, 'img_source', directory, signal())).rejects.toThrow('model route is unresolved')
   const bare = new Context()
   bare.reflect.provide('llm', { resolveModelInfo })
-  const unmounted = { ctx: bare, session: agent.session, options: agent.options } as unknown as Agent
+  const unmounted: Agent = { ...agent, ctx: bare }
   await expect(readAdmissionImage(unmounted, commands, source, text, 'img_source', directory, signal()))
     .rejects.toThrow('no attachment service')
 })

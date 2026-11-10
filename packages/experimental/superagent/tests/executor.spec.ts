@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Context } from '@deepseek-ai/cordis'
 import { liveTicket, type Assignment, type Execution, type Ticket, type TicketInput, type Trigger } from '../src/core/index.ts'
 import { SettingsSchema } from '../src/policy.ts'
-import { DshExecutor, batchLine, batchOf, inputMessage, inputResource, ticketExecution, type ExecutorHost } from '../src/executor/dsh.ts'
+import { DshExecutor, batchLine, batchOf, inputMessage, inputResource, ticketExecution } from '../src/executor/dsh.ts'
 import { deferred } from './fixtures/async.ts'
 
 let directory: string
@@ -25,7 +25,13 @@ const ticket = (id = 't1', input: TicketInput[] = [], undelivered: string[] = []
   id,
   title: 'Fix the regression',
   decisionId: 'd1',
-  mandate: { strength: 'explicit' },
+  mandate: {
+    strength: 'explicit',
+    policyVersion: 'v1',
+    basis: { via: 'listed' },
+    actor: { source: 'feishu', id: 'ou_alice' },
+    scope: 'oc:om_1',
+  },
   channels: [],
   assignments: [assignment()],
   inputs: input,
@@ -33,7 +39,7 @@ const ticket = (id = 't1', input: TicketInput[] = [], undelivered: string[] = []
   createdAt: '2026-11-01T00:00:00.000Z',
   updatedAt: '2026-11-01T00:00:00.000Z',
   origin: { triggerId: 'tr1', triggerIds: ['tr1', 'tr2', 'gone'] },
-}) as Ticket
+})
 
 const trigger = (id: string): Trigger => ({
   id,
@@ -90,7 +96,8 @@ function executorHost(seed: { ticket?: Ticket; triggers?: Trigger[] } = {}) {
       session: { snapshotEvents: () => [] },
       cancel: vi.fn(),
     }),
-    prompt: vi.fn(async () => {}),
+    prompt: vi.fn(async (_id: string, _requestId: string, _text: string,
+      _mode: 'queue' | 'steer' | { inject: string }, _authorize?: () => void, _accepted?: () => void) => {}),
     promptedId: vi.fn((id: string) => `prompt-${id}`),
     relay: vi.fn(),
     holds: vi.fn(async () => false),
@@ -104,7 +111,7 @@ function executorHost(seed: { ticket?: Ticket; triggers?: Trigger[] } = {}) {
     inputsRead: vi.fn(),
     turnEnded: vi.fn(),
     deliveryFailed: vi.fn(),
-    report: vi.fn((id: string, report: { state: string; summary: string; at: string }) => {
+    report: vi.fn((id: string, report: NonNullable<Assignment['report']>) => {
       const current = tickets.get(id)!
       current.assignments[0]!.report = report
       return current
@@ -123,7 +130,7 @@ function executorHost(seed: { ticket?: Ticket; triggers?: Trigger[] } = {}) {
     agents,
     on,
   } as unknown as Context
-  const host: ExecutorHost = {
+  const host = {
     context,
     engine,
     store,
@@ -136,9 +143,9 @@ function executorHost(seed: { ticket?: Ticket; triggers?: Trigger[] } = {}) {
     paused: () => state.paused,
     environment: vi.fn(() => []),
     sourceLink,
-    repliedTo: vi.fn(() => undefined),
+    repliedTo: vi.fn((): Trigger | undefined => undefined),
   }
-  const executor = new DshExecutor(host)
+  const executor = new DshExecutor(host as never)
   return {
     executor, host, tickets, triggers, agents, services, store, effects, sessions, engine,
     health, healthState, state, context, sourceLink, on,
@@ -423,7 +430,7 @@ describe('DshExecutor', () => {
     item.assignments.push({ ...assignment('a2'), state: 'pending' })
     const h = executorHost({ ticket: item })
     h.sessions.holds = vi.fn(async () => true)
-    h.sessions.prompt = vi.fn(async (_id: string, _requestId: string, _text: string, _mode: string, authorize?: () => void) => {
+    h.sessions.prompt = vi.fn(async (_id: string, _requestId: string, _text: string, _mode: 'queue' | 'steer' | { inject: string }, authorize?: () => void) => {
       item.ended = { at: '2026-11-02T00:00:00.000Z', by: 'human', outcome: 'stopped' }
       authorize?.()
     })
@@ -463,7 +470,10 @@ describe('DshExecutor', () => {
   it('ignores an idle agent that is not a worker session', () => {
     const h = executorHost()
     h.executor.install()
-    const handler = h.on.mock.calls.find(([kind]) => kind === 'agent/status')![1] as (event: { agent: { id: string }; status: string }) => void
+    const handler = h.on.mock.calls.find(([kind]) => kind === 'agent/status')![1] as never as (event: {
+      agent: { id: string }
+      status: string
+    }) => void
     expect(() => { handler({ agent: { id: 'main' }, status: 'idle' }) }).not.toThrow()
   })
 
@@ -678,7 +688,7 @@ describe('DshExecutor', () => {
     item.assignments.push({ ...assignment('a2'), state: 'pending' })
     const h = executorHost({ ticket: item })
     h.sessions.holds = vi.fn(async () => true)
-    h.sessions.prompt = vi.fn(async (_id: string, _requestId: string, _text: string, _mode: string, before?: () => void) => {
+    h.sessions.prompt = vi.fn(async (_id: string, _requestId: string, _text: string, _mode: 'queue' | 'steer' | { inject: string }, before?: () => void) => {
       before?.()
     })
     await (h.executor as unknown as ExecutorInternals).launchQueued({ ticketId: 't1', assignmentId: 'a2' })

@@ -10,12 +10,13 @@ import { testDeployment } from './fixtures/deployment.ts'
 import { deferred } from './fixtures/async.ts'
 import { githubKind } from '../src/sources/github.ts'
 import { SourceRegistry } from '../src/sources/registry.ts'
+import type { TriggerContext } from '../src/sources/kind.ts'
 
 /** Assessor fixture backed by in-memory repositories and fake GitHub Issue and file reads. */
 function setup(
   strength: 'explicit' | 'inferred' = 'inferred',
   bodies = Array.from({ length: 5 }, (_, i) => `comment ${i}`),
-  threadContext?: AssessorHost['threadContext'],
+  threadContext?: AssessorHost['threadContext'] | TriggerContext,
   fileBody = 'export const value = 1\n',
   paused = false,
 ) {
@@ -72,7 +73,7 @@ function setup(
     commands,
     deployment: testDeployment(),
     settings: () => SettingsSchema.parse({ eval: { mode: 'auto' } }),
-    threadContext: threadContext ?? (trigger => sources.threadContext(trigger)),
+    threadContext: typeof threadContext === 'function' ? threadContext : threadContext ? () => threadContext : (trigger => sources.threadContext(trigger)),
     effects,
     paused: () => paused,
     deliver: async () => {},
@@ -268,7 +269,7 @@ it('runs the candidate effect by hand and stops the assessor', async () => {
 it('skips a deleted message when it caches the initial window, so it cannot be read in full', async () => {
   const deleted = { id: 'deleted', from: 'bob', at: new Date(Date.UTC(2026, 8, 9, 0, 0, 0)).toISOString(), text: 'gone', deleted: true }
   const live = { id: 'live', from: 'bob', at: new Date(Date.UTC(2026, 8, 9, 0, 0, 1)).toISOString(), text: 'still here' }
-  const context = { messageId: 'live', read: async () => ({ messages: [deleted, live] }), images: () => [],
+  const context = { messageId: 'live', read: async () => ({ messages: [deleted, live], body: {} }), images: () => [],
     image: async () => { throw new Error('No images') } }
   const s = setup('inferred', undefined, () => context)
   s.engine.receive({ ...issue(1), id: 'live' }); s.engine.evaluateDue()
@@ -309,7 +310,7 @@ it('refuses reads for a trigger with no active evaluation', async () => {
 })
 
 it('exposes and reads image references from thread context, and refuses stale or unknown reads', async () => {
-  let context: AssessorHost['threadContext'] = {
+  let context: TriggerContext | undefined = {
     messageId: 'm0',
     read: async () => ({
       messages: [
@@ -323,7 +324,7 @@ it('exposes and reads image references from thread context, and refuses stale or
     image: vi.fn(async (...args: unknown[]) => ({ delivered: args.length })),
   }
   const s = setup('inferred', undefined, () => context)
-  s.engine.receive({ ...issue(1), url: undefined }); s.engine.evaluateDue()
+  const { url: _url, ...withoutUrl } = issue(1); s.engine.receive(withoutUrl); s.engine.evaluateDue()
   const initial = await s.assessor.context('issue-1', signal) as { images?: string[]; source: { url?: string }; thread: { messages: unknown[] } }
   expect(initial.source).not.toHaveProperty('url')
   expect(initial.thread.messages).toEqual(expect.arrayContaining([
@@ -360,7 +361,7 @@ it('serves repository pages from offset zero and later offsets from the cache', 
 })
 
 it('records a failed initial thread read instead of losing the evaluation', async () => {
-  const context: AssessorHost['threadContext'] = {
+  const context: TriggerContext = {
     messageId: 'm0',
     read: async () => { throw new Error('Feishu unavailable') },
     images: () => [],

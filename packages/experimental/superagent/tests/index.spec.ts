@@ -40,7 +40,7 @@ function context() {
     inject: vi.fn((_services: string[], callback: (child: unknown) => void) => {
       callback({ effect: (effect: () => unknown) => effect(), settings: { configure } })
     }),
-    effect: vi.fn((effect: () => unknown) => effects.push(effect())),
+    effect: vi.fn((effect: () => () => unknown): void => { effects.push(effect()) }),
     fiber: { restart: vi.fn(async () => {}) },
     get: vi.fn((name: string) => (name === 'settings' ? { describe } : undefined)),
     logger: { info: vi.fn(), error: vi.fn() },

@@ -20,9 +20,12 @@ it('says a filtered Trigger with no readable preview is empty', async () => {
     dropped: [],
   }
   const fetch = vi.spyOn(globalThis, 'fetch')
-  fetch.mockImplementation(async (url: string) => new URL(url, 'http://127.0.0.1').pathname.endsWith('/sources')
-    ? Response.json([row])
-    : Response.json({ load: { running: 0, queued: 0 } }))
+  fetch.mockImplementation(async (input: RequestInfo | URL) => {
+    const url = input instanceof Request ? input.url : input instanceof URL ? input.href : input
+    return new URL(url, 'http://127.0.0.1').pathname.endsWith('/sources')
+      ? Response.json([row])
+      : Response.json({ load: { running: 0, queued: 0 } })
+  })
   const container = document.createElement('div'); document.body.append(container)
   const root = createRoot(container)
   await act(async () => { root.render(<PanelProvider t={t}><SourceStatus /></PanelProvider>) })
@@ -316,9 +319,10 @@ it('reads the settings again as soon as dsh-superagent answers after a save rest
 
 it('keeps an uninstalled Source\'s saved configuration without its fields or switch', async () => {
   const original = vi.mocked(globalThis.fetch).getMockImplementation()!
-  vi.mocked(globalThis.fetch).mockImplementation(async (url: string | URL, init?: RequestInit) => {
-    const response = await original(url, init)
-    if (!String(url).endsWith('/settings')) return response
+  vi.mocked(globalThis.fetch).mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const response = await original(input, init)
+    const url = input instanceof Request ? input.url : input instanceof URL ? input.href : input
+    if (!url.endsWith('/settings')) return response
     const settings = JSON.parse(await response.text()) as { sources: { installed: boolean; description?: unknown }[] }
     const source = settings.sources[0]
     if (!source) throw new Error('The fake settings response has no Source')

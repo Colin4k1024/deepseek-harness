@@ -10,6 +10,7 @@ import { translator, usePanel, mount, remount, settle, all, find, tab, click, ty
 import { server } from './fixtures/panel-server.client.ts'
 
 usePanel()
+const requestUrl = (input: RequestInfo | URL): string => input instanceof URL ? input.href : input instanceof Request ? input.url : input
 it('keeps a person\'s own value where another save changed the same setting, and says so', async () => {
   await mount()
   await click(zh['tab.execution'])
@@ -237,7 +238,7 @@ it('renders every Source field form and reports their edits, including rows, ref
   expect(plain.textContent).toBe('已保存')
   const plainRows = () => [...document.querySelectorAll('.dt-rows')].at(-1)!
   const plainField = plainRows().closest('.dt-field')!
-  await click([...plainField.querySelectorAll('.dt-subhead-actions button')].find(button => button.textContent === zh.addRow)!)
+  await click([...plainField.querySelectorAll<HTMLElement>('.dt-subhead-actions button')].find(button => button.textContent === zh.addRow)!)
   await type(plainRows().querySelector('.dt-rows-item input[aria-label="普通名称"]') as HTMLInputElement, 'Added')
   expect((plainRows().querySelector('.dt-rows-item input[aria-label="普通标识"]') as HTMLInputElement).value).toBe('')
   await click(plainRows().querySelector('.dt-rows-item button')!)
@@ -253,7 +254,12 @@ it('reports a failed model catalog read and clears a model by clearing every par
     const [value, setValue] = useState<{ provider: string; model: string; reasoningEffort?: string } | null>({ provider: 'other', model: 'other-model',
       reasoningEffort: 'low' })
     return <PanelProvider t={translator(zh)}>
-      <ModelField id="test-model" value={value} onChange={setValue} />
+      <ModelField id="test-model" value={value} onChange={(next) => {
+        setValue(next ? {
+          provider: next.provider, model: next.model,
+          ...next.reasoningEffort ? { reasoningEffort: next.reasoningEffort } : {},
+        } : null)
+      }} />
       <pre aria-label="model value">{JSON.stringify(value)}</pre>
     </PanelProvider>
   }
@@ -263,9 +269,9 @@ it('reports a failed model catalog read and clears a model by clearing every par
 
   server.down = false
   const original = vi.mocked(globalThis.fetch).getMockImplementation()!
-  vi.mocked(globalThis.fetch).mockImplementation(async (url: string | URL, init?: RequestInit) => {
-    if (!String(url).endsWith('/models')) return original(url, init)
-    const response = await original(url, init)
+  vi.mocked(globalThis.fetch).mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+    if (!requestUrl(input).endsWith('/models')) return original(input, init)
+    const response = await original(input, init)
     const value = JSON.parse(await response.text()) as { default: { reasoningEffort?: string } }
     return Response.json({ ...value, default: { ...value.default, reasoningEffort: 'low' } })
   })
@@ -273,8 +279,8 @@ it('reports a failed model catalog read and clears a model by clearing every par
   expect(text()).toContain(zh.defaultModel.replace('{model}', 'host / default · low'))
   vi.mocked(globalThis.fetch).mockImplementation(original)
   expect([...document.querySelectorAll<HTMLOptionElement>('#test-model-providers option')].map(option => option.value)).toEqual(['worker-provider'])
-  const [provider, model, effort] = all<HTMLInputElement>('.dt-model input')
-  await type(provider, ''); await type(model, ''); await type(effort, '')
+  const [provider, model, effort] = all('.dt-model input')
+  await type(provider as HTMLInputElement, ''); await type(model as HTMLInputElement, ''); await type(effort as HTMLInputElement, '')
   expect(text()).toContain('host / default')
   expect(find('model value', '[aria-label="model value"]')?.textContent).toBe('null')
 })
@@ -357,7 +363,7 @@ it('summarizes empty and sparse rows, and an empty fact with its hint', async ()
   await act(async () => { root.render(<Harness />) }); await settle()
   expect(all('.dt-count').map(item => item.textContent)).toEqual(['', '1', '7'])
   expect(all('.dt-rows-summary').at(-1)?.textContent).toContain(zh.listSeparator)
-  expect(all('.dt-rows-item input')[1]?.value).toBe('')
+  expect(document.querySelectorAll<HTMLInputElement>('.dt-rows-item input')[1]?.value).toBe('')
   expect(text()).toContain(zh.empty)
   expect(all('.dt-info').at(-1)?.getAttribute('aria-label')).toBe('事实提示')
 })
@@ -365,20 +371,20 @@ it('summarizes empty and sparse rows, and an empty fact with its hint', async ()
 it('keeps settings available while a reload fails and keys a draft without a master session', async () => {
   const original = vi.mocked(globalThis.fetch).getMockImplementation()!
   let settingsReads = 0
-  vi.mocked(globalThis.fetch).mockImplementation(async (url: string | URL, init?: RequestInit) => {
-    const address = String(url)
+  vi.mocked(globalThis.fetch).mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const address = requestUrl(input)
     if (address.endsWith('/state')) {
-      const response = await original(url, init)
+      const response = await original(input, init)
       const value = JSON.parse(await response.text()) as Record<string, unknown>
       return Response.json({ ...value, masterId: undefined })
     }
     if (address.endsWith('/settings')) {
       settingsReads++
       if (settingsReads > 1) return new Response(JSON.stringify({ error: 'settings unavailable' }), { status: 500, headers: { 'content-type': 'application/json' } })
-      const response = await original(url, init)
+      const response = await original(input, init)
       return Response.json(JSON.parse(await response.text()))
     }
-    return original(url, init)
+    return original(input, init)
   })
   const container = document.createElement('div'); document.body.append(container)
   const root = createRoot(container)

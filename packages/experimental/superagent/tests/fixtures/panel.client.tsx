@@ -8,7 +8,7 @@ import { zh } from '../../src/client/locales.ts'
 import type { T } from '../../src/client/text.ts'
 import { server, usePanelServer } from './panel-server.client.ts'
 
-declare global { var IS_REACT_ACT_ENVIRONMENT: boolean }
+declare global { var IS_REACT_ACT_ENVIRONMENT: boolean | undefined }
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
 
 export const translator = (dictionary: Record<string, string>): T => ((key: string, params?: Record<string, unknown>) => {

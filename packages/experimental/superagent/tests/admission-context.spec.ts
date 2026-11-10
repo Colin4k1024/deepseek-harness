@@ -53,8 +53,10 @@ it('drops a message a later page repeats', async () => {
     messageId: 'om_0',
     read: async () => {
       read += 1
-      return read === 1 ? { messages: [message(0)], next: 'next' } : { messages: [message(0), message(1)], next: undefined }
+      return read === 1 ? { messages: [message(0)], next: 'next', body: {} } : { messages: [message(0), message(1)], next: undefined, body: {} }
     },
+    images: () => [],
+    image: async () => { throw new Error('No images') },
   }
   const result = await admissionContext(context, commands, 2)
   expect(result.messages.map(item => item.id)).toEqual(['om_0', 'om_1'])
@@ -62,7 +64,12 @@ it('drops a message a later page repeats', async () => {
 
 it('refuses pagination that repeats a cursor', async () => {
   const commands = new Commands(() => testDeployment(), {}, new AbortController().signal)
-  const context = { messageId: 'om_0', read: async () => ({ messages: [message(0)], next: 'same' }) }
+  const context = {
+    messageId: 'om_0',
+    read: async () => ({ messages: [message(0)], next: 'same', body: {} }),
+    images: () => [],
+    image: async () => { throw new Error('No images') },
+  }
   await expect(admissionContext(context, commands, 2)).rejects.toThrow('pagination repeated a cursor')
 })
 

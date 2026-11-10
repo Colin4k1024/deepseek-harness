@@ -229,9 +229,10 @@ it('shows the GitHub Source\'s switches for what it receives across the reposito
 it('tells the user Eval records are paused, resumes from Execution, and pages a larger Decision list', async () => {
   server.settings = { ...server.settings, paused: true }
   const original = vi.mocked(globalThis.fetch).getMockImplementation()!
-  vi.mocked(globalThis.fetch).mockImplementation(async (url: string | URL, init?: RequestInit) => String(url).includes('/decisions?')
+  const requestUrl = (input: RequestInfo | URL): string => input instanceof Request ? input.url : input instanceof URL ? input.href : input
+  vi.mocked(globalThis.fetch).mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => requestUrl(input).includes('/decisions?')
     ? new Response(JSON.stringify({ items: [acceptDecision()], next_offset: 30 }), { status: 200, headers: { 'content-type': 'application/json' } })
-    : original(url, init))
+    : original(input, init))
   at({ page: 'eval' })
   await mount()
   expect(text()).toContain(zh.evalRecordsPaused)
@@ -266,5 +267,7 @@ it('uses the default Policy part for an installed Source whose Policy part has n
   at({ page: 'settings', query: { group: 'eval' } })
   await mount()
   expect(all('.dt-part .dt-rows-item')).toHaveLength(0)
-  expect(find('立即同步', '.dt-part button').disabled).toBe(true)
+  const sync = find('立即同步', '.dt-part button')
+  if (!(sync instanceof HTMLButtonElement)) throw new Error('expected the sync button')
+  expect(sync.disabled).toBe(true)
 })

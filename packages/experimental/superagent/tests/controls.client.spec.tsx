@@ -7,7 +7,7 @@ import { expect, it, vi } from 'vitest'
 import { DisclosureRow, InfoTip, Modal, SegmentedControl, SegmentedTabs } from '../src/client/controls.tsx'
 
 declare global {
-  var IS_REACT_ACT_ENVIRONMENT: boolean
+  var IS_REACT_ACT_ENVIRONMENT: boolean | undefined
 }
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
 
@@ -205,7 +205,8 @@ it('toggles a disclosure row with Enter and Space, and ignores other keys', asyn
   const container = document.createElement('div'); document.body.append(container)
   const root = createRoot(container)
   await act(async () => { root.render(<Harness />) })
-  const [first, second] = [...container.querySelectorAll('[data-disclosure-row]')]
+  const [first, second] = [...container.querySelectorAll<HTMLElement>('[data-disclosure-row]')]
+  if (first === undefined || second === undefined) throw new Error('expected two disclosure rows')
   await act(async () => { first.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })) })
   await act(async () => { second.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true })) })
   await act(async () => { first.dispatchEvent(new KeyboardEvent('keydown', { key: 'x', bubbles: true })) })

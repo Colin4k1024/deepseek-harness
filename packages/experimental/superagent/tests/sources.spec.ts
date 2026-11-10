@@ -4,7 +4,7 @@ import {
   backfillChat, consumerRetry, feishuKind, feishuTriggerId, feishuRef, feishuTime, feishuTrigger,
   historyEvent, refreshChatNames, threadRef,
 } from '../src/sources/feishu.ts'
-import { KV } from '../src/kv.ts'
+import { KV, family } from '../src/kv.ts'
 import { apply as applyFeishu, pollThreads as pollFeishuThreads } from '../src/sources/feishu.ts'
 import { runFeishu } from '../src/sources/feishu-loops.ts'
 import { feishuParent, HistoricalMessageSchema, historyText, topicEvent } from '../src/sources/feishu-trigger.ts'
@@ -31,7 +31,7 @@ it('exposes Source state keys and sends notifications through the Outbox', () =>
   const sent: unknown[] = []
   const h = host({ outbox: { send: (message: unknown) => { sent.push(message) } } })
   h.state.set('github-cursor:7', '2026-09-09T00:00:00Z')
-  expect(h.state.keys('github-cursor:')).toEqual(['github-cursor:7'])
+  expect(h.state.keys(family<string, never>('github-cursor:'))).toEqual(['github-cursor:7'])
   const message = { id: 'notice-1', channel: { source: 'github', thread: 'github:7', address: {} }, text: 'Done', kind: 'notice' as const }
   h.notify(message)
   expect(sent).toEqual([message])
@@ -39,18 +39,19 @@ it('exposes Source state keys and sends notifications through the Outbox', () =>
 })
 
 it('describes Feishu listening rules and the bot variable without inventing a chat or name', () => {
-  if (!feishuKind.channel || !feishuKind.policy || !feishuKind.environment) throw new Error('Feishu kind is incomplete')
+  const environment = feishuKind.environment
+  if (!environment) throw new Error('Feishu kind is incomplete')
   const config = feishuKind.schema.parse({ otherChats: 'mentions', directMessages: false })
-  expect(feishuKind.policy.rows(config).find(row => row.id === 'other')).toMatchObject({
+  expect(feishuKind.policy?.rows?.(config).find(row => row.id === 'other')).toMatchObject({
     note: { zh: '仅 @', en: '@ only' }, cells: { unlistedAddressed: true },
   })
-  expect(feishuKind.channel.allowed({ direct: 'false' }, feishuKind.schema.parse({}))).toBe(false)
+  expect(feishuKind.channel?.allowed?.({ direct: 'false' }, feishuKind.schema.parse({}))).toBe(false)
   const deployment = testDeployment()
-  const values = feishuKind.environment.values({
-    deployment: { ...deployment, feishu: deployment.feishu ? { ...deployment.feishu, name: '' } : undefined }, config,
+  const values = environment.values({
+    deployment: { ...deployment, ...(deployment.feishu ? { feishu: { ...deployment.feishu, name: '' } } : {}) }, config,
   })
   expect(values).toMatchObject({ DSH_SUPERAGENT_FEISHU_BOT: 'ou_bot', DSH_SUPERAGENT_FEISHU_CHAT: '' })
-  expect(feishuKind.environment.values({ deployment: testDeployment({ feishu: undefined }), config })).toMatchObject({
+  expect(environment.values({ deployment: testDeployment({ feishu: undefined }), config })).toMatchObject({
     DSH_SUPERAGENT_FEISHU_BOT: '', DSH_SUPERAGENT_FEISHU_CHAT: '',
   })
 })
@@ -189,7 +190,7 @@ describe('feishu source', () => {
     const parent = feishuTrigger({ message_id: 'om_2', chat_id: 'oc_1', chat_type: 'group', sender_id: MEMBER, sender_type: 'user',
       content: 'hi', create_time: '1', parent_id: 'om_1' }, 'ou_bot', 'cli_bot')!
     expect(feishuParent(parent)).toBe(feishuTriggerId('om_1'))
-    const base = { message_id: 'om_2', chat_id: 'oc_1', create_time: '1', content: 'hi' }
+    const base = { message_id: 'om_2', chat_id: 'oc_1', create_time: '1', msg_type: 'text', content: 'hi' }
     expect(topicEvent({ ...base, sender: { id: 'ou_user', sender_type: 'user' } }, 'oc_1', false, 'om_root'))
       .toMatchObject({ sender_id: 'ou_user', root_id: 'om_root' })
     expect(topicEvent({ ...base, root_id: 'om_root', sender: { id: 'ou_user', open_bot_id: 'ou_bot', sender_type: 'app' } }, 'oc_1', true, 'om_root'))
@@ -452,7 +453,7 @@ describe('feishu source', () => {
     subscribed(h, source.threads[0]!, { chatId: 'oc_1', messageId: 'om_root', sourceTriggerId: source.id })
     h.store.threads.save({ ...h.store.threads.get(`feishu:${source.threads[0]!.id}`)!, lastAt: new Date().toISOString() })
     h.store.set('thread-initialized:feishu:oc_1:om_root', true)
-    h.receive.mockImplementationOnce(async () => { controller.abort() })
+    h.receive.mockImplementationOnce(async () => { controller.abort(); return 'stored' })
     const reply = (id: string) => ({ message_id: id, chat_id: 'oc_1', msg_type: 'text', content: `reply ${id}`,
       sender: { id: 'ou_guest', sender_type: 'user' }, create_time: String(Date.now()), thread_id: 'omt_1', root_id: 'om_root' })
     vi.spyOn(h.commands, 'withSignal').mockReturnValue(h.commands)
@@ -1081,7 +1082,7 @@ describe('github source', () => {
   it('uses an empty title for a new PR without one and skips one without an opening time', async () => {
     const h = host()
     h.store.set('github-since', '2026-09-08T00:00:00.000Z')
-    const untitled = openPull(9); delete untitled.title
+    const { title: _title, ...untitled } = openPull(9)
     github(h, { notifications: [notification(9, 'pulls')], 'pulls/9': { ...untitled, created_at: '2026-09-09T00:00:00Z' } })
     await pollRound(h)
     expect(h.receive).toHaveBeenCalledTimes(1)
@@ -1507,7 +1508,7 @@ describe('feishu event consumer', () => {
    * A bot CLI whose `event consume` behaves as `mode` says: `never` gets ready, `warn` warns once ready, `ready` stays up,
    * and `flaky` exits after its first ready. It records each run and the PID of the latest.
    */
-  function cli(mode: 'never' | 'warn' | 'ready' | 'flaky' | 'events' | 'late'): string {
+  function cli(mode: 'never' | 'warn' | 'ready' | 'flaky' | 'events' | 'late' | 'noise'): string {
     const path = join(dir, 'lark-bot')
     writeFileSync(path, `#!/bin/sh
   [ "$1" = event ] || { echo '{"ok":true,"data":{}}'; exit 0; }
@@ -2138,7 +2139,7 @@ describe('Feishu trigger adapters', () => {
     expect(historyText(message({ content: 'plain text' }))).toBe('plain text')
     expect(historyText(message({ content: '{"label":"x"}' }))).toBe('{"label":"x"}')
     expect(historyEvent(message({ content: '"hi"' }), 'oc_1', true)).toMatchObject({ chat_type: 'p2p', sender_id: 'ou_x' })
-    const event = topicEvent({ message_id: 'om_2', chat_id: 'oc_1', create_time: '2', sender: { id: 'ou_person', sender_type: 'user' },
+    const event = topicEvent({ message_id: 'om_2', chat_id: 'oc_1', create_time: '2', msg_type: 'text', sender: { id: 'ou_person', sender_type: 'user' },
       content: 'hi', mentions: [], parent_id: 'om_1', thread_id: 'omt_1', root_id: 'om_root' }, 'oc_1', false, 'om_root')
     expect(event).toMatchObject({ sender_id: 'ou_person', root_id: 'om_root' })
   })
@@ -2160,7 +2161,8 @@ describe('GitHub pull binding edges', () => {
     expect(claimPull(h, 't2', agentsPull(32, 'agent/fix-2'))).toBeUndefined()
     expect(h.store.tickets.get('t2')!.follows).toEqual([{ thread: 'github:32', own: true }])
     const { repo: _repo, ...head } = agentsPull(33, 'agent/fix-3').head
-    expect(agentPull({ ...agentsPull(33, 'agent/fix-3'), head }, testDeployment())).toBe(false)
+    const headWithoutRepository = { ...head, repo: undefined }
+    expect(agentPull({ ...agentsPull(33, 'agent/fix-3'), head: headWithoutRepository }, testDeployment())).toBe(false)
     h.store.close()
   })
 

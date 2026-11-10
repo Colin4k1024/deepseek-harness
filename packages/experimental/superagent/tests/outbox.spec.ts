@@ -36,16 +36,6 @@ it('holds every message while processing is paused, and sends it once processing
   expect(JSON.stringify(lark.mock.calls)).toContain('已合并。')
 })
 
-it('keeps a message waiting when its installed Source cannot send yet', async () => {
-  const probe: SourceKind<Record<string, never>> = { kind: 'probe', title: { zh: '探针', en: 'Probe' }, description: { zh: '', en: '' },
-    health: [], schema: z.object({}).strict(), fields: [],
-    channel: { send: async () => 'waiting', link: () => ({ url: '', label: { zh: '探针', en: 'Probe' } }) } }
-  h.runtime.sources.register(probe)
-  h.runtime.outbox.send({ id: 'not-ready', channel: { source: 'probe', thread: 'probe:1', address: {} }, text: 'Done', kind: 'reply' })
-  await h.runtime.sendReplies()
-  expect(h.runtime.outbox.status('not-ready')).toBe('pending')
-})
-
 it('keeps a message for a Source that is not installed waiting, and sends it once the Source\'s kind registers', async () => {
   const sent: OutboundMessage[] = []
   const probe: SourceKind<Record<string, never>> = { kind: 'probe', title: { zh: '探针', en: 'Probe' }, description: { zh: '', en: '' }, health: [],

@@ -7,7 +7,8 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { KV } from '../src/kv.ts'
 import { UserError } from '../src/core/index.ts'
 import { Commands } from '../src/infra/commands.ts'
-import { Setup } from '../src/app/setup.ts'
+import { Setup, type SetupHost } from '../src/app/setup.ts'
+import type { Context } from '@deepseek-ai/cordis'
 import { SettingsConflict } from '../src/app/settings.ts'
 import { startRuntime, type Host } from './fixtures/host.ts'
 import { testMachine } from './fixtures/deployment.ts'
@@ -195,8 +196,8 @@ it('resolves setup through worker probes and reports account and environment fai
     },
   } as unknown as SubprocessRuntime
   const reader = (text: () => string) => ({ readFrom: () => ({ text: text(), nextOffset: 0, lossy: false }) })
-  const host = (restarts: number[] = []) => ({
-    context: { subprocess: runtime, logger: { warn: vi.fn() } },
+  const host = (restarts: number[] = []): SetupHost => ({
+    context: { subprocess: runtime, logger: { warn: vi.fn() } } as unknown as Context,
     machine: testMachine({ stateDir: state }),
     lifetime: new AbortController().signal,
     restart: () => { restarts.push(restarts.length) },

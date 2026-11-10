@@ -24,7 +24,7 @@ import { feishuLink, sendFeishu } from '../src/sources/feishu-channel.ts'
 import { feishuChannel, feishuTriggerId } from '../src/sources/feishu-trigger.ts'
 import { githubLink } from '../src/sources/github-channel.ts'
 import { githubChannel } from '../src/sources/github-trigger.ts'
-import { followupOwners, type ChannelRef } from '../src/core/index.ts'
+import { followupOwners, type ChannelRef, type Decision } from '../src/core/index.ts'
 
 let directory: string
 let store: Store
@@ -329,7 +329,7 @@ it('words every kind of settings change, including rows without labels and Sourc
     { code: 'sourceDisabled', source: 'jira' }, { code: 'sourceDisabled', source: 'slack' },
   ]))
   const current = store.get(KV.settings.version(revision))!
-  store.set(KV.settings.version(revision + 1), { ...current, revision: revision + 1, previousRevision: revision - 1 })
+  store.set(KV.settings.version(revision + 1), { ...current, revision: revision + 1 })
   store.set(KV.settings.revision, revision + 1)
   store.delete(KV.settings.version(revision))
   store.delete(KV.settings.revision)
@@ -480,7 +480,7 @@ it('returns no Thread detail for an unknown key and names a missing correlated T
 
 it('returns no search rows for an empty query and no next decisions at a page boundary', () => {
   const host = views()
-  expect(search(host, '   ', { entries: () => new Map() })).toEqual({ tickets: [], items: [], threads: [] })
+  expect(search(host, '   ', { entries: () => new Map<string, string>().entries() })).toEqual({ tickets: [], items: [], threads: [] })
   for (const id of ['d1', 'd2', 'd3']) store.decisions.save({ id, evalId: id, threadKey: 'feishu:oc_1:om_root', triggerIds: [], policyVersion: 'v',
     at, kind: 'ignore', reason: [], strength: 'explicit' })
   expect(decisionList(host, ['ignore'], 0, 1)).toMatchObject({ items: [{ id: 'd3' }], next_offset: 1 })
@@ -534,7 +534,7 @@ it('omits a note for a ready report with no summary and names an unknown subscri
 
 it('finds search terms cached by their message link and shows a filtered Trigger with no Thread', () => {
   const host = views()
-  const links = { entries: () => new Map([['feishu:oc_1:om_9', 'https://example.com/link']]) }
+  const links = { entries: () => new Map<string, string>([['feishu:oc_1:om_9', 'https://example.com/link']]).entries() }
   expect(search(host, 'https://example.com/link', links).items).toEqual([])
   store.triggers.save({ ...message('f1', { source: 'feishu', id: 'ou_bob' }), text: 'needle', human: false,
     threads: [{ source: 'feishu', id: 'gone' }] })
@@ -545,14 +545,14 @@ it('finds search terms cached by their message link and shows a filtered Trigger
   store.triggers.save({ ...message('f3', { source: 'feishu', id: 'ou_bob' }, true, at), text: 'needle' })
   store.triggers.saveDisposition('f3', { fanout: [], at })
   expect(search(host, 'other', links).items).toEqual([])
-  const rows = search(host, 'needle', { entries: () => new Map() }).items
+  const rows = search(host, 'needle', { entries: () => new Map<string, string>().entries() }).items
   expect(rows.map(item => item.id)).toEqual(expect.arrayContaining(['f1', 'f2', 'f3']))
   const third = rows.find(item => item.id === 'f3')!
   expect(third).not.toHaveProperty('filtered')
   expect(third).toMatchObject({ threadTitle: 'needle' })
   store.triggers.save({ ...message('f4', { source: 'feishu', id: 'ou_bob' }, true, at), text: 'needle', threads: [{ source: 'feishu', id: 'gone' }] })
   store.triggers.saveDisposition('f4', { fanout: [], at })
-  const fallback = search(host, 'needle', { entries: () => new Map() }).items.find(item => item.id === 'f4')!
+  const fallback = search(host, 'needle', { entries: () => new Map<string, string>().entries() }).items.find(item => item.id === 'f4')!
   expect(fallback).toMatchObject({ filtered: '', threadTitle: undefined })
   expect(rows.find(item => item.id === 'f1')).toMatchObject({ filtered: { code: 'chat_not_allowed' }, threadTitle: undefined })
 })
@@ -560,9 +560,9 @@ it('finds search terms cached by their message link and shows a filtered Trigger
 it('projects decisions from current and legacy audit records, including missing related records', () => {
   const host = views()
   const view = snapshot(host)
-  const base = { evalId: 'e1', threadKey: 'github:gone', triggerIds: ['gone'], policyVersion: 'v', at, kind: 'ignore', reason: [],
-    strength: 'inferred' } as const
-  const decision = (id: string, audit: unknown) => ({ id, ...base, audit, ...id === 'ticketed' ? { ticketId: 'gone-ticket' } : {} })
+  const base: Omit<Decision, 'id' | 'audit' | 'ticketId'> = { evalId: 'e1', threadKey: 'github:gone', triggerIds: ['gone'],
+    policyVersion: 'v', at, kind: 'ignore', reason: [], strength: 'inferred' }
+  const decision = (id: string, audit: Record<string, unknown> = {}): Decision => ({ id, ...base, audit, ...id === 'ticketed' ? { ticketId: 'gone-ticket' } : {} })
   expect(decisionView(view, decision('would', { would_accept: true }))).toMatchObject({ outcome: 'wouldAccept' })
   expect(decisionView(view, decision('legacy', { matches: [{ rule_id: 'copy', reason: 'matched' }] }))).toMatchObject({
     rules: [{ id: 'copy', name: 'Copy fixes', matched: true, reason: 'matched' }], preview: '',
@@ -629,20 +629,24 @@ it('adds a reply link and renders text Inputs for a ticket waiting on a person',
 })
 
 it('projects settings blocks, Source forms, policy metadata, and the execution environment', () => {
-  const plain: SourceKind = {
+  const policySchema = z.object({
+    room: z.string().default(''),
+    allowed: z.array(z.object({ id: z.string(), name: z.string().optional() }).strict()).default([]),
+  }).strict()
+  const plain: SourceKind<{ poll: number }> = {
     kind: 'github', title: { zh: 'GitHub', en: 'GitHub' }, description: { zh: 'GitHub 描述', en: 'GitHub description' },
     health: [], schema: z.object({ poll: z.number().default(1) }).strict(),
     fields: [{ key: 'poll', type: 'number', min: 1, max: 60, label: { zh: '轮询', en: 'Poll' } }],
     facts: () => ({ repository: 'acme/widgets' }),
-    policy: { schema: z.object({ room: z.string().default('') }).strict(), fields: [], explicit: { zh: '', en: '' } },
+    policy: { schema: policySchema, fields: [], explicit: { zh: '', en: '' } },
   }
   const rich: SourceKind = {
     kind: 'probe', title: { zh: '探针', en: 'Probe' }, description: { zh: '', en: '' }, health: [], schema: z.object({}).strict(),
     fields: [], facts: () => ({}),
     policy: {
-      schema: z.object({ room: z.string().default('') }).strict(), fields: [], explicit: { zh: '', en: '' },
+      schema: policySchema, fields: [], explicit: { zh: '', en: '' },
       rows: () => [{ id: 'room', label: { zh: '房间', en: 'Room' }, note: { zh: '', en: '' }, cells: { listedUnaddressed: false, unlistedAddressed: false, unlistedUnaddressed: false } }],
-      sync: { label: { zh: '同步', en: 'Sync' }, ready: () => true, run: async () => ({ room: 'room' }) },
+      sync: { label: { zh: '同步', en: 'Sync' }, ready: () => true, run: async () => policySchema.parse({ room: 'room' }) },
     },
   }
   store.saveSettings(SettingsSchema.parse({

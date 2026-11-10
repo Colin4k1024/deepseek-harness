@@ -1,7 +1,7 @@
 import { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { createUserMessage, type UserMessage } from '@deepseek-ai/dsh-llm'
-import { SessionId, SessionSeq, type SessionEvent } from '@deepseek-ai/dsh-session'
+import { Session, SessionId, SessionSeq, type SessionEvent } from '@deepseek-ai/dsh-session'
 import { expect, it, vi } from 'vitest'
 import { AgentDelivery } from '../src/app/delivery.ts'
 
@@ -35,8 +35,8 @@ function fixture(history: UserMessage[] = []) {
 
 it('ignores Session events that are not user messages, live and restored', async () => {
   const f = fixture()
-  const ended: SessionEvent<'turn/end'> = { type: 'turn/end', seq: SessionSeq(1), time: 1, surfaceOp: 'append',
-    data: { turn: 1, reason: { kind: 'completed' } } }
+  const ended = Session.create(SessionId('delivery-ended'))
+    .append('turn/end', { turn: 1, reason: { kind: 'completed' } })
   f.read.mockResolvedValueOnce({ events: [ended] })
   f.ctx.emit('session/event', f.agent.session, ended)
   await f.holds('request')
