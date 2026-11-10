@@ -186,3 +186,18 @@ describe('Source registry', () => {
     expect(run.mock.calls[0]![1]).toEqual(expect.arrayContaining(['+messages-reply', '--message-id', 'om_dm']))
   })
 })
+
+describe('Source registry optional capabilities', () => {
+  it('uses kind defaults for an invalid stored policy part and omits capabilities a kind does not declare', () => {
+    const settings = SettingsSchema.parse({ policy: { sources: { feishu: { allowed: [], syncChat: 123 } } } })
+    const sources = new SourceRegistry(() => settings)
+    sources.register(feishuKind)
+    expect(sources.policyPart('feishu')).toEqual({ allowed: [], syncChat: '', admission: {} })
+    const quiet = new SourceRegistry(() => SettingsSchema.parse({}))
+    quiet.register(probe)
+    expect(quiet.declarations()).toEqual([])
+    expect(quiet.environments()).toEqual([])
+    expect(quiet.find('anything')).toEqual({ threads: [], terms: [] })
+    expect(quiet.scope({ source: 'probe', meta: {} })).toEqual({ listened: true, observed: false })
+  })
+})

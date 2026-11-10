@@ -2,12 +2,14 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { z } from 'zod'
 import { Store } from '../src/app/store.ts'
 import { Commands } from '../src/infra/commands.ts'
 import { testDeployment } from './fixtures/deployment.ts'
 import { SettingsSchema } from '../src/policy.ts'
 import { SourceRegistry } from '../src/sources/registry.ts'
 import { feishuKind } from '../src/sources/feishu.ts'
+import type { SourceKind } from '../src/sources/kind.ts'
 import { githubKind } from '../src/sources/github.ts'
 import { awaitingEval, channelLink, decisionView, page, snapshot, threadSummary, ticketSummary, triggerView } from '../src/app/views/records.ts'
 import { basisFacts, executorLoad, ticketDetail, ticketList } from '../src/app/views/tickets.ts'
@@ -16,6 +18,7 @@ import { droppedReplies, sourcesStatus } from '../src/app/views/sources.ts'
 import { overview } from '../src/app/views/overview.ts'
 import { markdown, plain } from '../src/app/views/text.ts'
 import { policyHistory } from '../src/app/settings-history.ts'
+import { settingsView } from '../src/app/views/settings.ts'
 import { KV } from '../src/kv.ts'
 import { feishuLink, sendFeishu } from '../src/sources/feishu-channel.ts'
 import { feishuChannel, feishuTriggerId } from '../src/sources/feishu-trigger.ts'
@@ -518,4 +521,46 @@ it('adds a reply link and renders text Inputs for a ticket waiting on a person',
   const detail = ticketDetail(host, 't1')!
   expect(detail.inputs.map(input => input.text)).toEqual(['the build failed', 'look at page 2'])
   expect(detail.decision).toBeUndefined()
+})
+
+it('projects settings blocks, Source forms, policy metadata, and the execution environment', () => {
+  const plain: SourceKind = {
+    kind: 'github', title: { zh: 'GitHub', en: 'GitHub' }, description: { zh: 'GitHub 描述', en: 'GitHub description' },
+    health: [], schema: z.object({ poll: z.number().default(1) }).strict(),
+    fields: [{ key: 'poll', type: 'number', min: 1, max: 60, label: { zh: '轮询', en: 'Poll' } }],
+    facts: () => ({ repository: 'acme/widgets' }),
+    policy: { schema: z.object({ room: z.string().default('') }).strict(), fields: [], explicit: { zh: '', en: '' } },
+  }
+  const rich: SourceKind = {
+    kind: 'probe', title: { zh: '探针', en: 'Probe' }, description: { zh: '', en: '' }, health: [], schema: z.object({}).strict(),
+    fields: [], facts: () => ({}),
+    policy: {
+      schema: z.object({ room: z.string().default('') }).strict(), fields: [], explicit: { zh: '', en: '' },
+      rows: () => [{ id: 'room', label: { zh: '房间', en: 'Room' }, note: { zh: '', en: '' }, cells: { listedUnaddressed: false, unlistedAddressed: false, unlistedUnaddressed: false } }],
+      sync: { label: { zh: '同步', en: 'Sync' }, ready: () => true, run: async () => ({ room: 'room' }) },
+    },
+  }
+  store.saveSettings(SettingsSchema.parse({
+    sources: {
+      github: { enabled: true, config: {} }, probe: { enabled: true, config: {} }, retired: { enabled: true, config: { keep: true } },
+    },
+    policy: { sources: { github: { room: 'chat' }, probe: { room: 'room' } } },
+  }))
+  const sources = new SourceRegistry(() => store.settings())
+  sources.register(plain); sources.register(rich)
+  const setup = { deployment: testDeployment(), problem: { place: 'github' as const, code: 'repositoryUnset' as const, values: {}, detail: 'repository unset' } }
+  const view = settingsView(store, sources, { 'sync:probe': { state: 'ready', detail: 'ok' } }, setup, '/state')
+  expect(view.policyVersion).toBeTruthy()
+  expect(view.blocks).toEqual({
+    policy: { value: store.settings().policy, revision: 0 },
+    eval: { value: store.settings().eval, revision: 0 },
+    executor: { value: store.settings().executor, revision: 0 },
+  })
+  expect(view.sources).toEqual([
+    expect.objectContaining({ id: 'github', kind: 'github', installed: true, restarts: ['repository', 'cli'], fields: plain.fields, facts: { repository: 'acme/widgets' }, problem: setup.problem, policy: { fields: [], explicit: { zh: '', en: '' } } }),
+    expect.objectContaining({ id: 'probe', kind: 'probe', installed: true, restarts: [], fields: [], facts: {}, policy: { fields: [], explicit: { zh: '', en: '' }, rows: [expect.anything()], sync: { label: { zh: '同步', en: 'Sync' }, ready: true, health: { state: 'ready', detail: 'ok' } } } }),
+    expect.objectContaining({ id: 'retired', kind: 'retired', installed: false, description: { zh: '', en: '' }, restarts: [], fields: [], facts: {} }),
+  ])
+  expect(view.environment.root).toBe('/state/work')
+  expect(Array.isArray(view.environment.variables)).toBe(true)
 })

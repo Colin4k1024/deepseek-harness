@@ -1,10 +1,10 @@
 // @vitest-environment jsdom
 // The Eval status and settings.
 import { act } from 'react'
-import { expect, it } from 'vitest'
+import { expect, it, vi } from 'vitest'
 import { en, zh } from '../src/client/locales.ts'
-import { usePanel, mount, remount, settle, all, find, tab, click, type, text, field } from './fixtures/panel.client.tsx'
-import { server } from './fixtures/panel-server.client.ts'
+import { usePanel, mount, remount, settle, all, find, tab, click, type, text, field, at } from './fixtures/panel.client.tsx'
+import { acceptDecision, server } from './fixtures/panel-server.client.ts'
 
 usePanel()
 it('opens the Decisions under Policy from the flow line with their reasons, Decisions that start work first, filterable by kind',
@@ -211,4 +211,47 @@ it('shows the GitHub Source\'s switches for what it receives across the reposito
   // CI has no sender: its one cell is that of a message off the list that does not mention the agent.
   expect(field('Default branch CI · Not on the list · no mention')).toBeTruthy()
   expect(all('.dt-admission thead th').map(cell => cell.textContent)).toContain(en.admissionAddressed)
+})
+
+it('tells the user Eval records are paused, resumes from Execution, and pages a larger Decision list', async () => {
+  server.settings = { ...server.settings, paused: true }
+  const original = vi.mocked(globalThis.fetch).getMockImplementation()!
+  vi.mocked(globalThis.fetch).mockImplementation(async (url: string | URL, init?: RequestInit) => String(url).includes('/decisions?')
+    ? new Response(JSON.stringify({ items: [acceptDecision()], next_offset: 30 }), { status: 200, headers: { 'content-type': 'application/json' } })
+    : original(url, init))
+  at({ page: 'eval' })
+  await mount()
+  expect(text()).toContain(zh.evalRecordsPaused)
+  await click(zh.resumeWhere)
+  expect(tab(zh['tab.execution']).getAttribute('aria-selected')).toBe('true')
+  await click(zh['tab.eval'])
+  await click(zh.loadMore)
+  const request = vi.mocked(globalThis.fetch).mock.calls.at(-1)?.[0] as string | URL | undefined
+  expect(request instanceof URL ? request.href : request ?? '').toContain('decisions?limit=60')
+  vi.mocked(globalThis.fetch).mockImplementation(original)
+})
+
+it('shows roster sync health, collapses an open rule, and reports an empty rule list', async () => {
+  server.health = { 'sync:feishu': { state: 'ready', detail: '', at: '2026-09-23T00:00:00Z' } }
+  at({ page: 'settings', query: { group: 'eval' } })
+  await mount()
+  expect(text()).toContain(zh.syncDone)
+  const rule = all('.dt-rule [data-disclosure-row]')[0]!
+  await click(rule)
+  await click(rule)
+  expect(all('.dt-rule[data-open], .dt-disclosure[data-open]').filter(item => item.closest('.dt-rule'))).toHaveLength(0)
+  server.health = { 'sync:feishu': { state: 'error', detail: 'member list read failed' } }
+  await remount()
+  expect(text()).toContain('member list read failed')
+  server.settings = { ...server.settings, policy: { ...server.settings.policy, rules: [] } }
+  await remount()
+  expect(text()).toContain(zh.rulesEmpty)
+})
+
+it('uses the default Policy part for an installed Source whose Policy part has never been saved', async () => {
+  server.settings = { ...server.settings, policy: { ...server.settings.policy, sources: {} } }
+  at({ page: 'settings', query: { group: 'eval' } })
+  await mount()
+  expect(all('.dt-part .dt-rows-item')).toHaveLength(0)
+  expect(find('立即同步', '.dt-part button').disabled).toBe(true)
 })

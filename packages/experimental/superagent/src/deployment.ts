@@ -1,4 +1,5 @@
 /** Plugin configuration and startup verification for repository access and agent CLI identities. */
+import { required } from './core/required.ts'
 import { LIMITS } from './limits.ts'
 import { accessSync, constants, statSync } from 'node:fs'
 import { delimiter, isAbsolute, join } from 'node:path'
@@ -163,7 +164,7 @@ export async function resolveFeishuBot(machine: Machine, feishu: unknown, probe:
   const mode = /strict-mode:\s*(\w+)/.exec(await run('config', 'strict-mode'))?.[1]
   if (mode !== 'bot') fail(new SetupError('feishuUserIdentity', { mode: mode ?? 'unknown' }))
   // `--format json` unwraps only `data`, whereas this endpoint returns the payload under `bot`.
-  const info = parsed(BotInfo, (await run('api', 'GET', '/open-apis/bot/v3/info', '--as', 'bot', '--format', 'ndjson')).split('\n')[0] ?? '')
+  const info = parsed(BotInfo, required((await run('api', 'GET', '/open-apis/bot/v3/info', '--as', 'bot', '--format', 'ndjson')).split('\n')[0]))
   if (!info) return fail(new SetupError('feishuNoBot'))
   return { cli, appId: status.appId, brand: status.brand, botId: info.bot.open_id, name: info.bot.app_name }
 }

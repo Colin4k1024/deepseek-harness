@@ -191,3 +191,61 @@ it('reports when the Trigger page needed to fill a deep-linked gap is gone', asy
   await mount()
   expect(text()).toContain('Thread not found')
 })
+
+it('marks a queued Trigger and fanout to Tickets it does not list', async () => {
+  server.threadPages = () => ({ ...threadSummary(), tickets: [], correlated: [], decisions: [], context: [], earlier: null,
+    url: undefined, timeline: [
+      trigger('queued', '2026-09-23T00:00:00Z', { disposition: { queued: true } }),
+      trigger('fanout', '2026-09-23T00:01:00Z', { disposition: { fanout: ['other-ticket'] } }),
+    ] })
+  at({ page: 'trigger', id: threadSummary().key })
+  await mount()
+  expect(all('.dt-tag').map(tag => tag.textContent)).toEqual([zh.dispositionFanout.replace('{count}', '1'), zh.dispositionQueued])
+})
+
+it('shows an empty Thread without an original link, and its live evaluation and polling problems', async () => {
+  server.threadPages = () => ({
+    ...threadSummary({ evaluating: { triggers: 2, strength: 'explicit', deadline: '2026-09-23T00:10:00Z' }, pollError: 'socket closed' }),
+    tickets: [], correlated: [], decisions: [], context: [], earlier: null, url: undefined, timeline: [],
+  })
+  at({ page: 'trigger', id: threadSummary().key })
+  await mount()
+  expect(text()).toContain(zh.noTriggers)
+  expect(text()).toContain('评估进行中：2 条触发，明确，')
+  expect(text()).toContain(zh.pollFailed.replace('{error}', 'socket closed'))
+  expect(all('button').some(button => button.textContent === zh.openOriginal)).toBe(false)
+  expect(all('button').some(button => button.textContent === zh.unsubscribe)).toBe(false)
+})
+
+it('reads a deep-linked Trigger into the newest page', async () => {
+  server.threadPages = (_key, { around, before }) => around === 'old' || before ? { ...threadSummary(), tickets: [], correlated: [], decisions: [],
+    context: [], earlier: null, url: undefined, timeline: [trigger('old', '2026-09-20T00:00:00Z')] }
+    : { ...threadSummary(), tickets: [], correlated: [], decisions: [], context: [], earlier: 'cursor', url: undefined,
+      timeline: [trigger('new', '2026-09-23T00:00:00Z')] }
+  at({ page: 'trigger', id: threadSummary().key, query: { trigger: 'old' } })
+  await mount()
+  expect(all('.dt-event .dt-event-text').map(item => item.textContent)).toEqual(['message new', 'message old'])
+  expect(document.querySelector('.dt-highlight .dt-event-text')?.textContent).toBe('message old')
+})
+
+it('reports a Trigger already queued for Eval', async () => {
+  const original = vi.mocked(globalThis.fetch).getMockImplementation()!
+  vi.mocked(globalThis.fetch).mockImplementation(async (url: string | URL, init?: RequestInit) => String(url).includes('/triggers/')
+    ? new Response(JSON.stringify({ queued: false }), { status: 200, headers: { 'content-type': 'application/json' } })
+    : original(url, init))
+  at({ page: 'trigger', id: threadSummary().key })
+  await mount()
+  await click(zh.requeue)
+  expect([...document.querySelectorAll('.dt-toast')].at(-1)?.textContent).toBe(zh.requeueAlready)
+  vi.mocked(globalThis.fetch).mockImplementation(original)
+})
+
+it('says an unsubscribe receipt is still pending', async () => {
+  at({ page: 'trigger', id: threadSummary().key })
+  await mount()
+  await click(zh.unsubscribe)
+  vi.mocked(globalThis.fetch).mockImplementationOnce(async () => new Response(JSON.stringify({ removed: true,
+    thread: threadSummary().key, context_delivery: 'pending' }), { status: 200, headers: { 'content-type': 'application/json' } }))
+  await click(zh.confirm)
+  expect([...document.querySelectorAll('.dt-toast')].map(item => item.textContent)).toContain(zh.unsubscribePending)
+})

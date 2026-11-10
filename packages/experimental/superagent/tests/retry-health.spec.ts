@@ -145,6 +145,17 @@ it.each([NaN, Infinity, -1, 1.5])('ignores malformed retry count %s', (attempts)
   expect(health.list()).toEqual([])
 })
 
+it('ignores malformed event envelopes and budget failures without a message', () => {
+  const health = new RetryHealth()
+  health.observe('worker', event('llm/retry', 1, null))
+  health.observe('worker', event('llm/retry', 2, { turn: '1', step: 2 }))
+  expect(health.list()).toEqual([])
+  health.observe('worker', retry(3, { failure: { code: 'INVALID_REQUEST', status: 500 } }))
+  expect(health.list()).toEqual([])
+  health.observe('worker', retry(4, { failure: { message: '{"code":"budget_exceeded"}' } }))
+  expect(health.get('worker')?.attempts).toBe(1)
+})
+
 it('projects only user, tool, and assistant messages into transcript entries', () => {
   const session = Session.create(SessionId('transcript'))
   const user = createUserMessage({ content: [{ type: 'text', text: 'please fix' }] })

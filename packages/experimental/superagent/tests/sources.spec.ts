@@ -7,13 +7,14 @@ import {
 import { KV } from '../src/kv.ts'
 import { apply as applyFeishu, pollThreads as pollFeishuThreads } from '../src/sources/feishu.ts'
 import { runFeishu } from '../src/sources/feishu-loops.ts'
+import { feishuParent, HistoricalMessageSchema, historyText, topicEvent } from '../src/sources/feishu-trigger.ts'
 import { CommentSchema, commentTrigger, githubAddress, githubChannel, issueTrigger, reviewPlace, type GithubComment, type GithubIssue } from '../src/sources/github-trigger.ts'
-import { claimPull, observePull, pullEndNotices, pullOf, ticketBranch, type Pull } from '../src/sources/github-pull.ts'
+import { agentPull, claimPull, observePull, pullEndNotices, pullOf, ticketBranch, type Pull } from '../src/sources/github-pull.ts'
 import { ciCounts, ciFact, ciSummary } from '../src/sources/github-read.ts'
 import { apply as applyGithub, githubKind, pollFailure, pollRound, pollTicketPulls } from '../src/sources/github.ts'
 import { pollThreads as pollGithubThreads } from '../src/sources/github.ts'
 import { SourceRegistry } from '../src/sources/registry.ts'
-import { cursorAt, POLL_HORIZON_MS } from '../src/sources/poll.ts'
+import { cursorAt, pause, POLL_HORIZON_MS, pollThreads as pollEachThreads } from '../src/sources/poll.ts'
 import { Store } from '../src/app/store.ts'
 import { Commands, commandError } from '../src/infra/commands.ts'
 import { HealthBoard } from '../src/infra/health.ts'
@@ -2099,6 +2100,69 @@ describe('observing the GitHub repository', () => {
     expect(h.receive.mock.calls[0]![0]).toMatchObject({ human: false, actor: { id: '' }, threads: [{ source: 'github', id: 'ci:main' }],
       meta: { ci: true, branch: 'main', sha: 'bbb2222' }, url: 'https://github.com/acme/widgets/commit/bbb2222' })
     expect(h.receive.mock.calls[0]![0].text).toContain('Read github/commits/bbb2222/checks for every check.')
+    h.store.close()
+  })
+})
+
+describe('Feishu trigger adapters', () => {
+  it('falls back for parents, history text, direct history, and topic events', () => {
+    const message = (body?: { content: string }) => HistoricalMessageSchema.parse({
+      message_id: 'om_1', chat_id: 'oc_1', create_time: '1', sender: { id: 'ou_x', sender_type: 'user' }, ...(body ? { body } : {}),
+    })
+    expect(feishuParent({ ...triggerFixture(), source: 'github' })).toBeUndefined()
+    expect(feishuParent({ ...triggerFixture(), meta: { parentId: 7 } })).toBeUndefined()
+    expect(historyText(message())).toBe('')
+    expect(historyText(message({ content: 'plain text' }))).toBe('plain text')
+    expect(historyText(message({ content: '{"label":"x"}' }))).toBe('{"label":"x"}')
+    expect(historyEvent(message({ content: '"hi"' }), 'oc_1', true)).toMatchObject({ chat_type: 'p2p', sender_id: 'ou_x' })
+    const event = topicEvent({ message_id: 'om_2', chat_id: 'oc_1', create_time: '2', sender: { id: 'ou_person', sender_type: 'user' },
+      content: 'hi', mentions: [], parent_id: 'om_1', thread_id: 'omt_1', root_id: 'om_root' }, 'oc_1', false, 'om_root')
+    expect(event).toMatchObject({ sender_id: 'ou_person', root_id: 'om_root' })
+  })
+
+  function triggerFixture() {
+    return { id: 't', source: 'feishu', threads: [{ source: 'feishu', id: 'x' }], actor: { source: 'feishu', id: 'u' }, human: true,
+      at: '', text: '', meta: {} }
+  }
+})
+
+describe('GitHub pull binding edges', () => {
+  it('binds an open agent PR over a followed or closed PR, and rejects one with no repository', async () => {
+    const h = host()
+    h.store.tickets.save({ ...openTicket('t1'), execution: execution('fix-1'), follows: [{ thread: 'github:31', own: false }] })
+    expect(claimPull(h, 't1', agentsPull(31, 'agent/fix-1'))).toBeUndefined()
+    expect(h.store.tickets.get('t1')!.follows).toEqual([{ thread: 'github:31', own: true }])
+    h.store.tickets.save({ ...openTicket('t2'), execution: execution('fix-2'),
+      follows: [{ thread: 'github:32', own: true, closed: { at: '2026-09-01T00:00:00Z', outcome: 'closed' } }] })
+    expect(claimPull(h, 't2', agentsPull(32, 'agent/fix-2'))).toBeUndefined()
+    expect(h.store.tickets.get('t2')!.follows).toEqual([{ thread: 'github:32', own: true }])
+    const { repo: _repo, ...head } = agentsPull(33, 'agent/fix-3').head
+    expect(agentPull({ ...agentsPull(33, 'agent/fix-3'), head }, testDeployment())).toBe(false)
+    h.store.close()
+  })
+
+  it('selects the latest closed PR and writes both terminal outcomes in both languages', () => {
+    const ticket: Ticket = { ...openTicket('t1'), channels: [{ source: 'feishu', thread: 'feishu:oc_1', address: {} }],
+      follows: [
+        { thread: 'github:1', own: true, closed: { at: '2026-09-01T00:00:00Z', outcome: 'closed' } },
+        { thread: 'github:2', own: true, closed: { at: '2026-09-02T00:00:00Z', outcome: 'merged' } },
+      ], ended: { at: '2026-09-02T00:00:00Z', by: 'executor', reason: 'merged', outcome: 'merged' } }
+    expect(pullEndNotices(ticket, '修一下', 'acme/widgets')[0]!.text).toContain('PR #2')
+    expect(pullEndNotices(ticket, '修一下', 'acme/widgets')[0]!.text).toContain('已合并')
+    expect(pullEndNotices({ ...ticket, ended: { ...ticket.ended!, outcome: 'closed' } }, 'fix it', 'acme/widgets')[0]!.text)
+      .toContain('was closed without merging')
+  })
+})
+
+describe('poll helpers', () => {
+  it('stops before polling and resolves an already aborted pause', async () => {
+    const h = host()
+    subscribed(h, { source: 'feishu', id: 'fresh' })
+    const poll = vi.fn()
+    await pollEachThreads(h, 'feishu', () => true, poll)
+    expect(poll).not.toHaveBeenCalled()
+    const controller = new AbortController(); controller.abort()
+    await expect(pause(60_000, controller.signal)).resolves.toBeUndefined()
     h.store.close()
   })
 })

@@ -180,6 +180,14 @@ it('reports an action that fails after a commit, runs the others, and keeps what
   store.close()
 })
 
+it('rethrows a failed working-set upgrade without the migration wrapper', () => {
+  const prototype = Store.prototype as unknown as { addColumns: () => void }
+  const addColumns = vi.spyOn(prototype, 'addColumns').mockImplementationOnce(() => { throw new Error('working sets failed') })
+  try {
+    expect(() => new Store(join(directory, 'columns.sqlite'))).toThrow('working sets failed')
+  } finally { addColumns.mockRestore() }
+})
+
 it('closes a database it cannot open as this version\'s, so a later attempt can open it', () => {
   const path = join(directory, 'orchestrator.sqlite')
   const store = new Store(path)
@@ -290,5 +298,18 @@ it('reads `%` and `_` in a key prefix and a search query as written, not as patt
     human: true, at: '2026-10-01T00:00:00.000Z', text, meta: {} })
   for (const [id, text] of [['p', 'grew 50% today'], ['q', 'grew 500 today'], ['r', 'see a_b'], ['s', 'see axb']]) store.triggers.save(said(id!, text!))
   expect([store.read.search('50%').map(item => item.id), store.read.search('a_b').map(item => item.id)]).toEqual([['p'], ['r']])
+  store.close()
+})
+
+it('recreates an outbox receipt whose pending row was withdrawn, with or without its ticket', () => {
+  const store = new Store(join(directory, 'outbox.sqlite'))
+  const message = (id: string, ticketId?: string) => ({
+    id, channel: { source: 'github', thread: 'github:1', address: {} }, text: `reply ${id}`, kind: 'reply' as const, ...ticketId ? { ticketId } : {},
+  })
+  store.receipts.settle(message('withdrawn', 't1'), 'sent')
+  expect(store.receipts.get('withdrawn')).toMatchObject({ id: 'withdrawn', ticketId: 't1', status: 'sent' })
+  store.receipts.settle(message('plain'), 'channelGone')
+  expect(store.receipts.get('plain')).toMatchObject({ id: 'plain', status: 'dropped', dropped: { reason: 'channelGone' } })
+  expect('ticketId' in (store.receipts.get('plain') ?? {})).toBe(false)
   store.close()
 })

@@ -112,7 +112,7 @@ export class SourceRegistry implements SourceScope {
     const parsed = policy.schema.safeParse(rest)
     return {
       ...(parsed.success ? parsed.data : policy.schema.parse({})),
-      admission: AdmissionTableSchema.safeParse(admission ?? {}).data ?? {},
+      admission: AdmissionTableSchema.parse(admission ?? {}),
     }
   }
   channelAllowed(channel: { source: string; address: Record<string, string> }, settings = this.settings()): boolean {

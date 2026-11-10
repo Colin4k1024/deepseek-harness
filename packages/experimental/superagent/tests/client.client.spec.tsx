@@ -4,7 +4,7 @@ import { createRoot } from 'react-dom/client'
 import { afterEach, expect, it, vi } from 'vitest'
 import { ApiError, caller, usePoll, type DecisionRow } from '../src/client/api.ts'
 import { apply } from '../src/client/plugin.tsx'
-import { PanelProvider } from '../src/client/provider.tsx'
+import { PanelProvider, usePanel, usePanelData } from '../src/client/provider.tsx'
 import { DecisionLine, Earlier, ThreadLine, TicketLine, automatedRuns } from '../src/client/rows.tsx'
 import { CheckSetupButton, ClampText, ConfirmButton, ExternalLink, Hint, KeyValues, LabelValue, LoadMore, LoadState, MarkdownLite, PageHead, Section, SessionButton, SetupMessage, StageMark, StatusHead, When } from '../src/client/widgets.tsx'
 import { zh } from '../src/client/locales.ts'
@@ -312,6 +312,17 @@ it('renders the shared widgets, confirms actions, opens Sessions, and rechecks s
   expect(requests).toContain('/orchestrator/api/setup/check')
   expect(backedUp).toBe(true); expect(loadedMore).toBe(true); expect(routes[0]).toMatchObject({ page: 'settings' })
   act(() => { root.unmount() }); container.remove()
+})
+
+it('refuses panel hooks outside the panel provider', async () => {
+  function OutsideData() { usePanelData(); return null }
+  function OutsidePanel() { usePanel(); return null }
+  for (const Outside of [OutsideData, OutsidePanel]) {
+    const container = document.createElement('div'); document.body.append(container)
+    const root = createRoot(container)
+    expect(() => { act(() => { root.render(<Outside />) }) }).toThrow('dsh-superagent page rendered outside its panel')
+    act(() => { root.unmount() }); container.remove()
+  }
 })
 
 it('renders ticket, thread, decision, and earlier rows with their navigation and folding behavior', async () => {

@@ -24,14 +24,14 @@ function serve(runtime: Partial<Record<keyof HttpHost, unknown>>, host = '127.0.
   let handler: Handler = async () => {}
   const ctx = { webServer: { host, port: 3082, register: (route: { handler: Handler }) => { handler = route.handler; return () => {} } } }
   registerHttp(ctx as never, { ready: Promise.resolve(), ...runtime } as unknown as HttpHost)
-  return async (method: string, path: string, body?: unknown, headers: Headers = {}) => {
+  return async (method: string | undefined, path: string | undefined, body?: unknown, headers: Headers = {}) => {
     let status = 0, text = ''
     const chunks = body === undefined ? [] : [Buffer.from(typeof body === 'string' ? body : JSON.stringify(body))]
     const sent = Object.fromEntries(Object.entries({ host: '127.0.0.1:3082', 'x-orchestrator-request': '1', ...headers }).filter(([,
       value]) => value !== undefined))
-    const req = { method, url: `/orchestrator/api/${path}`, headers: sent, async *[Symbol.asyncIterator]() { yield* chunks } }
+    const req = { method, url: path === undefined ? undefined : `/orchestrator/api/${path}`, headers: sent, async *[Symbol.asyncIterator]() { yield* chunks } }
     await handler(req, { writeHead: (code: number) => { status = code }, end: (data: string) => { text = data } })
-    return { status, body: JSON.parse(text) as Record<string, unknown> }
+    return { status, body: text ? JSON.parse(text) as Record<string, unknown> : undefined }
   }
 }
 
@@ -47,6 +47,7 @@ it('answers each kind of failure with its own status', async () => {
         if (args[1] === 'invalid') z.object({ maxWorkers: z.number() }).parse({})
         if (args[1] === 'refused') throw new SetupError('agentCliUnset')
         if (args[1] === 'broken') throw new Error('disk full')
+        if (args[1] === 'thrown') throw 'worker queue closed'
         return { saved: true, revision: 1, restarting: false }
       },
     },
@@ -61,16 +62,24 @@ it('answers each kind of failure with its own status', async () => {
     body: { setup: { code: 'agentCliUnset', place: 'github' } },
   })
   expect(await call('PUT', 'settings/executor', { value: 'broken', revision: 0 })).toEqual({ status: 500, body: { error: 'disk full' } })
+  expect(await call('PUT', 'settings/executor', { value: 'thrown', revision: 0 })).toEqual({ status: 500, body: { error: 'worker queue closed' } })
   // Block names are validated before calling settings.save: reject unknown blocks or non-existent Sources.
   expect(await call('PUT', 'settings/pause', { value: {}, revision: 0 })).toMatchObject({ status: 400 })
   expect(await call('PUT', 'settings/source:feishu', { value: {}, revision: 0 })).toEqual({
     status: 404,
     body: { error: 'Source not found' },
   })
-  expect(saves).toHaveLength(4)
+  expect(saves).toHaveLength(5)
   expect(await call('POST', 'tickets/t9/retry')).toEqual({ status: 404, body: { error: 'Ticket not found' } })
   expect(await call('GET', 'nothing/here')).toEqual({ status: 404, body: { error: 'Unknown operation' } })
   expect(await call('POST', 'executor/pause', 'not json')).toEqual({ status: 400, body: { error: 'The request body is not JSON' } })
+})
+
+it('keeps management requests inside the API and defaults the request method', async () => {
+  const call = serve({})
+  expect(await call('GET', '../panel')).toEqual({ status: 404, body: undefined })
+  expect(await call(undefined, undefined)).toEqual({ status: 404, body: undefined })
+  expect(await call(undefined, 'nothing/here')).toEqual({ status: 404, body: { error: 'Unknown operation' } })
 })
 
 it("decodes path parameters and parses each route's query", async () => {
@@ -156,8 +165,11 @@ it('serves every management view and action through the loopback routes', async 
   const prompts = new Prompts(store, () => 100_000, () => [], () => true)
   const deployment = testDeployment()
   const machine = testMachine({ stateDir: directory })
+  const ticket = { id: 't1', title: 'Fix', decisionId: 'd', channels: [], undelivered: [], createdAt: '', updatedAt: '',
+    mandate: { strength: 'explicit' as const, policyVersion: 'v', basis: { via: 'listed' as const }, actor: { source: 'feishu', id: 'ou_alice' }, scope: '' },
+    origin: { triggerId: 'trigger', triggerIds: ['trigger'] }, assignments: [{ id: 'a1', state: 'pending' as const, createdAt: '' }], inputs: [] }
   const originalTicketGet = store.tickets.get.bind(store.tickets)
-  store.tickets.get = (id: string) => id === 't1' ? ({ id: 't1' } as never) : originalTicketGet(id)
+  store.tickets.get = (id: string) => id === 't1' ? ticket : originalTicketGet(id)
   const runtime = {
     store,
     sourceLinks: new TextCache(1_000),
@@ -207,9 +219,11 @@ it('serves every management view and action through the loopback routes', async 
   expect(await call('POST', 'threads/github%3A1/unsubscribe')).toMatchObject({ status: 200, body: { removed: true } })
   expect(await call('POST', 'triggers/t1/requeue')).toEqual({ status: 200, body: { queued: true } })
   expect(await call('GET', 'decisions?kind=accept&window=24h&offset=x&limit=500')).toMatchObject({ status: 200 })
+  expect(await call('GET', 'decisions')).toMatchObject({ status: 200 })
   expect(await call('POST', 'decisions/d1/dismiss')).toEqual({ status: 200, body: { dismissed: true } })
   expect(await call('GET', 'tickets?state=ended&offset=x&limit=500')).toMatchObject({ status: 200 })
   expect(await call('GET', 'tickets/missing')).toEqual({ status: 404, body: { error: 'Ticket not found' } })
+  expect(await call('GET', 'tickets/t1')).toMatchObject({ status: 200, body: { id: 't1', environment: [] } })
   expect(await call('POST', 'tickets/t1/retry')).toEqual({ status: 200, body: { retried: true } })
   expect(await call('POST', 'tickets/t1/stop')).toEqual({ status: 200, body: { stopped: true } })
   expect(await call('POST', 'executor/pause', { paused: true })).toMatchObject({ status: 200, body: { paused: true } })
@@ -225,9 +239,12 @@ it('serves every management view and action through the loopback routes', async 
 
   const unconfigured = serve({ ...runtime, configured: () => false, setupProblem: { detail: 'waiting' } })
   expect(await unconfigured('GET', 'state')).toMatchObject({ status: 200, body: { setup: { accounts: null, problem: { detail: 'waiting' } } } })
+  expect(await unconfigured('GET', 'sources')).toMatchObject({ status: 200 })
+  expect(await unconfigured('GET', 'tickets/t1')).toMatchObject({ status: 200, body: { environment: [] } })
   const feishuOnly = serve({ ...runtime, configured: () => false, setupProblem: undefined, feishuProblem: { detail: 'feishu' } })
   expect(await feishuOnly('GET', 'state')).toMatchObject({ status: 200, body: { setup: { problem: null, feishuProblem: { detail: 'feishu' } } } })
   expect(await feishuOnly('GET', 'overview')).toMatchObject({ status: 200 })
+  expect(await feishuOnly('GET', 'sources')).toMatchObject({ status: 200 })
   const noFeishu = serve({ ...runtime, deployment: testDeployment({ feishu: undefined }) })
   expect(await noFeishu('GET', 'state')).toMatchObject({ status: 200, body: { setup: { accounts: { feishu: null } } } })
 

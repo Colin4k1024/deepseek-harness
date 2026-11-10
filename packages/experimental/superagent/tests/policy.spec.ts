@@ -284,6 +284,12 @@ describe('revalidating a Mandate from the admission table', () => {
   })
 })
 describe('revalidate and version', () => {
+  it('revalidates an admission Mandate that records no receiving scope against the defaults', () => {
+    const mandate = { strength: 'inferred' as const, policyVersion: 'v', basis: { via: 'admission', cell: 'listedUnaddressed' } satisfies MandateBasis,
+      actor: { source: 'feishu', id: MEMBER }, scope: '' }
+    expect(policy.revalidate(mandate)).toBe(true)
+  })
+
   it('keeps explicit Mandates while the sender stays allowed and the Source still listens, and rule Mandates only while auto mode and the rules hold', () => {
     const basis: MandateBasis = {
       via: 'addressed',

@@ -1918,3 +1918,117 @@ describe('ignores from the card', () => {
     expect(() => h.engine.decide('5', { kind: 'accept', title: 'Fix', scope: 'small', reason: 'chat' })).toThrow(new UserError('notExplicit'))
   })
 })
+
+describe('ticket lifecycle edges', () => {
+  it('uses the last Trigger when an older Eval omits primary', () => {
+    const h = harness()
+    h.engine.receive(trigger('1')); h.pump()
+    const thread = h.repo.threads.get('chat:t1')!
+    const { primary: _primary, ...evaluating } = thread.evaluating!
+    h.repo.threads.save({ ...thread, evaluating })
+    const decision = h.decide(h.requests[0]!, { kind: 'accept', title: 'Fix', scope: 'small', reason: 'requested' })
+    h.settle()
+    expect(h.repo.tickets.get(decision.ticketId!)!.origin).toMatchObject({ triggerId: '1', triggerIds: ['1'] })
+  })
+
+  it('counts an Input with no read or delivery record from its arrival time', () => {
+    const h = harness()
+    const ticketId = accepted(h).ticketId!
+    h.engine.bindThread(ticketId, { source: 'gh', id: 'pr-1' }, true)
+    h.engine.receive(trigger('2')); h.settle()
+    const ticket = h.repo.tickets.get(ticketId)!
+    const input = ticket.inputs.find(item => item.kind === 'trigger' && item.triggerId === '2')
+    if (input?.kind !== 'trigger') throw new Error('expected trigger input')
+    const { readAt: _readAt, deliveredAt: _deliveredAt, ...withoutRead } = input
+    h.repo.tickets.save({ ...ticket, inputs: ticket.inputs.map(item => item === input ? withoutRead : item) })
+    h.engine.threadClosed({ source: 'gh', id: 'pr-1' }, 'merged', '2026-09-23T00:00:02Z')
+    expect(h.repo.threads.get('chat:t1')!.pending).toEqual(['2'])
+  })
+
+  it('ends work that resumed after a close once that work reports ready', () => {
+    const h = harness()
+    const ticketId = accepted(h).ticketId!
+    h.engine.bindThread(ticketId, { source: 'gh', id: 'pr-1' }, true)
+    h.engine.bindThread(ticketId, { source: 'gh', id: 'pr-2' }, true)
+    h.engine.threadClosed({ source: 'gh', id: 'pr-1' }, 'closed', '2026-09-23T00:00:00Z')
+    h.engine.report(ticketId, { state: 'failed', summary: 'tests fail' })
+    h.tick(10); h.engine.retryTicket(ticketId); h.settle()
+    h.tick(10); h.engine.report(ticketId, { state: 'ready', summary: 'done' })
+    h.engine.threadClosed({ source: 'gh', id: 'pr-2' }, 'merged', '2026-09-23T00:00:01Z')
+    expect(h.repo.tickets.get(ticketId)!.ended).toMatchObject({ outcome: 'merged', at: '2026-09-23T00:00:20.000Z' })
+  })
+
+  it('keeps other tickets in a Trigger context and attaches no second bot Input without a note', () => {
+    const h = harness()
+    const ticketId = accepted(h).ticketId!
+    const other = accepted(h, '9', 't9').ticketId!
+    h.repo.triggers.save(trigger('2', { threads: [{ source: 'chat', id: 'side' }] }))
+    h.repo.triggers.saveDisposition('2', { fanout: [], context: [other] })
+    h.engine.attach(ticketId, '2')
+    expect(h.repo.triggers.disposition('2')?.context).toEqual([other])
+    h.repo.triggers.save(trigger('3', { human: false, threads: [{ source: 'chat', id: 'bot' }] }))
+    h.engine.attach(ticketId, '3')
+    const before = h.repo.tickets.get(ticketId)!.inputs.length
+    h.engine.attach(ticketId, '3')
+    expect(h.repo.tickets.get(ticketId)!.inputs).toHaveLength(before)
+  })
+
+  it('keeps the other followed Thread when one Subscription drops', () => {
+    const h = harness()
+    const ticketId = accepted(h).ticketId!
+    h.engine.bindThread(ticketId, { source: 'gh', id: 'pr-1' }, false)
+    h.engine.bindThread(ticketId, { source: 'gh', id: 'pr-2' }, false)
+    expect(h.engine.unsubscribe('gh:pr-1')).toBe(true)
+    expect(h.repo.tickets.get(ticketId)!.follows).toEqual([{ thread: 'gh:pr-2', own: false }])
+  })
+
+  it('hands back no Trigger from a Thread the ticket does not follow', () => {
+    const h = harness()
+    const ticketId = accepted(h).ticketId!
+    h.repo.triggers.save(trigger('2', { threads: [{ source: 'chat', id: 'owned' }] }))
+    h.engine.attach(ticketId, '2', 'owned')
+    h.repo.threads.save({ key: 'chat:other', ref: { source: 'chat', id: 'other' }, createdAt: '', subscriptions: [ticketId],
+      correlated: [], pending: [], meta: {} })
+    h.engine.markUnrelated(ticketId, 'chat:other', 'not mine')
+    expect(h.repo.threads.get('chat:other')!.subscriptions).toEqual([])
+    expect(h.repo.threads.get('chat:owned')!.pending).toEqual([])
+  })
+})
+
+describe('assignment report edges', () => {
+  it('refuses a report for a ticket with no Assignment and for an ended Assignment', () => {
+    const h = harness()
+    const ticketId = accepted(h).ticketId!
+    h.repo.tickets.save({ ...h.repo.tickets.get(ticketId)!, assignments: [] })
+    expect(() => h.engine.report(ticketId, { state: 'progress', summary: 'x' })).toThrow(new UserError('unknownAssignment'))
+    const ticket = accepted(h, '2', 't2').ticketId!
+    h.engine.report(ticket, { state: 'failed', summary: 'broke' })
+    h.engine.retryTicket(ticket)
+    const old = h.repo.tickets.get(ticket)!.assignments[0]!
+    expect(() => h.engine.report(ticket, { state: 'progress', summary: 'x' })).not.toThrow()
+    h.repo.tickets.save({ ...h.repo.tickets.get(ticket)!, assignments: [old] })
+    expect(() => h.engine.report(ticket, { state: 'progress', summary: 'x' })).toThrow(new UserError('assignmentEnded'))
+  })
+
+  it('ignores reads and turn ends that name an ended ticket or Assignment', () => {
+    const h = harness()
+    const ticketId = accepted(h).ticketId!
+    h.engine.receive(trigger('2')); h.settle()
+    const ticket = h.repo.tickets.get(ticketId)!
+    const input = ticket.inputs.find(item => item.kind === 'trigger' && item.triggerId === '2')
+    if (input?.kind !== 'trigger') throw new Error('expected trigger input')
+    const oldAssignment = ticket.assignments[0]!
+    h.engine.stopTicket(ticketId)
+    h.engine.inputsRead(ticketId, [input.id])
+    expect(h.repo.tickets.get(ticketId)!.inputs.find(item => item.id === input.id)).toMatchObject({ readAt: null })
+    h.engine.turnEnded(ticketId, oldAssignment.id)
+    expect(h.repo.tickets.get(ticketId)!.assignments[0]).not.toHaveProperty('idleAt')
+  })
+})
+
+describe('reply routing edges', () => {
+  it('refuses attention that names neither a ticket nor a Trigger', () => {
+    const h = harness()
+    expect(() => h.engine.reply({ purpose: 'attention', text: 'Anything to send?' })).toThrow(new UserError('notAttention'))
+  })
+})

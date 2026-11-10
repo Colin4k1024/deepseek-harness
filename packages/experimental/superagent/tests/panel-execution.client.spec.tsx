@@ -7,7 +7,7 @@ import { en, zh } from '../src/client/locales.ts'
 import { PanelProvider } from '../src/client/provider.tsx'
 import { TicketPage } from '../src/client/ticket.tsx'
 import { translator, usePanel, mount, remount, settle, all, find, tab, click, type, text, field, at } from './fixtures/panel.client.tsx'
-import { MEMBER, actor, server, ticketSummary, threadSummary } from './fixtures/panel-server.client.ts'
+import { MEMBER, actor, problemOf, server, ticketSummary, threadSummary } from './fixtures/panel-server.client.ts'
 
 usePanel()
 it('lists Tickets under Execution by who they wait on, with the Executor state and its pause as an action', async () => {
@@ -296,4 +296,25 @@ it('shows a resumed Ticket\'s assignments, every Mandate fact, and its paused In
   expect(document.querySelector('.dt-textlink.dt-mono')).toBeNull()
   expect(text()).toContain(zh.legacyScopeShort)
   expect(text()).toContain('实施意图：未明确'); expect(text()).toContain('无需新增设计决策')
+})
+
+it('keeps the open filter explicit, shows a person Ticket and a setup-blocked Executor, and pages Tickets', async () => {
+  server.setup = { ...server.setup, problem: problemOf('agentCliUnset') }
+  server.tickets.open = [ticketSummary({}, { stage: 'person', action: 'answer' })]
+  server.nextOffset = 20
+  at({ page: 'execution' })
+  await mount()
+  await click(zh['ticketFilter.open'])
+  expect(server.requests.filter(request => request.path === 'tickets?state=open&limit=20')).toHaveLength(1)
+  expect(text()).toContain(zh.executorWaitingSetup)
+  await click(zh.loadMore)
+  expect(server.requests.some(request => request.path === 'tickets?state=open&limit=40')).toBe(true)
+})
+
+it('opens an undelivered Trigger Input from its Ticket', async () => {
+  at({ page: 'execution', id: 't1' })
+  await mount()
+  await click(find('Alice：顺便改标题', '.dt-open'))
+  expect(tab(zh['tab.trigger']).getAttribute('aria-selected')).toBe('true')
+  expect(server.requests.some(request => request.path.includes('threads/feishu:oc_1:om_root') && request.path.includes('around=e2'))).toBe(true)
 })

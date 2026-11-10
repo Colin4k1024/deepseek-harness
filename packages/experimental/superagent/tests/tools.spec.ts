@@ -87,6 +87,7 @@ it('saves with the prompt save tool an override without its base, refuses a part
     'runtime/retired': { text: 'Old.', base: 'b' } } }
   h.runtime.store.set(KV.prompts.version(revision + 1), { revision: revision + 1, previousRevision: revision, savedAt: '', source: 'panel', config: read })
   h.runtime.store.set(KV.prompts.revision, revision + 1)
+  expect(await h.runTool(h.runtime.masterId, 'orchestrator_read', { resource: 'prompts' })).toMatchObject({ removed_parts: ['runtime/retired'] })
   await h.runTool(h.runtime.masterId, 'orchestrator_prompts_save', { config: read, baseRevision: revision + 1 })
   expect(h.runtime.prompts.current().config.overrides).toEqual({ 'runtime/dispatch': dispatch })
   // The tool describes the overrides once, in its schema.
@@ -118,6 +119,10 @@ it('answers every routing tool in one shape: the decision it recorded, why, and 
     reason: expect.any(String) as unknown, ticket: card })
   const status = await run('orchestrator_ticket_request_status', { ticket_id: ticket.id })
   expect(status).toEqual({ reason: 'The worker is not waiting; nothing was sent', ticket: card })
+  const stored = h.runtime.store.tickets.get(ticket.id)!
+  h.runtime.store.tickets.save({ ...stored, assignments: stored.assignments.map(assignment => ({ ...assignment,
+    report: { state: 'waiting', summary: 'Ready soon.', at: '' } })) })
+  expect(await run('orchestrator_ticket_request_status', { ticket_id: ticket.id })).toEqual({ reason: 'Asked the worker for a status report', ticket: card })
   await h.runTool(sessionId, 'orchestrator_report', { state: 'failed', summary: 'The build broke.' })
   expect(await run('orchestrator_ticket_retry', { ticket_id: ticket.id })).toEqual({ reason: 'Started a new assignment', ticket: card })
   const chatter = feishu('4', '@bot 谢谢')
@@ -144,7 +149,7 @@ it('routes several triggers in one call, in order, and answers a refused or fail
   // One attach fails unexpectedly, as a busy database would.
   const attach = h.runtime.engine.attach.bind(h.runtime.engine)
   vi.spyOn(h.runtime.engine, 'attach').mockImplementation((ticketId, triggerId, note) => {
-    if (triggerId === more.id) throw new Error('database is locked')
+    if (triggerId === more.id) throw 'database is locked'
     return attach(ticketId, triggerId, note)
   })
   const { results } = await h.runTool(h.runtime.masterId, 'orchestrator_route', { decisions: [
@@ -265,6 +270,15 @@ it('ignores a proactive candidate from its card beside other decisions, marked s
   ])
 })
 
+it('serves an evaluation and its follow-up reads through the main Session tools', async () => {
+  const proposal = feishu('8', '把标题改短一点', { mentions: [] })
+  h.runtime.receive(proposal); await h.runtime.idle()
+  const context = await h.runTool(h.runtime.masterId, 'orchestrator_eval', { trigger_id: proposal.id })
+  expect(context).toMatchObject({ trigger_id: proposal.id })
+  expect(await h.runTool(h.runtime.masterId, 'orchestrator_eval_read', { trigger_id: proposal.id, resource: 'message' }))
+    .toMatchObject({ text: '把标题改短一点' })
+})
+
 it('returns where a reply stands: sent, or dropped when its conversation can no longer receive it', async () => {
   const { ticket, sessionId } = await h.acceptedTicket(feishu('1', '@bot 修一下回归'))
   await h.runTool(sessionId, 'orchestrator_report', { state: 'ready', summary: 'Done.' })
@@ -330,6 +344,13 @@ it('reads a thread by the key cards show: its label, tickets, latest decisions a
     decisions: [expect.objectContaining({ kind: 'accept', ticket_id: ticket.id })], items: [expect.objectContaining({ trigger_id: trigger.id, read: `trigger/${trigger.id}` })],
     next_offset: null })
   expect(await h.runTool(sessionId, 'orchestrator_read', { resource: `thread/${key}` })).toMatchObject({ thread: key })
+  const old = { key: 'github:gone', ref: { source: 'github', id: 'gone' }, createdAt: '2026-09-09T00:00:00Z', subscriptions: ['gone'],
+    correlated: [], pending: [], meta: {} }
+  h.runtime.store.threads.save(old)
+  const listed = await read('threads') as { items: { thread: string }[] }
+  expect(listed.items).toEqual(expect.arrayContaining([expect.objectContaining({ thread: 'github:gone' })]))
+  expect(await read('thread/github:gone')).toMatchObject({ thread: 'github:gone', tickets: [] })
+  expect(await read(`trigger/${trigger.id}`, { offset: 1 })).toMatchObject({ offset: 1 })
   const elsewhere = feishu('5', '@bot 别的事', { chat_id: 'oc_other' })
   h.runtime.store.triggers.save(elsewhere)
   h.runtime.store.threads.save({ key: 'feishu:oc_other:om_5', ref: { source: 'feishu', id: 'oc_other:om_5' }, createdAt: '', subscriptions: [], correlated: [], pending: [], meta: {} })
@@ -357,6 +378,7 @@ it('reads a ticket with the ids it is tied to, its reports by assignment, and it
   expect(await read(details.assignments.next_resource!, { offset: 6 })).toEqual({ next_offset: null,
     items: [expect.objectContaining({ id: 'a1', report: expect.objectContaining({ read: `ticket/${ticket.id}/report/a1` }) as unknown })] })
   expect(await h.runTool(sessionId, 'orchestrator_read', { resource: `ticket/${ticket.id}/report/a1` })).toMatchObject({ text: report(1).summary })
+  expect(await read(`ticket/${ticket.id}/result`)).toMatchObject({ text: report(7).summary.slice(0, 4000) })
   expect(JSON.stringify(details).length).toBeLessThan(3000)
   const page = await read(details.inputs.items[0]!.read!) as { text: string }
   expect(page.text).toContain('check the margin on mobile as well.')
@@ -364,11 +386,14 @@ it('reads a ticket with the ids it is tied to, its reports by assignment, and it
   expect(await read(`ticket/${ticket.id}/input/text:long`)).toMatchObject({ text: page.text })
   expect(await read(`ticket/${ticket.id}/inputs`, { offset: 20 })).toMatchObject({ items: expect.objectContaining({ length: 4 }) as unknown, next_offset: null })
   expect(await read(details.assignments.items[0]!.report.read)).toMatchObject({ text: report(7).summary.slice(0, 4000) })
-  vi.mocked(h.controller.inspect).mockResolvedValueOnce({ events: [{ type: 'assistant/message', data: { message: { role: 'assistant',
+  vi.mocked(h.controller.inspect).mockResolvedValue({ events: [{ type: 'assistant/message', data: { message: { role: 'assistant',
     content: [{ type: 'text', text: `I fixed the margin. ${'Details. '.repeat(20)}` }] } } }] } as never)
   const transcript = JSON.parse((await read(`ticket/${ticket.id}/transcript`) as { text: string }).text) as { preview: string; read: string }
   expect(transcript).toMatchObject({ preview: expect.stringMatching(/^I fixed the margin\./) as unknown, read: `ticket/${ticket.id}/message/0` })
   expect(transcript.preview.length).toBeLessThanOrEqual(80)
+  expect(await read(`ticket/${ticket.id}/message/0`)).toMatchObject({ resource: `ticket/${ticket.id}/message/0` })
+  vi.mocked(h.controller.inspect).mockResolvedValueOnce({ events: [{}] } as never)
+  expect(await read(`ticket/${ticket.id}/transcript`)).toMatchObject({ text: '' })
 })
 
 it('reads a trigger once with the message it replies to and the messages around it on its thread, without the CI runs', async () => {
@@ -459,6 +484,8 @@ it('tells the main Session of the settings, prompts, requeues and unsubscription
 it('answers a policy sync with the counts and what changed, not the whole list', async () => {
   vi.spyOn(Commands.prototype, 'lark').mockResolvedValue({ users: [{ member_id: 'ou_alice', name: 'Alice' }, { member_id: 'ou_bob', name: 'Bob' }], has_more: false })
   expect(await h.runTool(h.runtime.masterId, 'orchestrator_policy_sync', { source: 'feishu' })).toEqual({ source: 'feishu', allowed: 2, added: ['Bob'], removed: [] })
+  vi.spyOn(h.runtime.settings, 'sync').mockResolvedValue({ source: 'feishu', allowed: [{ id: 'ou_new' }] })
+  expect(await h.runTool(h.runtime.masterId, 'orchestrator_policy_sync', { source: 'feishu' })).toEqual({ source: 'feishu', allowed: 1, added: ['ou_new'], removed: ['Alice', 'Bob'] })
 })
 
 it('shows an Executor Session no id it cannot read: no Decision, no other ticket, no Trigger its ticket did not reach', async () => {
@@ -485,9 +512,16 @@ it('marks the threads a worker follows for context apart from those a Source bou
   const { ticket, sessionId } = await h.acceptedTicket(feishu('1', '@bot 修一下回归'))
   h.runtime.engine.bindThread(ticket.id, { source: 'github', id: '12' }, true)
   await h.runTool(sessionId, 'orchestrator_thread_follow', { thread: 'github:9', reason: 'The Issue it fixes.' })
+  const stored = h.runtime.store.tickets.get(ticket.id)!
+  h.runtime.store.tickets.save({ ...stored, follows: [...(stored.follows ?? []), { thread: 'github:private', own: true }] })
   const { threads } = await read(`ticket/${ticket.id}`) as { threads: { thread: string }[] }
-  expect(threads).toEqual(expect.arrayContaining([{ thread: `feishu:${CHAT}:om_1` }, { thread: 'github:12', bound: true }, { thread: 'github:9', context: true }]))
-  expect(threads).toHaveLength(3)
+  expect(threads).toEqual(expect.arrayContaining([{ thread: `feishu:${CHAT}:om_1` }, { thread: 'github:12', bound: true },
+    { thread: 'github:9', context: true }, { thread: 'github:private', bound: true }]))
+  expect(threads).toHaveLength(4)
+  const followed = { ...feishu('10', 'Related GitHub work'), source: 'github', threads: [{ source: 'github', id: '9' }],
+    actor: { source: 'github', id: 'bob' } }
+  h.runtime.store.triggers.save(followed)
+  expect(await h.runTool(sessionId, 'orchestrator_read', { resource: `trigger/${followed.id}` })).toMatchObject({ trigger_id: followed.id })
 })
 
 it('gives a worker the other messages of the request its ticket was accepted from, in its first message and on its ticket', async () => {
@@ -561,6 +595,7 @@ it('refuses malformed ticket sections and records a worker only on its own ticke
   for (const resource of [
     `${base}/assignments/extra`, `${base}/inputs/extra`, `${base}/message/not-a-number`, `${base}/message/999`,
     `${base}/report/missing`, `${base}/input/missing`, `${base}/unknown`, `${base}/assignment/extra`,
+    `${base}/assignment/extra/more`, 'ticket/',
   ]) await expect(read(resource), resource).rejects.toThrow('Unknown')
   await expect(read('ticket')).rejects.toThrow('Unknown context resource')
   await expect(read('ticket/missing')).rejects.toThrow('Unknown ticket')

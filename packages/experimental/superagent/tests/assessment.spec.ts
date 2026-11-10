@@ -137,6 +137,30 @@ it('keeps nothing from a context read that finishes after its Eval was decided',
   expect(s.size()).toBe(0)
 })
 
+it('reuses the initial context load and works without a caller signal', async () => {
+  const s = setup()
+  const hold = deferred()
+  s.gate.issue = hold.promise
+  s.engine.receive(issue(1)); s.engine.evaluateDue()
+  const first = s.assessor.context('issue-1')
+  await Promise.resolve()
+  const second = s.assessor.context('issue-1', signal)
+  hold.resolve()
+  expect(await first).toEqual(await second)
+})
+
+it('drops a failed initial context read whose evaluation ended while it was loading', async () => {
+  const s = setup()
+  const hold = deferred()
+  s.gate.issue = hold.promise
+  s.engine.receive(issue(1)); s.engine.evaluateDue()
+  const details = s.assessor.context('issue-1', signal)
+  s.engine.decide('issue-1', { kind: 'ignore', reason: 'not a request' })
+  hold.reject(new Error('Feishu unavailable'))
+  await expect(details).rejects.toThrow('This assessment has finished')
+  expect(s.size()).toBe(0)
+})
+
 it('reads the context of a Trigger through its Source, and none for a Source that gives none', async () => {
   const s = setup()
   s.engine.receive(issue(1)); s.engine.evaluateDue()
@@ -236,6 +260,7 @@ it('rejects assessment and read arguments the tools cannot accept', () => {
   expect(EvalReadSchema.safeParse({ trigger_id: 't', resource: 'file' }).success).toBe(false)
   expect(EvalReadSchema.safeParse({ trigger_id: 't', resource: 'message', path: 'x' }).success).toBe(false)
   expect(EvalReadSchema.safeParse({ trigger_id: 't', resource: 'message', cursor: 'c' }).success).toBe(false)
+  expect(EvalReadSchema.safeParse({ trigger_id: 't', resource: 'thread', message_id: 'm' }).success).toBe(false)
   expect(EvalReadSchema.safeParse({ trigger_id: 't', resource: 'image' }).success).toBe(false)
 })
 
@@ -263,6 +288,7 @@ it('exposes and reads image references from thread context, and refuses stale or
       messages: [
         { id: 'm0', from: 'bob', at: '2026-09-09T00:00:00Z', text: 'look at image-key', bot: true },
         { id: 'm1', from: 'bob', at: '2026-09-09T00:00:01Z', text: 'deleted', deleted: true },
+        { id: 'm2', from: 'bob', at: '2026-09-09T00:00:02Z', text: 'also image-key' },
       ],
       body: {},
     }),

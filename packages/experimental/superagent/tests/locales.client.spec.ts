@@ -22,6 +22,9 @@ it('words a reason by its code with its values, each of a batch, and words a per
   // A code the panel has no words for reads as the host words it.
   expect(reasonLabel(t, { code: 'some_new_filter' })).toBe('some_new_filter')
   expect(reasonLabel(t, 'The button is already blue')).toBe('The button is already blue')
+  // Host errors keep only their first line, and a long first line is cut at 140 characters.
+  expect(reasonLabel(t, 'CliError: boom\nsecond line')).toBe('CliError: boom')
+  expect(reasonLabel(t, `Error: ${'x'.repeat(150)}\nsecond line`)).toHaveLength(141)
 })
 
 it('names every health entry of dsh-superagent itself, which the overview shows when it fails', () => {

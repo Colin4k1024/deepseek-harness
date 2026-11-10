@@ -5,8 +5,12 @@ import { feishuKind } from '../src/sources/feishu.ts'
 import { feishuChannel } from '../src/sources/feishu-trigger.ts'
 import { githubKind } from '../src/sources/github.ts'
 import { githubChannel } from '../src/sources/github-trigger.ts'
+import { sendGithub } from '../src/sources/github-channel.ts'
+import { candidateCard, repliedTo, sourceLink } from '../src/app/links.ts'
+import { TextCache } from '../src/app/cache.ts'
 import { SourceRegistry } from '../src/sources/registry.ts'
 import { SettingsSchema } from '../src/policy.ts'
+import type { Candidate, Ticket, Trigger } from '../src/core/index.ts'
 import { key, type OutboundMessage } from '../src/core/index.ts'
 import { testDeployment } from './fixtures/deployment.ts'
 const sources = new SourceRegistry(() => SettingsSchema.parse({}))
@@ -14,7 +18,8 @@ sources.register(feishuKind); sources.register(githubKind)
 const send = (commands: Commands, message: OutboundMessage) => sources.send(message, commands)
 const deployment = testDeployment({ github: { ...testDeployment().github, cli: '/path/agent-gh' } })
 const REPOSITORY = deployment.repository
-const reply = { id: 'stable-operation', channel: githubChannel(8), text: 'Done', kind: 'reply' as const }
+const replyBase = () => ({ id: 'stable-operation', channel: githubChannel(8), text: 'Done', kind: 'reply' as const })
+const reply = replyBase()
 describe('account-isolated operations', () => {
   it('uses the agent account\'s GitHub CLI and preserves literal shell metacharacters in argv', async () => {
     const commands = new Commands(() => deployment, {}, new AbortController().signal); const run = vi.spyOn(commands,'run').mockResolvedValue('{}')
@@ -47,6 +52,23 @@ describe('account-isolated operations', () => {
     await expect(new Commands(() => deployment, {}, new AbortController().signal).pages(z.unknown(),
       '../../someone/else/issues')).rejects.toThrow()
   })
+  it('answers the review comment itself when it has no earlier reply, or falls back when GitHub deleted it', async () => {
+    const commands = new Commands(() => deployment, {}, new AbortController().signal)
+    const review = `https://github.com/${REPOSITORY}/pull/8#discussion_r7`
+    const reply = { ...replyBase(), channel: githubChannel(8, review) }
+    vi.spyOn(commands, 'pages').mockResolvedValue([])
+    const api = vi.spyOn(commands, 'api')
+    api.mockResolvedValueOnce({ id: 7 }).mockResolvedValueOnce({})
+    await expect(sendGithub({ commands }, reply)).resolves.toBe('sent')
+    expect(api.mock.calls[1]![1]).toBe('pulls/8/comments/7/replies')
+    api.mockRejectedValueOnce(new CliError('deleted', 410)).mockResolvedValueOnce({})
+    await expect(sendGithub({ commands }, reply)).resolves.toBe('sent')
+    expect(api.mock.calls[3]![1]).toBe('issues/8/comments')
+    api.mockRejectedValueOnce(new Error('network down'))
+    await expect(sendGithub({ commands }, reply)).rejects.toThrow('network down')
+    await expect(sendGithub({ commands }, { ...replyBase(), channel: { ...githubChannel(8), address: {} } })).rejects.toThrow('Missing GitHub reply target')
+  })
+
   it('routes review-comment replies to the root review comment', async () => {
     const commands = new Commands(() => deployment, {}, new AbortController().signal); vi.spyOn(commands,'pages').mockResolvedValue([])
     const gh = vi.spyOn(commands,'gh').mockResolvedValueOnce({ id: 7, in_reply_to_id: 3 }).mockResolvedValueOnce({})
@@ -199,6 +221,20 @@ it('reports failures as CliError with the code the CLI names and the exit status
   await expect(commands.lark(['im', '+messages-reply'])).rejects.toMatchObject({ message: 'message not found (231003)', code: 231003 })
 })
 
+it('runs git through the agent environment and reports every command ending without argv', async () => {
+  const commands = new Commands(() => deployment, {}, new AbortController().signal)
+  const run = vi.spyOn(commands, 'run').mockResolvedValue('branch')
+  expect(await commands.git(['status'], '/repo')).toBe('branch')
+  expect(run).toHaveBeenCalledWith('git', ['status'], '/repo')
+  expect(commandError({ stderr: JSON.stringify({ error: { code: 999 } }), code: 1 }).message).toBe('{"error":{"code":999}}')
+  expect(commandError({ code: 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER' }).message).toBe('command printed more output than it may')
+  expect(commandError({ killed: true, signal: 'SIGKILL' }).message).toBe('command was stopped by SIGKILL')
+  expect(commandError(undefined).message).toBe('command failed')
+  const lark = new Commands(() => deployment, {}, new AbortController().signal)
+  vi.spyOn(lark, 'run').mockResolvedValue('{"ok":false}')
+  await expect(lark.lark(['im', '+chat-list'])).rejects.toMatchObject({ message: 'Feishu command failed' })
+})
+
 it('stops a running command when the signal of its work aborts, or the lifetime, and leaves the other work running', async () => {
   const lifetime = new AbortController(), work = new AbortController()
   const commands = new Commands(() => deployment, {}, lifetime.signal)
@@ -212,4 +248,97 @@ it('stops a running command when the signal of its work aborts, or the lifetime,
   lifetime.abort()
   await expect(other).rejects.toThrow()
   expect(Date.now() - started).toBeLessThan(4000)
+})
+
+const trigger = (id: string, overrides: Partial<Trigger> = {}): Trigger => ({
+  id, source: 'github', threads: [{ source: 'github', id: '12' }], actor: { source: 'github', id: 'alice' },
+  human: true, at: '2026-11-10T00:00:00Z', text: id, meta: {}, ...overrides,
+})
+const ticket = (id: string): Ticket => ({
+  id, title: `Ticket ${id}`, decisionId: `decision-${id}`, mandate: { strength: 'explicit', policyVersion: 'v', basis: { via: 'listed' }, actor: { source: 'github', id: 'alice' }, scope: '' },
+  channels: [], assignments: [], inputs: [], undelivered: [], createdAt: '2026-11-10T00:00:00Z', updatedAt: '2026-11-10T00:00:00Z',
+  origin: { triggerId: 'primary', triggerIds: ['primary'] },
+})
+const commands = () => new Commands(() => testDeployment(), {}, new AbortController().signal)
+const linkSources = (find: (query: string) => { threads: string[]; terms: string[] } = () => ({ threads: [], terms: [] })) =>
+  ({ instance: () => ({ id: 'feishu', kind: 'feishu', enabled: true, config: { linkTimeoutMs: 10 } }), find, repliesTo: () => 'parent' }) as unknown as SourceRegistry
+const linkHost = (overrides: Record<string, unknown> = {}) => ({
+  store: {
+    settings: () => SettingsSchema.parse({}),
+    triggers: { get: (id: string) => id === 'parent' ? trigger('parent', { text: 'parent message' }) : undefined, disposition: undefined },
+    threads: { get: undefined },
+    tickets: { get: undefined },
+  },
+  links: new TextCache(100),
+  commands: commands(),
+  sources: linkSources(),
+  lifetime: new AbortController().signal,
+  ...overrides,
+}) as Parameters<typeof sourceLink>[0]
+
+it('resolves trigger URLs, cache entries, Feishu links, and readable fallbacks', async () => {
+  const lark = vi.spyOn(Commands.prototype, 'lark')
+  try {
+    expect(await sourceLink(linkHost(), trigger('url', { url: 'https://example.com/message' }))).toEqual({ source_url: 'https://example.com/message' })
+    expect(await sourceLink(linkHost(), trigger('github'))).toEqual({})
+    const cached = linkHost({ links: new TextCache(100) })
+    cached.links.set('oc_1:om_1', 'https://example.com/cached')
+    const feishu = trigger('feishu', { source: 'feishu', meta: { chatId: 'oc_1', messageId: 'om_1' } })
+    expect(await sourceLink(cached, feishu)).toEqual({ source_url: 'https://example.com/cached' })
+    lark.mockResolvedValueOnce({ messages: [{ message_id: 'om_1', chat_id: 'oc_1', message_app_link: 'https://example.com/live' }] })
+    const fresh = linkHost()
+    expect(await sourceLink(fresh, feishu)).toEqual({ source_url: 'https://example.com/live' })
+    expect(fresh.links.get('oc_1:om_1')).toBe('https://example.com/live')
+    lark.mockRejectedValueOnce(new Error('link unavailable'))
+    expect(await sourceLink(linkHost(), feishu)).toEqual({ source_url_read: 'feishu/feishu/message' })
+    const lifetime = new AbortController(); lifetime.abort()
+    lark.mockRejectedValueOnce(new Error('link unavailable'))
+    await expect(sourceLink(linkHost({ lifetime: lifetime.signal }), feishu)).rejects.toThrow('aborted')
+    const work = new AbortController(); work.abort()
+    lark.mockRejectedValueOnce(new Error('link unavailable'))
+    await expect(sourceLink(linkHost(), feishu, work.signal)).rejects.toThrow('aborted')
+  } finally { lark.mockRestore() }
+})
+
+it("finds a Trigger's parent only when its Source names one the Store still has", () => {
+  const reply = trigger('reply', { meta: { parentId: 'parent' } })
+  const parent = trigger('parent', { text: 'parent message' })
+  expect(repliedTo({ store: { triggers: { get: () => parent } }, sources: { repliesTo: () => 'parent' } }, reply)).toEqual(parent)
+  expect(repliedTo({ store: { triggers: { get: () => parent } }, sources: { repliesTo: () => undefined } }, reply)).toBeUndefined()
+  expect(repliedTo({ store: { triggers: { get: () => undefined } }, sources: { repliesTo: () => 'missing' } }, reply)).toBeUndefined()
+})
+
+it('builds candidate cards with batches, handbacks, delivery, references, and both routing actions', async () => {
+  const primary = trigger('primary', { text: 'See #12 and #13 please' })
+  const earlier = trigger('earlier', { text: 'earlier message' })
+  const known = ticket('known'), referenced = ticket('referenced')
+  const host = linkHost({
+    store: {
+      settings: () => SettingsSchema.parse({ eval: { mode: 'auto' } }),
+      triggers: {
+        get: (id: string) => id === 'parent' ? trigger('parent', { text: 'parent message' }) : undefined,
+        disposition: (id: string) => id === 'primary'
+          ? { fanout: ['worker'], handbacks: [{ ticketId: 'worker', reason: 'outside scope', at: '' }], at: '' }
+          : undefined,
+      },
+      threads: { get: (key: string) => key === 'github:12' ? { subscriptions: ['known', 'referenced', 'missing'] } : undefined },
+      tickets: { get: (id: string) => id === 'known' ? known : id === 'referenced' ? referenced : undefined },
+    },
+    sources: linkSources(query => ({ threads: query === '#12' ? ['github:12'] : ['github:13'], terms: [] })),
+  })
+  const candidate: Candidate = {
+    evalId: 'eval', thread: { key: 'github:12', ref: { source: 'github', id: '12' }, createdAt: '', subscriptions: [], correlated: [], pending: [], meta: {} },
+    triggers: [earlier, primary], strength: 'explicit', policyVersion: 'v', tickets: [known],
+  }
+  const card = await candidateCard(host, candidate)
+  expect(card).toMatchObject({ trigger_id: 'primary', mode: 'auto', strength: 'explicit' })
+  expect(card.batch).toHaveLength(1)
+  expect(card.batch[0]).toMatchObject({ trigger_id: 'earlier', actor: 'alice', at: '2026-11-10T00:00:00Z', preview: 'earlier message' })
+  expect(card.handed_back).toEqual([{ trigger_id: 'primary', ticket_id: 'worker', reason: 'outside scope' }])
+  expect(card.related_tickets.map(item => item.ticket_id)).toEqual(['known'])
+  expect(card.delivered_to).toEqual(['worker'])
+  expect(card.referenced_tickets.map(item => item.ticket_id)).toEqual(['referenced'])
+  expect(card.next_action).toContain('orchestrator_route')
+  candidate.strength = 'inferred'
+  expect((await candidateCard(host, candidate)).next_action).toContain('orchestrator_eval')
 })

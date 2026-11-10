@@ -284,3 +284,46 @@ it('reads the settings again as soon as dsh-superagent answers after a save rest
   expect(field('智能体的 GitHub CLI').matches(':disabled')).toBe(false)
   expect(field<HTMLInputElement>('智能体的 GitHub CLI').value).toBe('/opt/bin/gh-agent')
 })
+
+it('keeps an uninstalled Source\'s saved configuration without its fields or switch', async () => {
+  const original = vi.mocked(globalThis.fetch).getMockImplementation()!
+  vi.mocked(globalThis.fetch).mockImplementation(async (url: string | URL, init?: RequestInit) => {
+    const response = await original(url, init)
+    if (!String(url).endsWith('/settings')) return response
+    const settings = JSON.parse(await response.text()) as { sources: { installed: boolean; description?: unknown }[] }
+    const source = settings.sources[0]
+    if (!source) throw new Error('The fake settings response has no Source')
+    source.installed = false
+    source.description = undefined
+    return new Response(JSON.stringify(settings), { status: 200, headers: { 'content-type': 'application/json' } })
+  })
+  at({ page: 'settings', query: { group: 'source' } })
+  await mount()
+  vi.mocked(globalThis.fetch).mockImplementation(original)
+  const card = all('.dt-card')[0]!
+  expect(card.textContent).toContain(zh.sourceNotInstalled)
+  expect(card.textContent).toContain(zh.sourceNotInstalledHint)
+  expect(card.querySelector('[role="switch"]')).toBeNull()
+  expect(card.querySelector('input, select, textarea')).toBeNull()
+})
+
+it('shows a deployment setup problem above every Source and opens the Deployment settings from it', async () => {
+  server.setup = { ...server.setup, problem: problemOf('gitTooOld') }
+  await mount()
+  await click(zh['tab.source'])
+  expect(all('.dt-form > .dt-error')[0]!.textContent).toContain(zh['setup.gitTooOld'])
+  await click(zh.setupFixLink)
+  expect(document.querySelector('.dt-settings-link[aria-current="page"]')?.textContent).toBe(zh['settingsGroup.deployment'])
+})
+
+it('shows an empty dropped reply preview and a paused Source health note', async () => {
+  server.dropped = [{ ...droppedReply('empty', 1, 'feishu', 'channelGone'), preview: '' }]
+  server.health = { github: { state: 'paused', detail: 'waiting for setup' } }
+  await mount()
+  await click(zh['tab.source'])
+  const feishu = all('.dt-form > .dt-list > .dt-row')[0]!
+  await click([...feishu.querySelectorAll<HTMLElement>('[data-disclosure-row]')].find(row => row.textContent?.includes(zh.sourceDroppedTitle))!)
+  expect(feishu.textContent).toContain(zh.empty)
+  const github = all('.dt-form > .dt-list > .dt-row')[1]!
+  expect(github.textContent).toContain('waiting for setup')
+})

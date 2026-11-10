@@ -4,8 +4,9 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { Config, executable, machineOf, resolveDeployment, resolveFeishuBot, type Machine, type Probe } from '../src/deployment.ts'
+import { Config, executable, machineOf, resolveDeployment, resolveFeishuBot, workerProbe, type Machine, type Probe } from '../src/deployment.ts'
 import { gitEnv } from './fixtures/git.ts'
+import type { SubprocessRuntime } from '@deepseek-ai/dsh-subprocess'
 
 const exec = promisify(execFile)
 let dir: string
@@ -84,6 +85,37 @@ describe('setup', () => {
     await needs('github', 'agentCliNoAccount', {}, { repository, cli: program(join(dir, 'bin', 'gh-anonymous'), 'echo \'{}\'') })
     expect(() => executable('nothing-here', join(dir, 'bin'))).toThrow('nothing-here is not an executable file on PATH')
   })
+  it('wraps non-Error probe failures and invalid answers, and works without a host PATH', async () => {
+    const repository = 'acme/widgets'
+    const failed: Probe = async () => { throw 'gh unavailable' }
+    await expect(resolveDeployment(machine(), { repository, cli: 'gh' }, failed, path)).rejects.toMatchObject({
+      code: 'agentCliSignedOut', values: { output: 'gh unavailable' },
+    })
+    const nonJson = program(join(dir, 'bin', 'gh-not-json'), 'echo signed in')
+    await expect(resolveDeployment(machine(), { repository, cli: nonJson }, probe, path)).rejects.toMatchObject({ code: 'agentCliNoAccount' })
+    const unreported = program(join(dir, 'bin', 'gh-unreported'), 'case "$*" in\n  "api user") echo \'{"login":"Agent-Bot","id":7}\' ;;\n  *) echo \'{"name":"","push":true}\' ;;\nesac')
+    await expect(resolveDeployment(machine(), { repository, cli: unreported }, probe, path)).rejects.toMatchObject({ code: 'repositoryUnreported' })
+    const larkFailed: Probe = async () => { throw 'lark unavailable' }
+    await expect(resolveFeishuBot(machine(), { cli: 'lark-cli' }, larkFailed, path)).rejects.toMatchObject({
+      code: 'feishuCliFailed', values: { output: 'lark unavailable' },
+    })
+    const oldPath = process.env.PATH
+    delete process.env.PATH
+    try {
+      await expect(resolveDeployment(machine(), { repository, cli: join(dir, 'bin', 'gh') }, probe)).resolves.toMatchObject({ repository })
+      await expect(resolveFeishuBot(machine(), {}, probe)).resolves.toBeUndefined()
+      const argvs: string[][] = []
+      const runtime = {
+        spawn: (spec: { argv: readonly string[] }) => {
+          argvs.push([...spec.argv])
+          return { done: Promise.resolve({ exitCode: 0 }), collected: { stdout: undefined, stderr: undefined } }
+        },
+      } as unknown as SubprocessRuntime
+      await workerProbe(runtime, join(dir, 'state'), join(dir, 'state'), new AbortController().signal)(['true'])
+      expect(argvs[0]![1]).toBe('PATH=')
+    } finally { if (oldPath !== undefined) process.env.PATH = oldPath }
+  })
+
   it('reads the Feishu bot from a bot-only lark-cli, or finds none when the Feishu Source names no CLI', async () => {
     expect(await resolveFeishuBot(machine(), {}, probe, path)).toBeUndefined()
     expect(await resolveFeishuBot(machine(), { cli: 'lark-cli' }, probe, path)).toEqual({ cli: join(dir, 'bin', 'lark-cli'), appId: 'cli_bot', brand: 'lark', botId: 'ou_bot', name: 'Widgets Bot' })

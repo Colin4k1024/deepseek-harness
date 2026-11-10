@@ -11,6 +11,7 @@ import {
   credentialHelper,
   runAsWorker,
   verifyDirectory,
+  verifyEnvironment,
   withoutDirectory,
   workerBin,
   workerGitConfig,
@@ -175,6 +176,31 @@ const subprocess = (config: string): SubprocessRuntime => ({
     return { done, collected: { stdout: reader('stdout'), stderr: reader('stderr') } }
   },
 }) as unknown as SubprocessRuntime
+it('reports a worker stopped without diagnostics, missing output, and an environment check that cannot run', async () => {
+  const signal = new AbortController().signal
+  const stopped: SubprocessRuntime = {
+    spawn: () => ({
+      done: Promise.resolve({ exitCode: null, signal: null }),
+      collected: { stdout: undefined, stderr: undefined },
+    }),
+  } as unknown as SubprocessRuntime
+  await expect(runAsWorker(stopped, ['git', 'status'], dir, signal)).rejects.toMatchObject({
+    message: 'git status was stopped before it finished',
+    exitCode: undefined,
+  })
+  const noOutput: SubprocessRuntime = {
+    spawn: () => ({
+      done: Promise.resolve({ exitCode: 0, signal: null }),
+      collected: { stdout: undefined, stderr: undefined },
+    }),
+  } as unknown as SubprocessRuntime
+  await expect(runAsWorker(noOutput, ['true'], dir, signal)).resolves.toBe('')
+  const failed: SubprocessRuntime = {
+    spawn: () => ({ done: Promise.reject(new Error('worker could not start')), collected: { stdout: undefined, stderr: undefined } }),
+  } as unknown as SubprocessRuntime
+  await expect(verifyEnvironment(testDeployment({ stateDir: dir }), failed, signal)).rejects.toThrow('git does not read')
+})
+
 describe('ticket directory check', () => {
   const signal = new AbortController().signal
   const env = () => gitEnv({ GIT_CONFIG_GLOBAL: join(dir, 'global'), GIT_CONFIG_NOSYSTEM: '1' })

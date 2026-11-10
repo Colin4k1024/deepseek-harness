@@ -250,7 +250,7 @@ async function pollThread(ctx: SourceContext, thread: Thread, signal?: AbortSign
     if (signal?.aborted) return
     const result = await readFeishu(commands, ref, resource, pageSize, 'desc')
     if (!('messages' in result)) throw new Error('Expected Feishu thread messages')
-    if (tally && 'skipped' in result) tally.skipped += result.skipped ?? 0
+    if (tally && 'skipped' in result) tally.skipped += result.skipped
     if ('thread_id' in result && result.thread_id && thread.meta.threadId !== result.thread_id) {
       ctx.threads.patch(thread.key, { threadId: result.thread_id })
     }

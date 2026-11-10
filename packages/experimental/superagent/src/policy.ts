@@ -3,7 +3,6 @@
  * Who may originate work is configured per Source in that Source's own identities; the Policy never maps a person across Sources.
  */
 import { LIMITS } from './limits.ts'
-import { required } from './core/required.ts'
 import { z } from 'zod'
 import { ADMISSION_DEFAULTS, type Admission, type AdmissionCell, type AdmissionRow } from './admission.ts'
 import {
@@ -218,8 +217,8 @@ const participating = (thread: Thread, tickets: Ticket[]): boolean =>
   [...thread.subscriptions, ...tickets.map(ticket => ticket.id)].some(id => !thread.context?.includes(id))
 const listened = (sources: SourceScope, source: string, meta: Record<string, unknown>) => sources.scope({ source, meta })
 
-function admissionCell(allowed: boolean, addressed: boolean): AdmissionCell | undefined {
-  return allowed ? addressed ? undefined : 'listedUnaddressed' : addressed ? 'unlistedAddressed' : 'unlistedUnaddressed'
+function admissionCell(allowed: boolean, addressed: boolean): AdmissionCell {
+  return allowed ? 'listedUnaddressed' : addressed ? 'unlistedAddressed' : 'unlistedUnaddressed'
 }
 function admissionOf(settings: Settings, source: string, row: string | undefined, cell: AdmissionCell): Admission {
   return (row === undefined ? undefined : settings.policy.sources[source]?.admission[row]?.[cell]) ?? ADMISSION_DEFAULTS[cell]
@@ -292,7 +291,7 @@ export function settingsPolicy(settings: Settings, sources: SourceScope): Policy
       }
       if (allowed && trigger.addressed)
         return { admissible: true, strength: 'explicit', basis: { ...recorded, via: 'addressed', addressed: trigger.addressed } }
-      const cell = required(admissionCell(!!allowed, !!trigger.addressed))
+      const cell = admissionCell(!!allowed, !!trigger.addressed)
       // Unaddressed messages only use the admission table when the Source observes all messages in that scope.
       const receivable = !!trigger.addressed || (scope.listened && scope.observed)
       const admission = receivable ? admissionOf(settings, trigger.source, row, cell) : 'ignore'
