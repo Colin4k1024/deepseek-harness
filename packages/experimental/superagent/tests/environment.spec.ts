@@ -99,6 +99,13 @@ describe('worker shims', () => {
     await expect(writeEnvironment(testDeployment({ stateDir: dir }), [])).rejects.toThrow(`${workerGitConfig(dir)} was not written by dsh-superagent`)
     expect(readFileSync(workerGitConfig(dir), 'utf8')).toBe('[user]\n\tname = someone\n')
   })
+  it('escapes a GitHub CLI path containing quote and backslash in git configuration', async () => {
+    const cli = '/opt/a"b\\c'
+    await writeEnvironment(testDeployment({ stateDir: dir, github: { ...testDeployment().github, cli } }), [])
+    expect(readFileSync(workerGitConfig(dir), 'utf8')).toContain(
+      "\thelper = \"!'/opt/a\\\"b\\\\c' auth git-credential\"",
+    )
+  })
   it('replaces the files it wrote under the project\'s earlier names', async () => {
     await writeEnvironment(testDeployment({ stateDir: dir }), ['old-cli', 'older-cli'])
     const legacy = (file: string, name: string) =>{  writeFileSync(file, readFileSync(file, 'utf8').replace('Written by dsh-superagent', `Written by ${name}`)) }

@@ -140,6 +140,13 @@ describe('gate', () => {
   it('admits no direct message from a sender the Source\'s part does not allow, not even as a follow-up', () => {
     expect(policy.gate(feishu({ actor: { source: 'feishu', id: 'ou_guest' }, addressed: 'direct', meta: { chatId: 'p2p', direct: true, mentioned: false } }), thread(['ticket']), [])).toEqual({ admissible: false, reason: 'not_a_member' })
   })
+  it('records a Source without a row and refuses one that does not listen', () => {
+    const noRow = settingsPolicy(base, { scope: () => ({ listened: true as const, observed: true }) })
+    const system = feishu({ human: false, actor: { source: 'feishu', id: '' }, addressed: undefined, meta: {} })
+    expect(noRow.gate(system, thread(), [])).toEqual({ admissible: false, reason: 'admission_ignored' })
+    const off = settingsPolicy(base, { scope: () => ({ listened: false, reason: 'source_disabled' }) })
+    expect(off.gate(unaddressed(), thread(), [])).toEqual({ admissible: false, reason: 'no_mention' })
+  })
   it('rejects automated messages, unknown senders without a Thread, and allowed senders who did not address the agent', () => {
     expect(policy.gate(feishu({ human: false }), thread(), [])).toEqual({ admissible: false, reason: 'not_human' })
     expect(policy.gate(feishu({ actor: { source: 'feishu', id: 'ou_guest' } }), thread(), [])).toEqual({ admissible: false, reason: 'not_a_member' })
@@ -452,6 +459,10 @@ describe('assessment outcomes', () => {
     expect(assessmentOutcome(accept(auto, false), auto, 'inferred')).toMatchObject({ kind: 'ignore', reason: { code: 'noRuleMatched' } })
     expect(() => assessmentOutcome({ ...accept(auto), rule_assessments: [] }, auto, 'inferred')).toThrow('Exactly one assessment for every enabled rule')
     expect(() => assessmentOutcome({ ...accept(auto), intent_evidence: null }, auto, 'inferred')).toThrow('Acceptance requires intent_evidence')
+    expect(assessmentOutcome({ ...accept(auto), decision: 'ignore', reason: 'not now' }, auto, 'inferred'))
+      .toMatchObject({ kind: 'ignore', reason: 'not now' })
+    expect(assessmentOutcome({ ...accept(auto), direction: { ...direction, requires_design_decision: true } }, auto, 'inferred'))
+      .toMatchObject({ kind: 'ignore', reason: { code: 'directionUnsettled' } })
     const scope = { scope: () => ({ listened: true as const, observed: true }) }
     const enabled = auto.policy.rules.find(rule => rule.enabled)!.id
     expect(settingsPolicy(auto, scope).admitsInferred([enabled])).toBe(true)
@@ -577,6 +588,9 @@ describe('policy effects', () => {
     })
     // A rule the ticket was not accepted under changes nothing for it.
     expect(policyEffects([inferred, explicit], base, rules({}, { enabled: false }), scope).size).toBe(0)
+    // A rule absent before and disabled now changes nothing for a ticket that never matched it.
+    const absent = ticket('t0', { strength: 'explicit', actor: { source: 'feishu', id: 'ou_alice' }, basis: { via: 'listed', source: 'feishu', rules: ['missing'] } })
+    expect(policyEffects([absent], base, rules({}, { enabled: false }), scope).size).toBe(0)
     expect(policyEffects([inferred], base, rules({ instruction: 'Fix typos only.' }), scope).get('t1')).toEqual({
       rules: [{ id: 'copy', name: 'Copy', change: 'changed', instruction: 'Fix typos only.' }],
     })

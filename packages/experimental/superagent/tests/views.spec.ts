@@ -72,8 +72,8 @@ const live = (id: string) =>{  store.tickets.save({ id, title: id, decisionId: '
   updatedAt: at,
   mandate: { strength: 'explicit', policyVersion: 'v', basis: { via: 'listed' }, actor: { source: 'feishu', id: 'ou_alice' }, scope: '' },
   origin: { triggerId: 'e0', triggerIds: ['e0'] }, assignments: [], inputs: [] }) }
-const message = (id: string, actor: { source: string; id: string }, human = true) => ({ id, source: actor.source,
-  threads: [{ source: 'feishu', id: 'oc_1:om_root' }], actor, human, at, text: `message ${id}`, meta: {} })
+const message = (id: string, actor: { source: string; id: string }, human = true, time = at) => ({ id, source: actor.source,
+  threads: [{ source: 'feishu', id: 'oc_1:om_root' }], actor, human, at: time, text: `message ${id}`, meta: {} })
 
 it('names each sender as the Policy lists it, by its id where the id is readable, and as its kind names one it does not list', () => {
   const view = snapshot(views())
@@ -119,6 +119,16 @@ it('states each Source by the first state that holds', () => {
   expect(states({ problem }, { feishu: { state: 'ready', detail: '' }, history: { state: 'ready', detail: '' }, github: { state: 'ready',
     detail: '' } }))
     .toEqual({ feishu: 'setup', github: 'setup' })
+  const now = new Date().toISOString()
+  store.triggers.save(message('filtered-now', { source: 'feishu', id: 'ou_bob' }, true, now))
+  store.triggers.saveDisposition('filtered-now', { filtered: { code: 'not_a_member' }, fanout: [], at: now })
+  const rows = sourcesStatus(host, {}, {})
+  expect(rows.find(source => source.id === 'feishu')).toMatchObject({
+    stats: { received: 1, filtered: 1, lastAt: now },
+    filtered: [{ id: 'filtered-now', at: now, actor: { source: 'feishu', id: 'ou_bob' }, preview: 'message filtered-now',
+      reason: { code: 'not_a_member' } }],
+  })
+  expect(rows.find(source => source.id === 'github')).toMatchObject({ stats: { received: 0, filtered: 0, lastAt: '' }, filtered: [] })
 })
 
 it('follows the Ticket\'s stage: a blocked Ticket a person answered since is working, with no retry, note or turn end', () => {
