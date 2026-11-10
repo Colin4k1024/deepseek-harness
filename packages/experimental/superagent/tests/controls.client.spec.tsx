@@ -3,8 +3,8 @@ import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { act, useState } from 'react'
 import { createRoot } from 'react-dom/client'
-import { expect, it } from 'vitest'
-import { Modal, SegmentedTabs } from '../src/client/controls.tsx'
+import { expect, it, vi } from 'vitest'
+import { DisclosureRow, InfoTip, Modal, SegmentedControl, SegmentedTabs } from '../src/client/controls.tsx'
 
 declare global {
   var IS_REACT_ACT_ENVIRONMENT: boolean
@@ -105,7 +105,123 @@ it('moves the tab selection with arrow keys and wraps at the ends', async () => 
   const list = container.querySelector('[role="tablist"]')!
   await act(async () => { list.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true })) })
   await act(async () => { list.dispatchEvent(new KeyboardEvent('keydown', { key: 'Home', bubbles: true })) })
+  await act(async () => { await new Promise(resolve => requestAnimationFrame(resolve)) })
   expect(seen).toEqual(['c', 'a'])
   expect(container.querySelector('[aria-selected="true"]')?.textContent).toBe('a')
+  act(() => { root.unmount() })
+})
+
+
+it('marks the scrollable edges of a tab bar and measures again when its size changes or it is unmounted', async () => {
+  const observers: { measure: () => void }[] = []
+  class FakeResizeObserver {
+    disconnect = vi.fn()
+    constructor(measure: () => void) { observers.push({ measure }) }
+    observe() {}
+  }
+  vi.stubGlobal('ResizeObserver', FakeResizeObserver)
+  function Harness() {
+    return <SegmentedTabs label="pages" value="a" onChange={() => {}} items={['a', 'b'].map(item => ({ value: item as 'a' | 'b', label: item, id: item, panelId: 'p' }))} />
+  }
+  const container = document.createElement('div'); document.body.append(container)
+  const root = createRoot(container)
+  await act(async () => { root.render(<Harness />) })
+  const list = container.querySelector<HTMLDivElement>('[role="tablist"]')!
+  const setEdges = (scrollLeft: number, clientWidth: number, scrollWidth: number) => {
+    list.scrollLeft = scrollLeft
+    Object.defineProperty(list, 'clientWidth', { value: clientWidth, configurable: true })
+    Object.defineProperty(list, 'scrollWidth', { value: scrollWidth, configurable: true })
+    act(() => { observers[0]!.measure() })
+  }
+  expect(list.dataset.more).toBeUndefined()
+  setEdges(0, 10, 20); expect(list.dataset.more).toBe('end')
+  setEdges(5, 5, 15); expect(list.dataset.more).toBe('both')
+  setEdges(5, 10, 11); expect(list.dataset.more).toBe('start')
+  setEdges(0, 20, 20); expect(list.dataset.more).toBeUndefined()
+  act(() => { root.unmount() })
+  act(() => { observers[0]!.measure() })
+  vi.unstubAllGlobals()
+})
+
+it('keeps a disabled segmented control inert for keyboard users', async () => {
+  const seen: string[] = []
+  function Harness() {
+    return <SegmentedControl label="mode" disabled value="a" onChange={(next) => { seen.push(next) }}
+      options={[{ value: 'a', label: 'A' }, { value: 'b', label: 'B' }]} />
+  }
+  const container = document.createElement('div'); document.body.append(container)
+  const root = createRoot(container)
+  await act(async () => { root.render(<Harness />) })
+  await act(async () => { container.querySelector('[role="tablist"]')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true })) })
+  expect(seen).toEqual([])
+  act(() => { root.unmount() })
+})
+
+it('toggles a disclosure row with Enter and Space, and ignores other keys', async () => {
+  const toggled: number[] = []
+  function Harness() {
+    return <>
+      <DisclosureRow icon="+" title="First" open={false} onToggle={() => { toggled.push(1) }}>first</DisclosureRow>
+      <DisclosureRow icon="+" title="Second" open={false} onToggle={() => { toggled.push(2) }}>second</DisclosureRow>
+    </>
+  }
+  const container = document.createElement('div'); document.body.append(container)
+  const root = createRoot(container)
+  await act(async () => { root.render(<Harness />) })
+  const [first, second] = [...container.querySelectorAll('[data-disclosure-row]')]
+  await act(async () => { first.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })) })
+  await act(async () => { second.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true })) })
+  await act(async () => { first.dispatchEvent(new KeyboardEvent('keydown', { key: 'x', bubbles: true })) })
+  expect(toggled).toEqual([1, 2])
+  act(() => { root.unmount() })
+})
+
+it('opens a tooltip above its anchor, supports touch and keyboard dismissal, and closes on scroll', async () => {
+  const rect = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+    const above = this.className.includes('dt-tooltip')
+    return {
+      top: above ? 0 : 100, bottom: above ? 10 : 120, left: 40, right: 60,
+      width: 20, height: above ? 10 : 20, x: 40, y: above ? 0 : 100, toJSON: () => ({}),
+    }
+  })
+  const focusable = vi.spyOn(HTMLElement.prototype, 'matches').mockImplementation(function (this: HTMLElement, selector) {
+    return selector === ':focus-visible' && this.className.includes('dt-info')
+  })
+  function Harness() { return <InfoTip text="What this means" /> }
+  const container = document.createElement('div'); document.body.append(container)
+  const root = createRoot(container)
+  await act(async () => { root.render(<Harness />) })
+  const trigger = container.querySelector('button')!
+  await act(async () => { trigger.dispatchEvent(new FocusEvent('focusin', { bubbles: true })) })
+  expect(document.querySelector('[role="tooltip"]')).not.toBeNull()
+  const pointer = (type: string) => {
+    const event = new MouseEvent('pointerup', { bubbles: true, cancelable: true })
+    Object.defineProperty(event, 'pointerType', { value: type })
+    return event
+  }
+  await act(async () => { trigger.dispatchEvent(pointer('mouse')) })
+  expect(document.querySelector('[role="tooltip"]')).not.toBeNull()
+  await act(async () => { trigger.dispatchEvent(new KeyboardEvent('keydown', { key: 'a', bubbles: true })) })
+  await act(async () => { window.dispatchEvent(new Event('scroll')) })
+  expect(document.querySelector('[role="tooltip"]')).toBeNull()
+  await act(async () => { trigger.dispatchEvent(pointer('touch')) })
+  expect(document.querySelector('[role="tooltip"]')).not.toBeNull()
+  await act(async () => { trigger.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })) })
+  expect(document.querySelector('[role="tooltip"]')).toBeNull()
+  await act(async () => { trigger.dispatchEvent(new FocusEvent('focusin', { bubbles: true })) })
+  await act(async () => { trigger.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 0 })) })
+  expect(document.querySelector('[role="tooltip"]')).not.toBeNull()
+  const touchClick = new MouseEvent('click', { bubbles: true, detail: 1 })
+  Object.defineProperty(touchClick, 'pointerType', { value: 'touch' })
+  await act(async () => { trigger.dispatchEvent(touchClick) })
+  expect(document.querySelector('[role="tooltip"]')).not.toBeNull()
+  const click = new MouseEvent('click', { bubbles: true, detail: 1 })
+  await act(async () => { trigger.dispatchEvent(click) })
+  expect(document.querySelector('[role="tooltip"]')).toBeNull()
+  focusable.mockRestore()
+  focusable.mockImplementation(() => false)
+  await act(async () => { trigger.dispatchEvent(new FocusEvent('focusin', { bubbles: true })) })
+  expect(document.querySelector('[role="tooltip"]')).toBeNull()
+  focusable.mockRestore(); rect.mockRestore()
   act(() => { root.unmount() })
 })

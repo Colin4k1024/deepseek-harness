@@ -1,10 +1,10 @@
 // @vitest-environment jsdom
 // Panel search, glossary, route persistence, and host-down fallback.
 import { act } from 'react'
-import { expect, it } from 'vitest'
+import { expect, it, vi } from 'vitest'
 import { en, zh } from '../src/client/locales.ts'
 import { usePanel, mount, remount, settle, all, click, type, text, field } from './fixtures/panel.client.tsx'
-import { server, found } from './fixtures/panel-server.client.ts'
+import { server, found, threadSummary, ticketSummary } from './fixtures/panel-server.client.ts'
 
 usePanel()
 it('states why a filtered search result has no Thread instead of opening an empty one', async () => {
@@ -55,6 +55,8 @@ it('shows domain terms in the interface language only and lists both languages i
   expect([...dialog.querySelectorAll('th.dt-glossary-group')].map(cell => cell.textContent)).toEqual(['Roles', 'Source', 'Trigger', 'Eval',
     'Execution'])
   expect([...dialog.querySelectorAll('tr')].find(item => item.textContent?.startsWith('Main Session'))!.textContent).toContain('prompts call it the orchestrator')
+  await click(document.querySelector<HTMLElement>('.dt-modal-close')!)
+  expect(document.querySelector('[role="dialog"]')).toBeNull()
 })
 
 it('says dsh-superagent is not answering when its routes are gone, as while it restarts', async () => {
@@ -90,4 +92,55 @@ it('shows the answer to the latest search only', async () => {
   expect(all('.dt-search-results .dt-row-title').map(title => title.textContent)).toEqual(['new message'])
   await act(async () => { release() }); await settle()
   expect(all('.dt-search-results .dt-row-title').map(title => title.textContent)).toEqual(['new message'])
+})
+
+it('opens Ticket and Thread search results', async () => {
+  server.search.threads = [threadSummary()]
+  const fallback = globalThis.fetch
+  vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+    if (new URL(url, 'http://127.0.0.1:3082').searchParams.get('q') === 'ticket')
+      return Response.json({ tickets: [ticketSummary()], threads: [], items: [] })
+    return fallback(url, init)
+  })
+  await mount()
+  const search = field<HTMLInputElement>(zh.searchLabel)
+  const submit = async (query: string) => {
+    await type(search, query)
+    await act(async () => { search.closest('form')!.requestSubmit() })
+    await settle()
+  }
+  await submit('ticket')
+  await click(all('.dt-search-results button').find(button => button.textContent === '修复回归')!)
+  expect(document.querySelector('.dt-page-title h2')?.textContent).toBe('修复回归')
+  await submit('thread')
+  await click(all('.dt-search-results button').find(button => button.textContent === '这个文案好奇怪')!)
+  expect(document.querySelector('.dt-page-title h2')?.textContent).toBe('这个文案好奇怪')
+})
+
+it('clears an empty search submission and reports a failed search', async () => {
+  const fallback = globalThis.fetch
+  vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+    if (new URL(url, 'http://127.0.0.1:3082').searchParams.get('q') === 'broken')
+      return new Response(null, { status: 500 })
+    return fallback(url, init)
+  })
+  await mount()
+  const search = field<HTMLInputElement>(zh.searchLabel)
+  await type(search, 'broken')
+  await act(async () => { search.closest('form')!.requestSubmit() })
+  await settle()
+  expect(document.querySelector('.dt-toast')?.textContent).toContain(zh.serverError.replace('{status}', '500'))
+  await type(search, '')
+  await act(async () => { search.closest('form')!.requestSubmit() })
+  await settle()
+  expect(document.querySelector('.dt-search-results')).toBeNull()
+})
+
+it('words a failed state request by its HTTP status', async () => {
+  vi.stubGlobal('fetch', async () => new Response(null, { status: 502 }))
+  await mount()
+  expect(text()).toContain(zh.serverError.replace('{status}', '502'))
+  vi.stubGlobal('fetch', async () => new Response('<html>Bad request</html>', { status: 400 }))
+  await remount()
+  expect(text()).toContain(zh.requestFailed.replace('{status}', '400'))
 })

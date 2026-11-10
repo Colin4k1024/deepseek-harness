@@ -1,7 +1,7 @@
-import { expect, it } from 'vitest'
+import { expect, it, vi } from 'vitest'
 import type { EffectKind } from '../src/app/effects.ts'
 import { en, zh, type DshSuperagentKey } from '../src/client/locales.ts'
-import { reasonLabel, type T } from '../src/client/text.ts'
+import { actorName, errorText, fullTime, localized, reasonLabel, valueLabel, when, type T } from '../src/client/text.ts'
 import { REASONS, USER_ERRORS } from '../src/core/index.ts'
 
 const placeholders = (text: string) => [...text.matchAll(/\{(\w+)\}/g)].map(match => match[1]).sort()
@@ -43,4 +43,39 @@ it('has words for every reason code the core records', () => {
 
 it('words the reasons agents read in the glossary\'s words: a sender on the list, a Thread', () => {
   expect(Object.values(REASONS).filter(text => /\b(member|members|topic)\b/i.test(text))).toEqual([])
+})
+
+
+it('words raw values, actor names, source names, and reasons in the active language', () => {
+  const t = ((key: string, values: Record<string, unknown> = {}) =>
+    Object.keys(values).length ? `${key} ${JSON.stringify(values)}` : key === 'lang' ? 'en' : key === 'source.github' ? 'GitHub' : key) as T
+  expect(errorText(new Error('not running'))).toBe('not running')
+  expect(errorText('stopped')).toBe('stopped')
+  expect(localized(t, 'plain')).toBe('plain')
+  expect(localized(t, { en: 'English', zh: '中文' })).toBe('English')
+  expect(localized(t, undefined)).toBe('')
+  expect(actorName(t, { name: { en: 'Alice', zh: 'Alice' } })).toBe('Alice')
+  expect(actorName(t, undefined)).toBe('automatedNotice')
+  expect(valueLabel(t, 'source', undefined)).toBe('')
+  expect(valueLabel(t, 'source', 'github')).toBe('GitHub')
+  expect(valueLabel(t, 'source', 'unknown')).toBe('unknown')
+  expect(reasonLabel(t, undefined)).toBe('')
+  expect(reasonLabel(t, '')).toBe('')
+  expect(reasonLabel(t, { code: 'said', values: { text: 'The button is already blue' } })).toBe('The button is already blue')
+  expect(reasonLabel(t, { code: 'said', triggerId: 't1' })).toBe('')
+})
+
+it('words timestamps relative to now, and only names the year for other years', () => {
+  vi.useFakeTimers(); vi.setSystemTime(new Date('2026-11-10T12:00:00Z'))
+  expect(when(undefined, 'en')).toBe('')
+  expect(when('not a date', 'en')).toBe('not a date')
+  expect(when('2026-11-10T11:59:45Z', 'en')).toBe('now')
+  expect(when('2026-11-10T11:58:30Z', 'en')).toBe('1 minute ago')
+  expect(when('2026-11-10T08:00:00Z', 'en')).toBe('4 hours ago')
+  expect(when('2026-11-01T12:00:00Z', 'en')).not.toContain('2026')
+  expect(when('2027-11-01T12:00:00Z', 'en')).toContain('2027')
+  expect(fullTime(undefined, 'en')).toBe('')
+  expect(fullTime('not a date', 'en')).toBe('')
+  expect(fullTime('2026-11-10T12:00:00Z', 'en')).toContain('2026')
+  vi.useRealTimers()
 })

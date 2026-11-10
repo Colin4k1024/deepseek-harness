@@ -1,5 +1,11 @@
-import { expect, it } from 'vitest'
-import { draftReducer, merge3, saveBarText, type DraftAction, type DraftState } from '../src/client/draft.tsx'
+// @vitest-environment jsdom
+import { act, createElement } from 'react'
+import { createRoot } from 'react-dom/client'
+import { afterEach, expect, it, vi } from 'vitest'
+import { SettingsSchema } from '../src/policy.ts'
+import { PanelProvider } from '../src/client/provider.tsx'
+import { draftReducer, merge3, saveBarText, useDraft, SaveBar, type DraftAction, type DraftState } from '../src/client/draft.tsx'
+import { ApiError } from '../src/client/api.ts'
 import type { T } from '../src/client/text.ts'
 
 const merged = (base: unknown, mine: unknown, theirs: unknown) => { const conflicts: string[][] = []; return { value: merge3(base, mine,
@@ -112,4 +118,130 @@ it('removes an element of a named list that mine deleted and theirs changed, and
   const rule = (id: string, name: string) => ({ id, name })
   expect(merged([rule('a', 'A'), rule('b', 'B')], [rule('a', 'A')], [rule('a', 'A'), rule('b', 'B?')]))
     .toEqual({ value: [rule('a', 'A')], conflicts: [['b']] })
+})
+
+
+declare global {
+  var IS_REACT_ACT_ENVIRONMENT: boolean | undefined
+}
+globalThis.IS_REACT_ACT_ENVIRONMENT = true
+
+const serve = () => vi.stubGlobal('fetch', vi.fn(async () => Response.json({
+  masterId: 'master', settings: SettingsSchema.parse({}), revisions: { policy: 0, eval: 0, executor: 0 }, sources: [],
+  policy_version: 'v', health: {}, outgoing: [], load: { running: 0, queued: 0 },
+  setup: { machine: { stateDir: '/srv/state', worktreeRoot: '/srv/state/worktrees', blockedCommands: [], promptMaxChars: 100000,
+    admissionContextMaxPages: 10, admissionContextTimeoutMs: 15000 }, problem: null, feishuProblem: null, accounts: null },
+})))
+afterEach(() => { vi.unstubAllGlobals(); sessionStorage.clear() })
+
+type Controls = ReturnType<typeof useDraft<Value>>
+const mount = async (options: Partial<Parameters<typeof useDraft<Value>>[0]>, controls: { current?: Controls }) => {
+  serve()
+  function Harness() {
+    const draft = useDraft<Value>({ key: 'draft', saved, revision: 1, save: async () => ({ revision: 2 }), reload: async () => {}, ...options })
+    controls.current = draft
+    return createElement(SaveBar, { state: draft.state, dirty: draft.dirty, busy: draft.busy, onDiscard: draft.discard,
+      onSave: () => { void draft.submit() } })
+  }
+  const block = document.createElement('div'); document.body.append(block)
+  const root = createRoot(block)
+  await act(async () => { root.render(createElement(PanelProvider, { t }, createElement(Harness))) })
+  for (let i = 0; i < 5; i++) await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)) })
+  return { block, root }
+}
+
+it('drops unreadable stored drafts, restores valid ones, and reports refused storage', async () => {
+  sessionStorage.setItem('draft', '{bad json')
+  const unreadable = { current: undefined as Controls | undefined }
+  let view = await mount({ revision: undefined }, unreadable)
+  expect(unreadable.current?.state).toMatchObject({ phase: 'clean' })
+  act(() => { view.root.unmount() }); view.block.remove()
+
+  sessionStorage.setItem('draft', JSON.stringify({ base: saved, value: { mode: 'auto', limit: 2 }, revision: 1 }))
+  const restored = { current: undefined as Controls | undefined }
+  view = await mount({ revision: undefined }, restored)
+  expect(restored.current?.state).toMatchObject({ phase: 'editing', notice: { kind: 'restored' },
+    draft: { value: { mode: 'auto', limit: 2 } } })
+  act(() => { view.root.unmount() }); view.block.remove()
+
+  const setItem = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('quota exceeded') })
+  const unstored = { current: undefined as Controls | undefined }
+  view = await mount({}, unstored)
+  await act(async () => { unstored.current?.edit({ mode: 'auto', limit: 2 }) })
+  for (let i = 0; i < 5; i++) await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)) })
+  expect(unstored.current?.state.notice).toMatchObject({ kind: 'unstored', error: 'quota exceeded' })
+  setItem.mockRestore()
+  act(() => { view.root.unmount() }); view.block.remove()
+})
+
+it('submits a draft once, reports validation, conflict, and reload failures, and restarts when asked', async () => {
+  const save = vi.fn(async () => ({ revision: 2, restarting: true }))
+  const controls = { current: undefined as Controls | undefined }
+  let view = await mount({ save }, controls)
+  await act(async () => { await controls.current?.submit() })
+  expect(save).not.toHaveBeenCalled()
+  await act(async () => { controls.current?.edit({ mode: 'auto', limit: 2 }) })
+  await act(async () => { await controls.current?.submit() })
+  await act(async () => { await controls.current?.submit() })
+  expect(save).toHaveBeenCalledExactlyOnceWith({ mode: 'auto', limit: 2 }, 1, saved)
+  expect(controls.current?.state).toMatchObject({ phase: 'awaitingRevision', sent: { revision: 2, restarting: true } })
+  act(() => { view.root.unmount() }); view.block.remove()
+
+  const invalid = new ApiError('invalid', 400, { issues: [{ path: 'limit', message: 'too small' }] })
+  const fields = { current: undefined as Controls | undefined }
+  view = await mount({ save: vi.fn(async () => { throw invalid }) }, fields)
+  await act(async () => { fields.current?.edit({ mode: 'auto', limit: 2 }) })
+  await act(async () => { await fields.current?.submit() })
+  expect(fields.current?.state.notice).toMatchObject({ kind: 'invalid', fields: ['limit'] })
+  act(() => { view.root.unmount() }); view.block.remove()
+
+  const conflict = new ApiError('conflict', 409)
+  const rebasing = { current: undefined as Controls | undefined }
+  view = await mount({ save: vi.fn(async () => { throw conflict }), reload: async () => {} }, rebasing)
+  await act(async () => { rebasing.current?.edit({ mode: 'auto', limit: 2 }) })
+  await act(async () => { await rebasing.current?.submit() })
+  expect(rebasing.current?.state.notice).toEqual({ kind: 'rebasing' })
+  act(() => { view.root.unmount() }); view.block.remove()
+
+  const failedReload = new ApiError('conflict', 409)
+  const failed = { current: undefined as Controls | undefined }
+  view = await mount({ save: vi.fn(async () => { throw failedReload }), reload: async () => { throw new Error('reload failed') } }, failed)
+  await act(async () => { failed.current?.edit({ mode: 'auto', limit: 2 }) })
+  await act(async () => { await failed.current?.submit() })
+  expect(failed.current?.state.notice).toMatchObject({ kind: 'failed', error: 'reload failed' })
+  act(() => { view.root.unmount() }); view.block.remove()
+
+  const refused = { current: undefined as Controls | undefined }
+  view = await mount({ save: async () => { throw new Error('save failed') }, reload: async () => {} }, refused)
+  await act(async () => { refused.current?.edit({ mode: 'auto', limit: 2 }) })
+  await act(async () => { await refused.current?.submit() })
+  expect(refused.current?.state.notice).toMatchObject({ kind: 'failed', error: 'save failed' })
+  act(() => { view.root.unmount() }); view.block.remove()
+})
+
+it('returns focus to the settings block when the save bar disappears, and lets a caller override its status', async () => {
+  serve()
+  const discarded: number[] = []
+  let shown = true
+  let focusBlock: HTMLElement | undefined
+  function Harness() {
+    return createElement('div', { tabIndex: -1, ref: (node) => { if (node) focusBlock = node } }, createElement(SaveBar, {
+      state: { phase: 'editing', draft: { base: saved, value: { mode: 'auto', limit: 2 }, revision: 1 } },
+      dirty: shown, busy: false, status: 'Custom status', onDiscard: () => { discarded.push(1) }, onSave: () => {},
+    }))
+  }
+  const block = document.createElement('div'); document.body.append(block)
+  const root = createRoot(block)
+  await act(async () => { root.render(createElement(PanelProvider, { t }, createElement(Harness))) })
+  const save = [...block.querySelectorAll('button')].find(button => button.textContent === 'save')!
+  expect(block.textContent).toContain('Custom status')
+  await act(async () => { save.focus() })
+  const outside = document.createElement('div'); document.body.append(outside)
+  await act(async () => { save.dispatchEvent(new FocusEvent('focusout', { bubbles: true, relatedTarget: outside })) })
+  await act(async () => { save.dispatchEvent(new FocusEvent('focusin', { bubbles: true })) })
+  shown = false
+  await act(async () => { root.render(createElement(PanelProvider, { t }, createElement(Harness))) })
+  expect(document.activeElement).toBe(focusBlock)
+  expect(discarded).toEqual([])
+  outside.remove(); act(() => { root.unmount() }); block.remove()
 })

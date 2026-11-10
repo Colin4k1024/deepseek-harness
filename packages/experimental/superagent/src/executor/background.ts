@@ -72,10 +72,8 @@ function jobsEnd(ctx: Context, sessionId: string, signal: AbortSignal, except?: 
   const jobs = registry(ctx)
   if (!jobs || !owned(jobs, sessionId, except).length) return Promise.resolve(false)
   return new Promise((resolve) => {
-    let settled = false
     const done = (value: boolean) => {
-      if (settled) return
-      settled = true; unsubscribe(); signal.removeEventListener('abort', aborted); resolve(value)
+      unsubscribe(); signal.removeEventListener('abort', aborted); resolve(value)
     }
     const aborted = () => { done(false) }
     // Only an end can leave no job running; a job's output does not.

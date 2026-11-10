@@ -4,7 +4,7 @@ import { act } from 'react'
 import { expect, it, onTestFinished, vi } from 'vitest'
 import { en, zh } from '../src/client/locales.ts'
 import { usePanel, mount, remount, settle, all, find, click, text, at } from './fixtures/panel.client.tsx'
-import { server, trigger, threadSummary, ticketSummary } from './fixtures/panel-server.client.ts'
+import { server, trigger, threadSummary, ticketSummary, acceptDecision } from './fixtures/panel-server.client.ts'
 
 usePanel()
 it('walks a Thread timeline newest first with dispositions as tags and its Decisions, requeues a filtered Trigger, pages backwards and returns', async () => {
@@ -156,4 +156,38 @@ it('shows a link\'s target far back with every Trigger after it', async () => {
   expect(shown()).toEqual(range(0, 119))
   expect(document.querySelector('.dt-highlight .dt-event-text')?.textContent).toBe('message m10')
   expect(all('button').some(button => button.textContent === zh.loadEarlier)).toBe(false)
+})
+
+it("opens a Ticket named by a Thread decision and expands the Thread's Decisions", async () => {
+  const decision = { ...acceptDecision(), ticketId: 't2', ticketTitle: '新工单' }
+  server.threadPages = () => ({ ...threadSummary(), tickets: [], correlated: [], decisions: [decision], context: [], earlier: null,
+    timeline: [trigger('o1', '2026-09-23T00:00:00Z', { disposition: { decision } })] })
+  server.ticketDetails.t2 = { ...server.ticketDetails.t1!, id: 't2', title: '新工单' }
+  at({ page: 'trigger', id: 'feishu:oc_1:om_root' })
+  await mount()
+  await click(document.querySelector<HTMLElement>('[data-disclosure-row]')!)
+  expect(document.querySelector('.dt-disclosure')?.getAttribute('data-open')).toBe('true')
+  await click(zh.openTicket)
+  expect(document.querySelector('.dt-page-title h2')?.textContent).toBe('新工单')
+})
+
+it('reports a missing Thread when a correlation link opens one the server no longer has', async () => {
+  at({ page: 'trigger', id: 'feishu:oc_1:om_root' })
+  await mount()
+  await click('PR 42')
+  expect(text()).toContain(zh.threadNotFound)
+})
+
+it('reports when the Trigger page needed to fill a deep-linked gap is gone', async () => {
+  server.threadPages = (_key, query) => {
+    if (query.around === 'gone')
+      return { ...threadSummary(), tickets: [], correlated: [], decisions: [], context: [], earlier: null,
+        timeline: [trigger('old', '2026-09-20T00:00:00Z')] }
+    if (query.before) return undefined
+    return { ...threadSummary(), tickets: [], correlated: [], decisions: [], context: [], earlier: 'cursor-1',
+      timeline: [trigger('new', '2026-09-23T00:00:00Z')] }
+  }
+  at({ page: 'trigger', id: 'feishu:oc_1:om_root', query: { trigger: 'gone' } })
+  await mount()
+  expect(text()).toContain('Thread not found')
 })

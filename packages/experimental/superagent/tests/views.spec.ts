@@ -9,9 +9,9 @@ import { SettingsSchema } from '../src/policy.ts'
 import { SourceRegistry } from '../src/sources/registry.ts'
 import { feishuKind } from '../src/sources/feishu.ts'
 import { githubKind } from '../src/sources/github.ts'
-import { snapshot, threadSummary, ticketSummary, triggerView } from '../src/app/views/records.ts'
-import { basisFacts, ticketDetail } from '../src/app/views/tickets.ts'
-import { threadDetail } from '../src/app/views/threads.ts'
+import { awaitingEval, channelLink, decisionView, page, snapshot, threadSummary, ticketSummary, triggerView } from '../src/app/views/records.ts'
+import { basisFacts, executorLoad, ticketDetail, ticketList } from '../src/app/views/tickets.ts'
+import { decisionList, search, threadDetail, threadList } from '../src/app/views/threads.ts'
 import { droppedReplies, sourcesStatus } from '../src/app/views/sources.ts'
 import { overview } from '../src/app/views/overview.ts'
 import { markdown, plain } from '../src/app/views/text.ts'
@@ -337,4 +337,185 @@ it('reads each ticket a page\'s follow-ups reached once, and nothing for a messa
   const records = { tickets: { get: vi.fn() }, threads: { get: vi.fn() }, triggers: store.triggers }
   expect(followupOwners(store.triggers.get('f3')!, records)).toEqual([])
   expect([records.tickets.get, records.threads.get].map(read => read.mock.calls.length)).toEqual([0, 0])
+})
+
+
+it('lists Threads by each filter, with paging and latest-activity ordering', () => {
+  const host = views()
+  live('t1')
+  const now = new Date().toISOString()
+  const old = '2000-01-01T00:00:00.000Z'
+  const thread = (key: string, overrides: Record<string, unknown> = {}) => {
+    store.threads.save({
+      key, ref: { source: 'feishu', id: key }, createdAt: old, subscriptions: [], correlated: [], pending: [], meta: {}, ...overrides,
+    })
+  }
+  thread('recent', { lastAt: now })
+  thread('old')
+  thread('subscribed', { subscriptions: ['t1'], lastAt: old })
+  thread('evaluating', { evaluating: { id: 'e1', threadKey: 'evaluating', triggerIds: ['f1'], primary: 'f1', strength: 'explicit',
+    actor: { source: 'feishu', id: 'ou_alice' }, basis: { via: 'listed' }, policyVersion: 'v', startedAt: old, deadline: old } })
+  thread('idle', { subscriptions: ['t1'] })
+  thread('owned', { subscriptions: ['t1'], pending: ['f-owner'] })
+  store.triggers.save(message('f-owner', { source: 'feishu', id: 'ou_alice' }))
+  store.triggers.saveDisposition('f-owner', { fanout: ['t1'], at })
+  expect(threadList(host, 'recent', 0, 10).items.map(item => item.key)).toEqual(['recent'])
+  expect(threadList(host, 'all', 0, 1)).toMatchObject({ total: 6, next_offset: 1, items: [{ key: 'recent' }] })
+  expect(threadList(host, 'subscribed', 0, 10).items.map(item => item.key)).toEqual(['subscribed', 'idle', 'owned'])
+  expect(threadList(host, 'evaluating', 0, 10).items.map(item => item.key)).toEqual(['evaluating'])
+})
+
+it('returns no Thread detail for an unknown key and names a missing correlated Thread by its key', () => {
+  const host = views()
+  expect(threadDetail(host, 'missing', undefined, 10)).toBeUndefined()
+  store.threads.save({ key: 'github:known', ref: { source: 'github', id: 'known' }, createdAt: at, subscriptions: ['gone-ticket'], correlated: ['github:gone', 'github:other'],
+    pending: [], meta: {} })
+  store.triggers.save({ id: 'f1', source: 'github', threads: [{ source: 'github', id: 'known' }], actor: { source: 'github', id: 'alice' },
+    human: true, at, text: 'please', channel: githubChannel(42), meta: {} })
+  store.threads.save({ key: 'github:other', ref: { source: 'github', id: 'other' }, createdAt: at, subscriptions: [], correlated: [], pending: [], meta: {} })
+  const detail = threadDetail(host, 'github:known', undefined, 10)!
+  expect(detail.correlated).toEqual([{ key: 'github:gone', title: 'github:gone' }, { key: 'github:other', title: 'github:other' }])
+  expect(detail.tickets).toEqual([])
+  expect(detail.url).toBe(githubLink({ number: '42' }, {}).url)
+})
+
+it('returns no search rows for an empty query and no next decisions at a page boundary', () => {
+  const host = views()
+  expect(search(host, '   ', { entries: () => new Map() })).toEqual({ tickets: [], items: [], threads: [] })
+  for (const id of ['d1', 'd2', 'd3']) store.decisions.save({ id, evalId: id, threadKey: 'feishu:oc_1:om_root', triggerIds: [], policyVersion: 'v',
+    at, kind: 'ignore', reason: [], strength: 'explicit' })
+  expect(decisionList(host, ['ignore'], 0, 1)).toMatchObject({ items: [{ id: 'd3' }], next_offset: 1 })
+  expect(decisionList(host, ['ignore'], 2, 1)).toMatchObject({ items: [{ id: 'd1' }], next_offset: null })
+})
+
+it('ends a page exactly at the last row and counts a queued Trigger whose record is missing', () => {
+  const host = views()
+  live('t1')
+  expect(page(['a', 'b'], 1, 1)).toEqual({ items: ['b'], total: 2, next_offset: null })
+  store.threads.save({ key: 'feishu:oc_1:om_root', ref: { source: 'feishu', id: 'oc_1:om_root' }, createdAt: at, subscriptions: ['t1'],
+    correlated: [], pending: ['gone', 'f1'], meta: {} })
+  store.triggers.save(message('f1', { source: 'feishu', id: 'ou_alice' }))
+  store.triggers.saveDisposition('f1', { fanout: ['t1'], at })
+  expect(awaitingEval(snapshot(host), store.threads.get('feishu:oc_1:om_root')!)).toEqual(['gone'])
+})
+
+it('names a hand-back by the missing ticket id and reports a Thread poll error', () => {
+  const host = views()
+  store.triggers.save(message('f1', { source: 'feishu', id: 'ou_alice' }))
+  store.triggers.saveDisposition('f1', { fanout: [], handbacks: [{ ticketId: 'gone', reason: 'Unrelated', at }], at })
+  expect(triggerView(snapshot(host), store.triggers.get('f1')!).disposition.handbacks).toEqual([{ ticketId: 'gone', title: 'gone',
+    reason: 'Unrelated', at }])
+  store.threads.save({ key: 'feishu:broken', ref: { source: 'feishu', id: 'broken' }, createdAt: at, subscriptions: [], correlated: [],
+    pending: [], meta: { pollError: 'token expired' } })
+  expect(threadSummary(snapshot(host), store.threads.get('feishu:broken')!).stage).toBe('error')
+})
+
+it('shows delivery and failed notes for tickets waiting on a person', () => {
+  views()
+  live('delivery')
+  store.tickets.save({ ...store.tickets.get('delivery')!, delivery: { error: 'worker Session busy', at } })
+  expect(ticketSummary(store.tickets.get('delivery')!)).toMatchObject({ note: { text: 'worker Session busy', error: true } })
+  live('failed')
+  store.tickets.save({ ...store.tickets.get('failed')!, assignments: [{ id: 'a1', state: 'running', createdAt: at, startedAt: at,
+    report: { state: 'failed', summary: 'tests failed', at } }] })
+  expect(ticketSummary(store.tickets.get('failed')!)).toMatchObject({ note: { text: 'tests failed', error: true } })
+})
+
+it('omits a note for a ready report with no summary and names an unknown subscribed ticket', () => {
+  const host = views()
+  live('review')
+  store.tickets.save({ ...store.tickets.get('review')!, assignments: [{ id: 'a1', state: 'running', createdAt: at, startedAt: at,
+    report: { state: 'ready', summary: '', at } }] })
+  expect(ticketSummary(store.tickets.get('review')!)).not.toHaveProperty('note')
+  store.threads.save({ key: 'feishu:unknown-ticket', ref: { source: 'feishu', id: 'unknown-ticket' }, createdAt: at,
+    subscriptions: ['gone-ticket'], correlated: [], pending: [], meta: {} })
+  expect(threadSummary(snapshot(host), store.threads.get('feishu:unknown-ticket')!).tickets)
+    .toEqual([{ id: 'gone-ticket', title: 'gone-ticket', state: 'unknown' }])
+})
+
+it('finds search terms cached by their message link and shows a filtered Trigger with no Thread', () => {
+  const host = views()
+  const links = { entries: () => new Map([['feishu:oc_1:om_9', 'https://example.com/link']]) }
+  expect(search(host, 'https://example.com/link', links).items).toEqual([])
+  store.triggers.save({ ...message('f1', { source: 'feishu', id: 'ou_bob' }), text: 'needle', human: false,
+    threads: [{ source: 'feishu', id: 'gone' }] })
+  store.triggers.saveDisposition('f1', { filtered: { code: 'chat_not_allowed' }, fanout: [], at })
+  store.threads.save({ key: 'feishu:oc_1:om_root', ref: { source: 'feishu', id: 'oc_1:om_root' }, createdAt: at, subscriptions: [], correlated: [], pending: [], meta: {} })
+  store.triggers.save({ ...message('f2', { source: 'feishu', id: 'ou_bob' }), text: 'needle', at: '2000-01-01T00:00:00.000Z' })
+  store.triggers.saveDisposition('f2', { fanout: [], at })
+  expect(search(host, 'other', links).items).toEqual([])
+  const rows = search(host, 'needle', { entries: () => new Map() }).items
+  expect(rows.map(item => item.id)).toEqual(['f1', 'f2'])
+  expect(rows[0]).toMatchObject({ filtered: { code: 'chat_not_allowed' }, threadTitle: undefined })
+})
+
+it('projects decisions from current and legacy audit records, including missing related records', () => {
+  const host = views()
+  const view = snapshot(host)
+  const base = { evalId: 'e1', threadKey: 'github:gone', triggerIds: ['gone'], policyVersion: 'v', at, kind: 'ignore', reason: [],
+    strength: 'inferred' } as const
+  const decision = (id: string, audit: unknown) => ({ id, ...base, audit, ...id === 'ticketed' ? { ticketId: 'gone-ticket' } : {} })
+  expect(decisionView(view, decision('would', { would_accept: true }))).toMatchObject({ outcome: 'wouldAccept' })
+  expect(decisionView(view, decision('legacy', { matches: [{ rule_id: 'copy', reason: 'matched' }] }))).toMatchObject({
+    rules: [{ id: 'copy', name: 'Copy fixes', matched: true, reason: 'matched' }], preview: '',
+  })
+  expect(decisionView(view, decision('ticketed', { direction: { implementation_requested: true, target_basis: 'message',
+    requires_design_decision: false, evidence: 'the policy' } }))).toMatchObject({ direction: { implementation_requested: true },
+    ticketTitle: undefined })
+  expect(decisionView(view, decision('ticketed'))).not.toHaveProperty('direction')
+})
+
+it('prefers the Trigger URL for a Channel link that names one', () => {
+  const host = views()
+  store.triggers.save(message(feishuTriggerId('om_f1'), { source: 'feishu', id: 'ou_alice' }))
+  const trigger = store.triggers.get(feishuTriggerId('om_f1'))!
+  store.triggers.save({ ...trigger, url: 'https://example.com/message' })
+  expect(channelLink(host, feishuChannel('oc_1', 'om_f1'))).toMatchObject({ source: 'feishu', url: 'https://example.com/message' })
+})
+
+it('formats every Mandate admission fact and legacy authority', () => {
+  const rule = (id: string) => ({ id, name: id === 'copy' ? 'Copy fixes' : id })
+  expect(basisFacts({ via: 'followup', authority: 'message 7' }, rule)).toEqual({ facts: [{ name: 'legacyAuthority', value: 'message 7' }], legacy: true })
+  expect(basisFacts({ via: 'followup' }, rule)).toEqual({ facts: [{ name: 'followup' }], legacy: false })
+  expect(basisFacts({ via: 'admission', cell: 'listedUnaddressed', addressed: 'mention', observation: { mode: 'observe' } }, rule).facts)
+    .toEqual([{ name: 'addressed', value: 'mention' }, { name: 'admission', value: 'listedUnaddressed' }, { name: 'observation' },
+      { name: 'mode', value: 'observe' }])
+  expect(basisFacts({ via: 'listed', addressed: 'direct', observation: { mode: 'auto' }, authority: 'message 8', rules: ['copy'] }, rule))
+    .toEqual({ facts: [{ name: 'addressed', value: 'direct' }, { name: 'observation' }, { name: 'mode', value: 'auto' },
+      { name: 'rules', value: [{ id: 'copy', name: 'Copy fixes' }] }, { name: 'legacyAuthority', value: 'message 8' }], legacy: true })
+})
+
+it('lists ended tickets, queues executor load, and returns no detail for an unknown ticket', () => {
+  const host = views()
+  for (const id of ['e1', 'e2']) {
+    live(id)
+    store.tickets.save({ ...store.tickets.get(id)!, ended: { at, by: 'executor', outcome: 'completed' } })
+  }
+  expect(ticketList(host, 'ended', 0, 1)).toMatchObject({ total: 2, next_offset: 1, items: [{ id: 'e2' }] })
+  live('queued')
+  store.tickets.save({ ...store.tickets.get('queued')!, assignments: [{ id: 'a1', state: 'pending', createdAt: at }] })
+  expect(executorLoad(store, 3)).toEqual({ running: 3, queued: 1 })
+  expect(ticketDetail(host, 'missing')).toBeUndefined()
+})
+
+it('formats a ticket Mandate rule list and omits a Session ref for an Assignment that never started', () => {
+  const host = views()
+  live('rules')
+  store.tickets.save({ ...store.tickets.get('rules')!, mandate: { ...store.tickets.get('rules')!.mandate,
+    basis: { via: 'listed', rules: ['copy'] } }, assignments: [{ id: 'a1', state: 'pending', createdAt: at }] })
+  const detail = ticketDetail(host, 'rules')!
+  expect(detail.basis).toMatchObject({ facts: [{ name: 'rules', value: [{ id: 'copy', name: 'Copy fixes' }] }] })
+  expect(detail.assignments[0]).not.toHaveProperty('ref')
+})
+
+it('adds a reply link and renders text Inputs for a ticket waiting on a person', () => {
+  const host = views()
+  live('t1')
+  store.tickets.save({ ...store.tickets.get('t1')!, channels: [feishuChannel('oc_1', 'om_f1')], attention: { id: 'a1', question: 'Which page?' },
+    inputs: [{ id: 'i1', kind: 'text', text: 'look at page 2', at }, { id: 'i2', kind: 'note', text: 'the build failed', at }] })
+  const rows = ticketList(host, 'person', 0, 10).items
+  expect(rows[0]).toMatchObject({ id: 't1', reply: expect.objectContaining({ source: 'feishu' }) as unknown })
+  const detail = ticketDetail(host, 't1')!
+  expect(detail.inputs.map(input => input.text)).toEqual(['the build failed', 'look at page 2'])
+  expect(detail.decision).toBeUndefined()
 })

@@ -2,7 +2,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { expect, it, vi } from 'vitest'
-import { stopSubagents, untilQuiet } from '../src/executor/background.ts'
+import { collectJob, killJobs, runningJobs, stopSubagents, until, untilQuiet } from '../src/executor/background.ts'
 import { jobRegistry } from './fixtures/host.ts'
 
 /** A context with DSH's job registry and subagents, and an idle worker agent with one live subagent, `child-1`. */
@@ -74,4 +74,70 @@ it('gives up a release of subagents that does not end within 10 seconds, and can
     await stopping
   } finally { vi.useRealTimers() }
   expect(agent.cancel).toHaveBeenCalledWith({ kind: 'user' }, { keepInbox: false })
+})
+
+it('returns false at once when the signal is already aborted', async () => {
+  const stop = new AbortController()
+  stop.abort()
+  await expect(until(Promise.resolve('done'), stop.signal)).resolves.toBe(false)
+})
+
+it('collects the end of a shell job, and gives up collecting it once its signal aborts', async () => {
+  const { ctx, jobs } = setup(async () => false)
+  const running = jobs.run('worker-t1')
+  const ended = collectJob(ctx, 'worker-t1', { id: running, name: running }, new AbortController().signal)
+  jobs.end(running)
+  await expect(ended).resolves.toEqual({ name: running, status: 'completed' })
+  const stop = new AbortController()
+  const aborted = collectJob(ctx, 'worker-t1', { id: running, name: running }, stop.signal)
+  stop.abort()
+  await expect(aborted).resolves.toBeUndefined()
+})
+
+it('collects nothing when DSH has no job registry', async () => {
+  const ctx = { get: () => undefined } as unknown as Context
+  await expect(collectJob(ctx, 'worker-t1', { id: 'bash-1', name: 'bash-1' }, new AbortController().signal)).resolves.toBeUndefined()
+})
+
+it('settles a job wait once even when a second end event follows the first', async () => {
+  const { ctx, jobs } = setup(async () => false)
+  const id = jobs.run('worker-t1')
+  const quiet = untilQuiet(ctx, { id: 'worker-t1', status: 'idle', whenIdle: async () => {} } as unknown as Agent, new AbortController().signal)
+  await new Promise(resolve => setTimeout(resolve, 0))
+  jobs.end(id)
+  jobs.end(id)
+  await expect(quiet).resolves.toBe(true)
+})
+
+it('reports a kill failure while collecting a wait that also fails', async () => {
+  const jobs = {
+    list: () => [{ id: 'bash-1', owner: 'worker-t1', status: 'running' }],
+    wait: vi.fn(async () => { throw new Error('wait failed') }),
+    kill: vi.fn(() => { throw new Error('kill failed') }),
+    events: { subscribe: () => () => {} },
+  }
+  const ctx = { get: (name: string) => name === 'jobs' ? jobs : undefined } as unknown as Context
+  await expect(killJobs(ctx, 'worker-t1', 'Assignment ended')).rejects.toMatchObject({
+    message: 'Killing the shell jobs of worker-t1 failed',
+    errors: [new Error('kill failed')],
+  })
+})
+
+it('names no running job when DSH has no job registry', () => {
+  const ctx = { get: () => undefined } as unknown as Context
+  expect(runningJobs(ctx, 'worker-t1')).toEqual([])
+})
+
+it('keeps collecting a job whose first wait reports it still running', async () => {
+  const views = [{ status: 'running' }, { status: 'completed' }]
+  const jobs = {
+    list: () => [],
+    wait: vi.fn(async () => views.shift()),
+    kill: vi.fn(),
+    events: { subscribe: () => () => {} },
+  }
+  const ctx = { get: (name: string) => name === 'jobs' ? jobs : undefined } as unknown as Context
+  await expect(collectJob(ctx, 'worker-t1', { id: 'bash-1', name: 'bash-1' }, new AbortController().signal))
+    .resolves.toEqual({ name: 'bash-1', status: 'completed' })
+  expect(jobs.wait).toHaveBeenCalledTimes(2)
 })

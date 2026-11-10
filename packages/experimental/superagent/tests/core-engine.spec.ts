@@ -245,6 +245,52 @@ describe('eval', () => {
     h.engine.evaluateDue()
     expect(h.requests.map(candidate => candidate.thread.key)).toEqual(['chat:A', 'chat:B'])
   })
+  it('uses the last Trigger as the origin when an older Eval records no primary, and keeps one Channel for equal Channels', () => {
+    const h = harness()
+    h.engine.receive(trigger('1')); h.engine.receive(trigger('2', { channel: trigger('1').channel })); h.pump()
+    delete h.repo.threads.get('chat:t1')!.evaluating!.primary
+    const decision = h.decide(h.requests[0]!, { kind: 'accept', title: 'Fix', scope: 'small', reason: 'requested' })
+    h.settle()
+    const ticket = h.repo.tickets.get(decision.ticketId!)!
+    expect(ticket.origin).toMatchObject({ triggerId: '2', triggerIds: ['1', '2'] })
+    expect(ticket.channels).toEqual([trigger('1').channel])
+  })
+  it('records no admissible Trigger when the queue names a record the store no longer has', () => {
+    const h = harness()
+    h.repo.threads.save({ key: 'chat:gone', ref: { source: 'chat', id: 'gone' }, createdAt: '', subscriptions: [], correlated: [],
+      pending: ['missing'], meta: {} })
+    h.pump()
+    expect(h.assessor.request).not.toHaveBeenCalled()
+    expect(h.repo.decisions.byThread('chat:gone')).toEqual([expect.objectContaining({ kind: 'ignore', reason: [{ code: 'noAdmissible' }] })])
+  })
+  it('records direct Decisions with and without a ticket id', () => {
+    const h = harness()
+    h.engine.receive(trigger('1'))
+    expect(h.engine.decide('1', { kind: 'ignore', reason: 'not needed' })).toMatchObject({ kind: 'ignore', triggerIds: ['1'] })
+    expect(h.repo.decisions.byThread('chat:t1')[0]).not.toHaveProperty('ticketId')
+    h.engine.receive(trigger('2'))
+    expect(h.engine.decide('2', { kind: 'stop', ticketId: 'ticket-2', reason: 'stop it' })).toMatchObject({ kind: 'ignore', reason: [{ code: 'stopUnknown' }] })
+    h.engine.receive(trigger('3')); h.pump()
+    expect(h.requests.at(-1)).toMatchObject({ triggers: [expect.objectContaining({ id: '3' })] })
+  })
+  it('leaves a queued Thread alone when Policy changes', () => {
+    const h = harness()
+    h.repo.threads.save({ key: 'chat:queued', ref: { source: 'chat', id: 'queued' }, createdAt: '', subscriptions: [], correlated: [],
+      pending: ['q'], meta: {} })
+    h.engine.policyChanged('v1', 'v2')
+    expect(h.repo.threads.get('chat:queued')).toMatchObject({ pending: ['q'] })
+    expect(h.repo.decisions.byThread('chat:queued')).toEqual([])
+  })
+  it('returns without an Eval when only a follow-up a ticket decides was left queued', () => {
+    const h = harness()
+    accepted(h)
+    h.engine.receive(trigger('2', { actor: guest }))
+    h.repo.threads.save({ ...h.repo.threads.get('chat:t1')!, pending: ['2'] })
+    const requests = h.requests.length
+    h.pump()
+    expect(h.requests).toHaveLength(requests)
+    expect(h.repo.threads.get('chat:t1')!.pending).toEqual([])
+  })
   it('counts an Eval\'s deadline from its delivery, queues its Triggers again twice when it expires, then records it unavailable', async () => {
     const h = harness()
     h.engine.receive(trigger('1')); h.pump()
@@ -1135,6 +1181,67 @@ describe('replies', () => {
     expect(h.engine.reply({ purpose: 'result', ticketId, text: 'Done' })).toMatchObject({ status: 'pending' })
     expect(h.outbox.at(-1)!.channel).toEqual(trigger('1').channel)
   })
+  it('queues no acknowledgement for a request no person wrote', () => {
+    const h = harness({ gate: () => ({ admissible: true, strength: 'explicit', basis: { via: 'listed' } }) })
+    h.engine.receive(trigger('1', { human: false })); h.pump()
+    const decision = h.decide(h.requests[0]!, { kind: 'accept', title: 'Fix', scope: 'small', reason: 'requested', acknowledgement: 'ok' })
+    h.settle()
+    expect(h.outbox).toEqual([])
+    expect(() => h.engine.reply({ purpose: 'acknowledgement', ticketId: decision.ticketId!, triggerId: '1', text: 'ok' }))
+      .toThrow(new UserError('ackNotPerson'))
+  })
+  it('refuses answers with no question or channel and a result with nowhere to go, and reuses an answer already queued', () => {
+    const h = harness()
+    const ticketId = accepted(h).ticketId!
+    expect(() => h.engine.reply({ purpose: 'answer', triggerId: 'missing', text: 'x' })).toThrow(new UserError('unknownTrigger'))
+    expect(() => h.engine.reply({ purpose: 'answer', ticketId, text: 'x' })).toThrow(new UserError('notQuestion'))
+    const asked = trigger('2', { actor: guest, channel: { source: 'chat', thread: 't1', address: { message: '2' } } })
+    h.engine.receive(asked)
+    h.engine.report(ticketId, { state: 'progress', summary: 'Yes', answers: '2' })
+    expect(h.engine.reply({ purpose: 'answer', triggerId: '2', text: 'Yes' })).toMatchObject({ reused: false })
+    expect(h.engine.reply({ purpose: 'answer', triggerId: '2', text: 'Yes' })).toMatchObject({ reused: true })
+    expect(h.outbox.filter(message => message.text === 'Yes')).toHaveLength(1)
+    h.engine.receive(trigger('3', { threads: [{ source: 'chat', id: 't3' }], channel: undefined })); h.pump()
+    const quiet = h.decide(h.requests.at(-1)!, { kind: 'accept', title: 'Quiet', scope: 'small', reason: 'requested' })
+    h.settle()
+    h.engine.report(quiet.ticketId!, { state: 'ready', summary: 'done' })
+    expect(() => h.engine.reply({ purpose: 'result', ticketId: quiet.ticketId!, text: 'done' })).toThrow(new UserError('noChannel'))
+  })
+  it('refuses an acknowledgement for an unknown or channel-less Trigger and reuses one already queued', () => {
+    const h = harness()
+    const ticketId = accepted(h).ticketId!
+    expect(() => h.engine.reply({ purpose: 'acknowledgement', ticketId, triggerId: 'missing', text: 'x' }))
+      .toThrow(new UserError('unknownTrigger'))
+    h.engine.receive(trigger('2', { channel: undefined })); h.pump()
+    expect(() => h.engine.reply({ purpose: 'acknowledgement', ticketId, triggerId: '2', text: 'x' })).toThrow(new UserError('ackNoChannel'))
+    h.engine.receive(trigger('3', { human: false })); h.pump()
+    h.outbox.push({ id: key('ack', '3'), channel: trigger('3').channel, text: 'automatic', kind: 'acknowledgement', ticketId })
+    expect(h.engine.reply({ purpose: 'acknowledgement', ticketId, triggerId: '3', text: 'again' })).toMatchObject({ reused: true })
+  })
+  it('sends an answer for a message that reached no ticket', () => {
+    const h = harness()
+    const alone = trigger('2', { threads: [{ source: 'chat', id: 'alone' }] })
+    h.engine.receive(alone)
+    const reply = h.engine.reply({ purpose: 'answer', triggerId: '2', text: 'No ticket owns this' })
+    expect(reply).toMatchObject({ status: 'pending', reused: false })
+    expect(h.outbox.at(-1)).toMatchObject({ channel: alone.channel, text: 'No ticket owns this', kind: 'reply' })
+  })
+  it('sends an answer that names both its ticket and Trigger', () => {
+    const h = harness()
+    const ticketId = accepted(h).ticketId!
+    const asked = trigger('2', { actor: guest, channel: { source: 'chat', thread: 't1', address: { message: '2' } } })
+    h.engine.receive(asked)
+    h.engine.report(ticketId, { state: 'progress', summary: 'Yes', answers: '2' })
+    expect(h.engine.reply({ purpose: 'answer', ticketId, triggerId: '2', text: 'Yes' })).toMatchObject({ reused: false })
+    expect(h.outbox.at(-1)).toMatchObject({ channel: asked.channel, ticketId })
+  })
+  it('sends attention to the starting conversation when no Trigger raised it', () => {
+    const h = harness()
+    const ticketId = accepted(h).ticketId!
+    h.repo.tickets.save({ ...h.repo.tickets.get(ticketId)!, attention: { id: 'q1', question: 'Which page?' } })
+    expect(h.engine.reply({ purpose: 'attention', ticketId, question: 'Which page?', text: 'Which page?' })).toMatchObject({ reused: false })
+    expect(h.outbox.at(-1)).toMatchObject({ channel: trigger('1').channel, ticketId })
+  })
 })
 describe('ticket commands', () => {
   it('ends a ticket by the same rule on a close and on a ready report: once no PR it opened is open, as the latest of them ended', () => {
@@ -1216,6 +1323,85 @@ describe('ticket commands', () => {
     expect(retried.assignments).toEqual([expect.objectContaining({ state: 'ended', endedReason: 'retried' }), expect.objectContaining({ state: 'pending' })])
     expect(h.executor.stop).toHaveBeenCalledOnce()
     expect(h.executor.start).toHaveBeenLastCalledWith(expect.objectContaining({ id: ticketId }), retried.assignments[1])
+  })
+  it('reopens a followed Thread when bound again and records the same note once at one time', () => {
+    const h = harness()
+    const ticketId = accepted(h).ticketId!
+    h.engine.bindThread(ticketId, { source: 'gh', id: 'pr-1' }, false)
+    h.engine.bindThread(ticketId, { source: 'gh', id: 'pr-2' }, true)
+    h.engine.threadClosed({ source: 'gh', id: 'pr-1' }, 'closed', '2026-09-23T00:00:00Z')
+    expect(h.repo.tickets.get(ticketId)!.follows).toEqual([{ thread: 'gh:pr-1', own: false, closed: { at: '2026-09-23T00:00:00.000Z',
+      outcome: 'closed' } }, { thread: 'gh:pr-2', own: true }])
+    expect(h.engine.bindThread(ticketId, { source: 'gh', id: 'pr-1' }, true).follows).toEqual([{ thread: 'gh:pr-1', own: true },
+      { thread: 'gh:pr-2', own: true }])
+    const before = h.repo.tickets.get(ticketId)!.inputs.length
+    h.engine.note(ticketId, 'the build failed')
+    h.engine.note(ticketId, 'the build failed')
+    expect(h.repo.tickets.get(ticketId)!.inputs).toHaveLength(before + 1)
+    expect(h.engine.unsubscribe('gh:missing')).toBe(false)
+  })
+  it('attaches a note again to a Trigger still waiting for delivery, and refuses context for an ended ticket', () => {
+    const h = harness()
+    const ticketId = accepted(h).ticketId!
+    h.engine.receive(trigger('2', { threads: [{ source: 'chat', id: 'x' }] })); h.pump()
+    h.engine.attach(ticketId, '2', 'route to this ticket')
+    h.repo.triggers.saveDisposition('2', { ...h.repo.triggers.disposition('2')!, requeued: true })
+    h.engine.attach(ticketId, '2', 'route it again')
+    const ticket = h.repo.tickets.get(ticketId)!
+    expect(ticket.inputs.filter(input => input.kind === 'trigger' && input.triggerId === '2').at(-1)).toMatchObject({ note: 'route it again' })
+    h.engine.stopTicket(ticketId)
+    expect(() => h.engine.followForContext(ticketId, { source: 'chat', id: 'side' })).toThrow(new UserError('ticketEnded'))
+    const stops = vi.mocked(h.executor.stop).mock.calls.length
+    h.engine.stopTicket(ticketId)
+    expect(vi.mocked(h.executor.stop)).toHaveBeenCalledTimes(stops)
+  })
+  it('uses the first Trigger when the named primary is missing and closes Threads no ticket follows', () => {
+    const h = harness()
+    h.engine.receive(trigger('1')); h.pump()
+    h.repo.threads.save({ ...h.repo.threads.get('chat:t1')!, evaluating: { ...h.repo.threads.get('chat:t1')!.evaluating!,
+      primary: 'missing', triggerIds: ['1', 'also-missing'] } })
+    const decision = h.decide(h.requests[0]!, { kind: 'accept', title: 'Fix', scope: 'small', reason: 'requested' })
+    h.settle()
+    expect(h.repo.tickets.get(decision.ticketId!)!.origin).toMatchObject({ triggerId: '1', triggerIds: ['1', 'also-missing'] })
+    h.engine.threadClosed({ source: 'chat', id: 'unbound' }, 'closed', '2026-09-23T00:00:00Z')
+    expect(h.repo.tickets.get(decision.ticketId!)).not.toHaveProperty('ended')
+  })
+  it('ends as the latest of several followed Threads that closed', () => {
+    const h = harness()
+    const ticketId = accepted(h).ticketId!
+    h.repo.tickets.save({ ...h.repo.tickets.get(ticketId)!, follows: [{ thread: 'gh:1', own: false }, { thread: 'gh:2', own: false }] })
+    h.engine.threadClosed({ source: 'gh', id: '1' }, 'closed', '2026-09-23T00:00:01Z')
+    h.engine.threadClosed({ source: 'gh', id: '2' }, 'merged', '2026-09-23T00:00:02Z')
+    expect(h.repo.tickets.get(ticketId)!.ended).toMatchObject({ at: '2026-09-23T00:00:02.000Z', outcome: 'merged' })
+  })
+  it('refuses to attach an unknown Trigger and attaches one with no recorded disposition', () => {
+    const h = harness()
+    const ticketId = accepted(h).ticketId!
+    expect(() => h.engine.attach(ticketId, 'missing')).toThrow(new UserError('unknownTrigger'))
+    h.repo.triggers.save(trigger('2', { threads: [{ source: 'chat', id: 'fresh' }] }))
+    h.engine.attach(ticketId, '2', 'a person routed this')
+    expect(h.repo.triggers.disposition('2')).toMatchObject({ fanout: [ticketId] })
+    expect(h.repo.tickets.get(ticketId)!.inputs.at(-1)).toMatchObject({ triggerId: '2', note: 'a person routed this' })
+  })
+  it('gives a live worker a bot message it already had again with a note', () => {
+    const h = harness()
+    const ticketId = accepted(h).ticketId!
+    h.engine.receive(trigger('3', { human: false, threads: [{ source: 'chat', id: 'bot-thread' }] }))
+    h.engine.attach(ticketId, '3')
+    h.settle()
+    h.engine.attach(ticketId, '3', 'the build finished')
+    const inputs = h.repo.tickets.get(ticketId)!.inputs.filter(input => input.kind === 'trigger' && input.triggerId === '3')
+    expect(inputs.at(-1)).toMatchObject({ note: 'the build finished' })
+  })
+  it('refuses to mark unrelated a Thread outside the ticket, followed, or subscribed', () => {
+    const h = harness()
+    const ticketId = accepted(h).ticketId!
+    expect(() => { h.engine.markUnrelated(ticketId, 'chat:t1', 'not mine') }).toThrow(new UserError('sourceThread'))
+    h.engine.bindThread(ticketId, { source: 'gh', id: 'followed' }, false)
+    expect(() => { h.engine.markUnrelated(ticketId, 'gh:followed', 'not mine') }).toThrow(new UserError('followedThread'))
+    h.repo.threads.save({ key: 'chat:empty', ref: { source: 'chat', id: 'empty' }, createdAt: '', subscriptions: [], correlated: [],
+      pending: [], meta: {} })
+    expect(h.engine.unsubscribe('chat:empty')).toBe(false)
   })
 })
 describe('failed deliveries', () => {
@@ -1401,6 +1587,32 @@ describe('gaps', () => {
   })
 })
 describe('final review', () => {
+  it('reassesses the rest when a replayed Trigger beside another started a ticket', () => {
+    const h = harness()
+    const decision = accepted(h)
+    h.engine.receive(trigger('2', { actor: guest }))
+    h.repo.threads.save({ ...h.repo.threads.get('chat:t1')!, pending: ['other'], evaluating: { id: 'old-eval', threadKey: 'chat:t1',
+      triggerIds: ['1', '2'], primary: '1', strength: 'explicit', actor: member, basis: { via: 'listed' }, policyVersion: 'v1',
+      startedAt: '', deadline: '2999-01-01T00:00:00.000Z' } })
+    expect(h.engine.decide('1', { kind: 'accept', title: 'Again', scope: 'small', reason: 'replayed' })).toEqual(decision)
+    expect(h.repo.threads.get('chat:t1')).toMatchObject({ pending: ['2', 'other'] })
+    expect(h.repo.threads.get('chat:t1')).not.toHaveProperty('evaluating')
+  })
+  it('requeues a stored Trigger with no disposition', () => {
+    const h = harness()
+    h.repo.triggers.save(trigger('1'))
+    expect(h.engine.reevaluate('1')).toBe(true)
+    expect(h.repo.triggers.disposition('1')).toMatchObject({ requeued: true })
+  })
+  it('starts an Eval for a stored Trigger with no disposition', () => {
+    const h = harness()
+    h.repo.threads.save({ key: 'chat:t1', ref: { source: 'chat', id: 't1' }, createdAt: '', subscriptions: [], correlated: [],
+      pending: ['1'], meta: {} })
+    h.repo.triggers.save(trigger('1'))
+    h.pump()
+    expect(h.requests.at(-1)).toMatchObject({ triggers: [expect.objectContaining({ id: '1' })] })
+    expect(h.repo.triggers.disposition('1')).toMatchObject({ evalId: h.requests.at(-1)!.evalId })
+  })
   it('ignores an Eval an earlier version left holding only a Trigger that started a ticket, instead of recording it unavailable', () => {
     const h = harness()
     const decision = accepted(h)

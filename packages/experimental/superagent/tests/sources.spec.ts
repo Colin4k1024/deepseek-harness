@@ -10,7 +10,7 @@ import { runFeishu } from '../src/sources/feishu-loops.ts'
 import { CommentSchema, commentTrigger, githubAddress, githubChannel, issueTrigger, reviewPlace, type GithubComment, type GithubIssue } from '../src/sources/github-trigger.ts'
 import { claimPull, observePull, pullEndNotices, pullOf, ticketBranch, type Pull } from '../src/sources/github-pull.ts'
 import { ciCounts, ciFact, ciSummary } from '../src/sources/github-read.ts'
-import { apply as applyGithub, githubKind, pollFailure, pollRound } from '../src/sources/github.ts'
+import { apply as applyGithub, githubKind, pollFailure, pollRound, pollTicketPulls } from '../src/sources/github.ts'
 import { pollThreads as pollGithubThreads } from '../src/sources/github.ts'
 import { SourceRegistry } from '../src/sources/registry.ts'
 import { cursorAt, POLL_HORIZON_MS } from '../src/sources/poll.ts'
@@ -562,6 +562,56 @@ describe('feishu source', () => {
   })
 })
 describe('github source', () => {
+  it('declares the GitHub kind’s lookup, admission, environment, and deployment facts', () => {
+    const config = githubKind.schema.parse({ observeIssues: true, observePulls: false, observeComments: false, observeCi: true })
+    expect(githubKind.scope!({ meta: { ci: true, branch: 'main' } }, config)).toEqual({ listened: true, observed: true, row: 'ci' })
+    expect(githubKind.scope!({ meta: { ci: true } }, config)).toEqual({ listened: true, observed: false })
+    expect(githubKind.scope!({ meta: { kind: 'issue' } }, config)).toEqual({ listened: true, observed: true, row: 'issues' })
+    expect(githubKind.scope!({ meta: { kind: 'pull' } }, config)).toEqual({ listened: true, observed: false, row: 'pulls' })
+    expect(githubKind.scope!({ meta: { kind: 'conversation' } }, config)).toEqual({ listened: true, observed: false, row: 'comments' })
+    expect(githubKind.scope!({ meta: { kind: 'other' } }, config)).toEqual({ listened: true, observed: false })
+
+    expect(githubKind.find!('#12')).toEqual({ threads: ['github:12'], terms: [] })
+    expect(githubKind.find!('https://github.com/acme/widgets/pull/13')).toEqual({ threads: ['github:13'], terms: [] })
+    expect(githubKind.find!('https://example.com')).toEqual({ threads: [], terms: [] })
+
+    const observed = githubKind.policy!.rows!({ observeIssues: true, observePulls: true, observeComments: true, observeCi: true })
+    expect(observed.map(row => [row.id, row.note, row.cells])).toEqual([
+      ['issues', { zh: '全部', en: 'All' }, { listedUnaddressed: true, unlistedAddressed: true, unlistedUnaddressed: true }],
+      ['pulls', { zh: '全部', en: 'All' }, { listedUnaddressed: true, unlistedAddressed: true, unlistedUnaddressed: true }],
+      ['comments', { zh: '全部', en: 'All' }, { listedUnaddressed: true, unlistedAddressed: true, unlistedUnaddressed: true }],
+      ['ci', { zh: '接收', en: 'Received' }, { listedUnaddressed: false, unlistedAddressed: false, unlistedUnaddressed: true }],
+    ])
+    const atOnly = githubKind.policy!.rows!({})
+    expect(atOnly.map(row => [row.id, row.note, row.cells.unlistedUnaddressed])).toEqual([
+      ['issues', { zh: '仅 @', en: '@ only' }, false], ['pulls', { zh: '仅 @', en: '@ only' }, false],
+      ['comments', { zh: '仅 @', en: '@ only' }, false], ['ci', { zh: '不接收', en: 'Not received' }, false],
+    ])
+
+    const trigger = (source: string, meta: Record<string, unknown>, isPr?: boolean): Trigger => ({
+      id: 'source', source, threads: [{ source, id: '9' }], actor: { source, id: 'alice' }, human: true,
+      at: '2026-09-09T00:00:00Z', text: 'fix', meta: isPr === undefined ? meta : { ...meta, isPr },
+    })
+    const deployment = testDeployment()
+    const environment = githubKind.environment!
+    const values = (input: Parameters<typeof environment.values>[0]) => environment.values(input)
+    expect(values({ deployment, config, trigger: trigger('github', { number: '12' }, true) })).toMatchObject({
+      DSH_SUPERAGENT_GITHUB_REPOSITORY: 'acme/widgets', DSH_SUPERAGENT_GITHUB_ACCOUNT: 'agent-bot',
+      DSH_SUPERAGENT_GITHUB_NUMBER: '12', DSH_SUPERAGENT_GITHUB_PR_HEAD: 'refs/pull/12/head',
+    })
+    expect(values({ deployment, config, trigger: trigger('github', { number: '0' }) })).toMatchObject({
+      DSH_SUPERAGENT_GITHUB_NUMBER: '', DSH_SUPERAGENT_GITHUB_PR_HEAD: '',
+    })
+    expect(values({ deployment, config, trigger: trigger('github', { number: '12' }, false) })).toMatchObject({
+      DSH_SUPERAGENT_GITHUB_PR_HEAD: '',
+    })
+    expect(values({ deployment, config, trigger: trigger('feishu', { number: '12' }, true) })).toMatchObject({
+      DSH_SUPERAGENT_GITHUB_NUMBER: '', DSH_SUPERAGENT_GITHUB_PR_HEAD: '',
+    })
+    expect(values({ deployment, config })).toMatchObject({ DSH_SUPERAGENT_GITHUB_NUMBER: '', DSH_SUPERAGENT_GITHUB_PR_HEAD: '' })
+    expect(githubKind.facts!(deployment)).toMatchObject({ cli: { zh: '当前账号 @agent-bot', en: 'Current account @agent-bot' } })
+    expect(githubKind.facts!(undefined)).toEqual({})
+  })
   it('normalizes comments and reviews into triggers with review-thread channels, and marks only GitHub Apps and machine accounts as automated', () => {
     const trigger = commentTrigger({ id: 5, body: 'nit', user: { login: 'review-bot[bot]', type: 'Bot' }, html_url: 'https://github.com/acme/widgets/pull/7#discussion_r5', updated_at: '2026-09-01T00:00:00Z' }, { number: 7, isPr: true, prAuthor: 'agent-bot' }, 'inline', 'agent-bot')
     expect(trigger).toMatchObject({ source: 'github', threads: [{ source: 'github', id: '7' }], human: false, channel: { address: { number: '7', url: 'https://github.com/acme/widgets/pull/7#discussion_r5' } }, meta: { commentId: 5, kind: 'inline', prAuthor: 'agent-bot' } })
@@ -736,10 +786,12 @@ describe('github source', () => {
     const comment = (id: number, login: string, at: string, body: string) => ({ id, body, user: { login }, created_at: at, updated_at: at })
     github(h, { 'issues/7': { ...issue(7, { title: 'Fix the margin' }), pull_request: { url: 'x' } }, 'pulls/7': openPull(7),
       'issues/7/comments': [comment(1, 'agent-bot', '2026-09-01T01:00:00Z', 'mine'), comment(2, 'a', '2026-08-01T00:00:00Z', 'old'),
-        comment(3, 'b', '2026-09-01T02:00:00Z', 'new')] })
+        comment(3, 'b', '2026-09-01T02:00:00Z', 'new'),
+        { id: 4, body: 'created only', user: { login: 'c', type: 'User' }, created_at: '2026-09-01T03:00:00Z' },
+        { id: 5, body: 'no time', user: { login: 'd', type: 'User' } }] })
     await pollGithubThreads(h)
-    expect(h.receive).toHaveBeenCalledTimes(1)
-    expect(h.receive.mock.calls[0]![0]).toMatchObject({ actor: { id: 'b' }, text: 'new', threads: [{ source: 'github', id: '7' }] })
+    expect(h.receive).toHaveBeenCalledTimes(2)
+    expect(h.receive.mock.calls.map(([trigger]) => [trigger.actor.id, trigger.text])).toEqual([['b', 'new'], ['c', 'created only']])
     expect(h.store.get('github-cursor:7')).toBeDefined()
     // A Thread whose title the Source had not read yet is named by its number and title, with its number as a fact.
     expect(h.store.threads.get('github:7')!.meta).toMatchObject({ title: 'Fix the margin', label: '#7 Fix the margin', facts: { number: { value: '#7' } } })
@@ -990,7 +1042,7 @@ describe('github source', () => {
     github(h, { notifications: [], 'issues/5/comments': refused(410, 'Gone'), 'pulls/7': refused(410, 'Gone') })
     // Every PR read but #8's succeeds or is dropped; #8 fails like a network error.
     vi.spyOn(h.commands, 'run').mockImplementation(async (_program, args) => {
-      const path = args[1]!.replace(/^repos\/acme\/widgets\//, '').split('?')[0]!
+      const path = args[1]!.replace(/^repos\/acme\/widgets\/?/, '').split('?')[0]!
       if (path === 'notifications') return 'HTTP/2.0 200 OK\r\n\r\n[]'
       if (path === 'issues/5/comments' || path === 'pulls/7') throw refused(410, 'Gone')
       if (path === 'pulls/8') throw refused(502, 'Bad Gateway')
@@ -1000,7 +1052,7 @@ describe('github source', () => {
     expect(h.store.threads.get('github:8')!.meta.pollError).toContain('502')
     expect(h.store.threads.get('github:7')!.meta.pollError).toContain('410')
     vi.spyOn(h.commands, 'run').mockImplementation(async (_program, args) => {
-      const path = args[1]!.replace(/^repos\/acme\/widgets\//, '').split('?')[0]!
+      const path = args[1]!.replace(/^repos\/acme\/widgets\/?/, '').split('?')[0]!
       if (path === 'notifications') return 'HTTP/2.0 200 OK\r\n\r\n[]'
       if (path === 'issues/5/comments' || path === 'pulls/7' || path === 'pulls/8') throw refused(410, 'Gone')
       return JSON.stringify(args.includes('--slurp') ? [[]] : [])
@@ -1010,6 +1062,150 @@ describe('github source', () => {
     expect(h.health.github).toMatchObject({ state: 'ready', detail: expect.stringContaining('deleted on GitHub: #5, #7, #8') as unknown })
     h.store.close()
   })
+  it('uses an empty title for a new PR without one and skips one without an opening time', async () => {
+    const h = host()
+    h.store.set('github-since', '2026-09-08T00:00:00.000Z')
+    const untitled = openPull(9); delete untitled.title
+    github(h, { notifications: [notification(9, 'pulls')], 'pulls/9': { ...untitled, created_at: '2026-09-09T00:00:00Z' } })
+    await pollRound(h)
+    expect(h.receive).toHaveBeenCalledTimes(1)
+    expect(h.receive.mock.calls[0]![0]).toMatchObject({ meta: { number: 9, isPr: true } })
+    h.receive.mockClear()
+    github(h, { notifications: [notification(9, 'pulls')], 'pulls/9': { ...untitled, created_at: undefined } })
+    await pollRound(h)
+    h.receive.mockClear()
+    github(h, { notifications: [notification(9, 'pulls')], 'pulls/9': { ...untitled, created_at: '2026-09-01T00:00:00Z' } })
+    await pollRound(h)
+    expect(h.receive).not.toHaveBeenCalled()
+    h.store.close()
+  })
+
+  it('reports notifications without GitHub headers instead of accepting their body', async () => {
+    const h = host()
+    h.store.set('github-since', '2026-09-08T00:00:00.000Z')
+    vi.spyOn(h.commands, 'run').mockResolvedValue('[]')
+    await expect(pollRound(h)).rejects.toThrow('GitHub returned no HTTP headers')
+    h.store.close()
+  })
+
+  it('uses the minimum interval when GitHub names a non-numeric poll interval', async () => {
+    const h = host()
+    h.store.set('github-since', '2026-09-08T00:00:00.000Z')
+    vi.spyOn(h.commands, 'run').mockResolvedValue('HTTP/2.0 200 OK\r\nX-Poll-Interval: soon\r\n\r\n[]')
+    await expect(pollRound(h)).resolves.toBe(60)
+    h.store.close()
+  })
+
+  it('advances only notifications that name a readable Issue or PR of this repository', async () => {
+    const h = host()
+    h.store.set('github-since', '2026-09-08T00:00:00.000Z')
+    const notifications = [
+      { ...notification(20), repository: { full_name: 'acme/gadgets' } },
+      { ...notification(21), subject: { ...notification(21).subject, url: undefined } },
+      { ...notification(22), subject: { ...notification(22).subject, url: 'https://github.com/acme/widgets/pull/22/#discussion_r5' } },
+      notification(23), notification(23),
+    ]
+    const reads = github(h, { notifications, 'issues/23': issue(23, { created_at: '2026-08-01T00:00:00Z' }) })
+    await pollRound(h)
+    expect(bare(reads)).toEqual(['notifications', 'issues/23', 'issues/23/comments'])
+    h.store.close()
+  })
+
+  it('does not read CI for a ticket PR that is already closed', async () => {
+    const h = host()
+    h.store.tickets.save({ ...openTicket('ticket'), ...pulled(9) })
+    const reads = github(h, { notifications: [], 'pulls/9': { ...openPull(9), state: 'closed', merged: true } })
+    await pollRound(h)
+    expect(reads.filter(path => path.endsWith('/check-runs'))).toEqual([])
+    h.store.close()
+  })
+
+  it('suppresses a ticket PR failure that arrives after its poll signal aborts', async () => {
+    const h = host()
+    h.store.tickets.save({ ...openTicket('ticket'), ...pulled(7) })
+    const controller = new AbortController()
+    vi.spyOn(Commands.prototype, 'run').mockImplementation(async (_program, args) => {
+      const path = args[1]!.replace(/^repos\/acme\/widgets\/?/, '').split('?')[0]!
+      if (path === 'pulls/7') {
+        controller.abort()
+        throw refused(502, 'Bad Gateway')
+      }
+      return 'HTTP/2.0 200 OK\r\n\r\n[]'
+    })
+    await pollTicketPulls(h, controller.signal)
+    expect(h.store.threads.get('github:7')?.meta.pollError).toBeUndefined()
+    h.store.close()
+  })
+
+  it('suppresses a subscribed Thread failure that arrives after its poll signal aborts', async () => {
+    const h = host()
+    subscribed(h, { source: 'github', id: '7' }, { number: 7, isPr: false, title: 'Login fails' })
+    const controller = new AbortController()
+    vi.spyOn(Commands.prototype, 'run').mockImplementation(async (_program, args) => {
+      const path = args[1]!.replace(/^repos\/acme\/widgets\/?/, '').split('?')[0]!
+      if (path === 'issues/7/comments') {
+        controller.abort()
+        throw refused(502, 'Bad Gateway')
+      }
+      return 'HTTP/2.0 200 OK\r\n\r\n[]'
+    })
+    await pollGithubThreads(h, controller.signal)
+    expect(h.store.threads.get('github:7')?.meta.pollError).toBeUndefined()
+    h.store.close()
+  })
+
+  it('stops a round without reading an Issue or ticket PR once its signal aborts after notifications', async () => {
+    const h = host()
+    h.store.set('github-since', '2026-09-08T00:00:00.000Z')
+    h.store.tickets.save({ ...openTicket('ticket'), follows: [{ thread: 'github:7', own: true }] })
+    const controller = new AbortController()
+    const reads: string[] = []
+    vi.spyOn(Commands.prototype, 'run').mockImplementation(async (_program, args) => {
+      const path = args[1]!.replace(/^repos\/acme\/widgets\/?/, '').split('?')[0]!
+      reads.push(path)
+      if (path === 'notifications') {
+        controller.abort()
+        return `HTTP/2.0 200 OK\r\n\r\n${JSON.stringify([notification(7)])}`
+      }
+      return `HTTP/2.0 200 OK\r\n\r\n${JSON.stringify(path === 'issues/7' ? issue(7) : [])}`
+    })
+    await expect(pollRound(h, controller.signal)).resolves.toBe(60)
+    expect(reads).toEqual(['notifications'])
+    h.store.close()
+  })
+
+  it('rejects a subscribed GitHub Thread whose id names no Issue or PR', async () => {
+    const h = host()
+    subscribed(h, { source: 'github', id: 'not-a-number' })
+    github(h, {})
+    await pollGithubThreads(h)
+    expect(h.store.threads.get('github:not-a-number')!.meta.pollError).toContain('no GitHub issue or PR number')
+    h.store.close()
+  })
+
+  it('leaves a subscribed Thread unnamed when GitHub returns an empty title', async () => {
+    const h = host()
+    subscribed(h, { source: 'github', id: '7' }, { number: 7 })
+    const read = h.threads.get.bind(h.threads)
+    h.threads.get = key => key === 'github:7' ? undefined : read(key)
+    github(h, { 'issues/7': issue(7, { title: '' }) })
+    await pollGithubThreads(h)
+    expect(h.store.threads.get('github:7')!.meta).not.toHaveProperty('title')
+    h.store.close()
+  })
+
+  it('keeps a ticket PR quiet while its CI snapshot is unchanged', async () => {
+    const h = host()
+    h.store.tickets.save({ ...openTicket('ticket'), ...pulled(9) })
+    const checks = { check_runs: [{ name: 'test', status: 'completed', conclusion: 'success' }] }
+    github(h, { notifications: [], 'pulls/9': openPull(9), 'commits/abc/check-runs': checks })
+    await pollRound(h)
+    await pollRound(h)
+    expect(h.receive).not.toHaveBeenCalled()
+    expect(h.store.get('github-ci:9')).toMatchObject({ revision: 0 })
+    h.store.close()
+  })
+
   it('waits for setup, pauses while the Source is off, and counts only consecutive failed polls towards an error', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
     try {
@@ -1646,6 +1842,127 @@ describe('observing the GitHub repository', () => {
       .toEqual([[7, false, 'conversation', true], [9, true, 'conversation', false], [9, true, 'inline', true]])
     h.store.close()
   })
+  it('starts an unobserved stream afresh and ignores comments it cannot place, link, or read', async () => {
+    const h = host()
+    observe(h, { observeComments: true })
+    h.store.set('github-since', at(-24))
+    repository(h, {})
+    await pollRound(h)
+    expect(h.store.get('github-stream:comments')).toMatchObject({ started: { comments: expect.any(String) as unknown } })
+    h.receive.mockClear()
+    for (const stream of ['comments', 'review-comments']) {
+      h.store.set(`github-stream:${stream}`, { since: at(0), started: { comments: at(0) } })
+    }
+    const comment = (id: number, fields: Record<string, unknown>) => ({ id, body: `comment ${id}`,
+      user: { login: 'carol', type: 'User' }, created_at: at(1), ...fields })
+    repository(h, {
+      comments: [comment(1, {}), comment(2, { issue_url: 'https://api.github.com/repos/acme/widgets/issues/7' }),
+        comment(3, { body: '', issue_url: 'https://api.github.com/repos/acme/widgets/issues/8' }),
+        { id: 6, body: 'no time', user: { login: 'carol', type: 'User' }, issue_url: 'https://api.github.com/repos/acme/widgets/issues/10' }],
+      reviewComments: [comment(4, {}), comment(5, { pull_request_url: 'https://api.github.com/repos/acme/widgets/pulls/9' })],
+    })
+    await pollRound(h)
+    expect(h.receive.mock.calls.map(([trigger]) => [trigger.meta.number, trigger.meta.isPr, trigger.meta.kind, trigger.url]))
+      .toEqual([[7, false, 'conversation', undefined], [9, true, 'inline', undefined]])
+    for (const stream of ['comments', 'review-comments']) {
+      expect(h.store.get(`github-stream:${stream}`)).toMatchObject({ since: at(0), started: { comments: at(0) } })
+    }
+    h.store.close()
+  })
+  it('reports a repository stream without GitHub headers instead of accepting its body', async () => {
+    const h = host()
+    observe(h, { observeIssues: true })
+    h.store.set('github-since', at(-24))
+    h.store.set('github-stream:issues', { since: at(0), started: { issues: at(0) } })
+    vi.spyOn(h.commands, 'run').mockImplementation(async (_program, args) => {
+      const path = args[1]!.replace(/^repos\/acme\/widgets\/?/, '').split('?')[0]!
+      if (path === 'notifications') return 'HTTP/2.0 200 OK\r\n\r\n[]'
+      if (path === 'issues') return '[]'
+      return 'HTTP/2.0 200 OK\r\n\r\n[]'
+    })
+    await expect(pollRound(h)).rejects.toThrow('GitHub returned no HTTP headers')
+    h.store.close()
+  })
+
+  it('does not read Issues when only new PRs are observed', async () => {
+    const h = host()
+    observe(h, { observePulls: true })
+    h.store.set('github-since', at(-24))
+    h.store.set('github-stream:issues', { since: at(0), started: { pulls: at(0) } })
+    repository(h, { issues: [issue(6, { created_at: at(3), updated_at: at(3) })] })
+    await pollRound(h)
+    expect(h.receive).not.toHaveBeenCalled()
+    h.store.close()
+  })
+
+  it('keeps a default-branch CI baseline with no failures while checks still run', async () => {
+    const h = host()
+    observe(h, { observeCi: true })
+    h.store.set('github-since', at(-24))
+    repository(h, { branch: { sha: 'run2222', checks: [{ name: 'lint', status: 'in_progress', conclusion: null }] } })
+    await pollRound(h)
+    expect(h.receive).not.toHaveBeenCalled()
+    expect(h.store.get('github-branch-ci')).toEqual({ branch: 'main', failures: [], revision: 0 })
+    h.store.close()
+  })
+
+  it('fails the round when the default branch CI cannot be read', async () => {
+    const h = host()
+    observe(h, { observeCi: true })
+    h.store.set('github-since', at(-24))
+    vi.spyOn(h.commands, 'run').mockImplementation(async (_program, args) => {
+      const path = args[1]!.replace(/^repos\/acme\/widgets\/?/, '').split('?')[0]!
+      if (path === 'notifications') return 'HTTP/2.0 200 OK\r\n\r\n[]'
+      if (path === 'commits/abc/check-runs') throw refused(502, 'Bad Gateway')
+      if (path === '') return JSON.stringify({ default_branch: 'main' })
+      if (path === 'commits/main') return JSON.stringify({ sha: 'abc' })
+      return 'HTTP/2.0 200 OK\r\n\r\n[]'
+    })
+    await expect(pollRound(h)).rejects.toThrow(/default branch CI: .*502/)
+    h.store.close()
+  })
+
+  it('suppresses a default-branch CI failure that arrives after its poll signal aborts', async () => {
+    const h = host()
+    observe(h, { observeCi: true })
+    h.store.set('github-since', at(-24))
+    const controller = new AbortController()
+    vi.spyOn(Commands.prototype, 'run').mockImplementation(async (_program, args) => {
+      const path = args[1]!.replace(/^repos\/acme\/widgets\/?/, '').split('?')[0]!
+      if (path === 'notifications') return 'HTTP/2.0 200 OK\r\n\r\n[]'
+      if (path === 'commits/abc/check-runs') {
+        controller.abort()
+        throw refused(502, 'Bad Gateway')
+      }
+      if (path === '') return JSON.stringify({ default_branch: 'main' })
+      if (path === 'commits/main') return JSON.stringify({ sha: 'abc' })
+      return 'HTTP/2.0 200 OK\r\n\r\n[]'
+    })
+    await expect(pollRound(h, controller.signal)).resolves.toBe(60)
+    h.store.close()
+  })
+
+  it('stops reading a repository stream when its signal aborts after the list arrives', async () => {
+    const h = host()
+    observe(h, { observeIssues: true })
+    h.store.set('github-since', at(-24))
+    h.store.set('github-stream:issues', { since: at(0), started: { issues: at(0) } })
+    const controller = new AbortController()
+    vi.spyOn(Commands.prototype, 'run').mockImplementation(async (_program, args) => {
+      const path = args[1]!.replace(/^repos\/acme\/widgets\/?/, '').split('?')[0]!
+      if (path === 'notifications') return 'HTTP/2.0 200 OK\r\n\r\n[]'
+      if (path === 'issues') {
+        controller.abort()
+        return `HTTP/2.0 200 OK\r\n\r\n${JSON.stringify([issue(6)])}`
+      }
+      return 'HTTP/2.0 200 OK\r\n\r\n[]'
+    })
+    await expect(pollRound(h, controller.signal)).resolves.toBe(60)
+    expect(h.receive).not.toHaveBeenCalled()
+    expect(h.store.get('github-stream:issues')).toEqual({ since: at(0), started: { issues: at(0) } })
+    h.store.close()
+  })
+
   it('fails the round for a stream whose read fails, keeps its cursor, and still reads the other streams', async () => {
     const h = host()
     observe(h, { observeIssues: true, observeComments: true })

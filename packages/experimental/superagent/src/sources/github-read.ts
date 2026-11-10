@@ -99,7 +99,7 @@ function threadMessages(thread: GithubComment[], id: (comment: GithubComment) =>
   const [first] = thread
   return thread.map(item => item === first
     ? githubMessage(item, [reviewPlace(item), item.body ?? ''].filter(Boolean).join('\n\n'), id(item))
-    : { ...githubMessage(item, item.body ?? '', id(item)), ...first ? { reply_to: id(first) } : {} })
+    : { ...githubMessage(item, item.body ?? '', id(item)), reply_to: id(required(first)) })
 }
 
 /**

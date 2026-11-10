@@ -206,3 +206,26 @@ it('reads a conversation for an inline Trigger whose comment id is not numeric',
     messages: [{ id: 'https://github.com/acme/widgets/issues/9', text: 'Fix\n\nDetails' }, { id: '4', text: 'reply' }],
     body: { skipped: 1 }, next: undefined })
 })
+
+it('orders a review thread when GitHub omits comment timestamps', async () => {
+  const missingTime = (id: number, reply?: number) => {
+    const item = reviewComment(id, reply)
+    delete item.created_at
+    delete item.updated_at
+    return item
+  }
+  vi.spyOn(commands, 'pages').mockResolvedValue([missingTime(2, 1), missingTime(1)])
+  const thread = await readGithub(commands, 'github/pulls/9/thread/1') as { messages: { id: string }[] }
+  expect(thread.messages.map(message => message.id)).toEqual(['2', '1'])
+})
+
+it('uses a review comment id when GitHub omits its URL', async () => {
+  const comment = { ...reviewComment(1), html_url: undefined }
+  vi.spyOn(commands, 'pages').mockResolvedValue([comment])
+  const trigger: Trigger = { id: 'inline', source: 'github', threads: [{ source: 'github', id: '9' }],
+    actor: { source: 'github', id: 'carol' }, human: true, at: '2026-09-09T00:00:00Z', text: 'comment',
+    meta: { kind: 'inline', commentId: 1, number: 9 } }
+  await expect(githubThreadContext.read(commands, trigger, 'thread')).resolves.toMatchObject({
+    messages: [{ id: '1' }],
+  })
+})

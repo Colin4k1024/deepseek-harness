@@ -310,10 +310,8 @@ export class Evals extends EnginePart {
   private decideEval(thread: Thread, evaluation: Evaluation, outcome: AssessmentOutcome): Decision {
     const audit = outcome.audit ? { audit: outcome.audit } : {}
     // Requeue if Policy changed without a live policyChanged call (such as across an upgrade or restart).
-    if (this.policy().version !== evaluation.policyVersion) {
-      if (thread.evaluating?.id === evaluation.id) return this.reassess(thread, { code: 'policyChanged' })
-      return this.finish(thread, evaluation, { kind: 'unavailable', reason: [{ code: 'policyChanged' }], ...audit })
-    }
+    // A gate-only Eval always records the current version, so only a Thread's live Eval can be older.
+    if (this.policy().version !== evaluation.policyVersion) return this.reassess(thread, { code: 'policyChanged' })
     // An inferred candidate ignored without an assessment, from its card, says so beside the reason given.
     const unassessed = outcome.kind === 'ignore' && evaluation.strength !== 'explicit' && !outcome.audit ? [{ code: 'ignoredFromCard' }] : []
     if (outcome.kind === 'ignore' || outcome.kind === 'unavailable') return this.finish(thread, evaluation, { kind: outcome.kind,

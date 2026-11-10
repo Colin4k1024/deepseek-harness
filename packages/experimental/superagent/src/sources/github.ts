@@ -140,7 +140,7 @@ async function watch(ctx: SourceContext, signal: AbortSignal): Promise<void> {
       failures = 0
     } catch (error) {
       failures += 1
-      const failed = pollFailure(failures, config?.failuresBeforeError ?? 1, error)
+      const failed = pollFailure(failures, required(config).failuresBeforeError, error)
       if (!isAborted(signal) && failed) ctx.report('github', failed)
     }
     await pause(Math.max(interval, ctx.config<GithubConfig>(SOURCE)?.pollSeconds ?? 60) * 1000, signal)
@@ -324,7 +324,7 @@ async function pollNotifications(ctx: SourceContext, round: Round): Promise<{ co
   const headers = raw.slice(0, split)
   const body = raw.slice(split).trim()
   const asked = Number(/x-poll-interval:\s*(\d+)/i.exec(headers)?.[1] ?? 60)
-  const interval = Math.max(60, Number.isFinite(asked) ? asked : 60)
+  const interval = Math.max(60, asked)
   const notifications = /rel="next"/.test(headers)
     ? await commands.pages(NotificationSchema, path, round.tally)
     : validItems(NotificationSchema, z.array(z.unknown()).parse(JSON.parse(body)), round.tally)
